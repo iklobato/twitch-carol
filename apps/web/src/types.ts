@@ -126,6 +126,16 @@ export type TopicDetail = {
   cited_segments: CitedSegment[]
 }
 
+export type CommunityOut = {
+  share: { login: string | null; messages: number }[]
+  words: { word: string; count: number }[]
+  emotes: { name: string; count: number }[]
+  sentiment_overall: number | null
+  sentiment_timeline: { t: string; score: number; messages: number }[]
+  sentiment_by_chatter: { login: string; score: number }[]
+  presence: { slots: string[]; rows: { login: string; cells: number[] }[] }
+}
+
 export type QueueItem = {
   stream_id: number
   job_type: string

@@ -66,9 +66,19 @@ function mockFetch() {
       }
       const body = url.startsWith('/api/streams/6/timeline')
         ? { chat: [], viewers: [], events: [], peaks: [] }
-        : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
-          ? []
-          : report
+        : url.startsWith('/api/streams/6/community')
+          ? {
+              share: [],
+              words: [],
+              emotes: [],
+              sentiment_overall: null,
+              sentiment_timeline: [],
+              sentiment_by_chatter: [],
+              presence: { slots: [], rows: [] },
+            }
+          : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
+            ? []
+            : report
       return new Response(JSON.stringify(body), { status: 200 })
     }),
   )

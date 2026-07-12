@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
 import ChattersSection from '../components/ChattersSection'
+import CommunitySection from '../components/CommunitySection'
 import PipelineStepper from '../components/PipelineStepper'
 import TimelineChart from '../components/TimelineChart'
 import type {
@@ -438,6 +439,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
         </div>
       )}
 
+      <CommunitySection streamId={report.id} />
       <ChattersSection streamId={report.id} />
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (

@@ -58,22 +58,49 @@ function ChatterRow({ chatter, maxMessages }: { chatter: ChatterOut; maxMessages
   )
 }
 
+const PAGE_SIZE = 5
+
 export default function ChattersSection({ streamId }: { streamId: number }) {
   const [chatters, setChatters] = useState<ChatterOut[] | null>(null)
+  const [page, setPage] = useState(0)
 
   useEffect(() => {
+    setPage(0)
     apiGet<ChatterOut[]>(`/api/streams/${streamId}/chatters`).then(setChatters)
   }, [streamId])
 
   if (chatters === null || chatters.length === 0) return null
   const maxMessages = chatters[0].messages
+  const totalPages = Math.ceil(chatters.length / PAGE_SIZE)
+  const visible = chatters.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   return (
     <div className="mb-6">
       <h3 className="mb-3 text-lg font-bold">Quem participou</h3>
-      {chatters.map((chatter) => (
+      {visible.map((chatter) => (
         <ChatterRow key={chatter.author_login} chatter={chatter} maxMessages={maxMessages} />
       ))}
+      {totalPages > 1 && (
+        <div className="mt-2 flex items-center justify-center gap-4 text-sm">
+          <button
+            onClick={() => setPage(page - 1)}
+            disabled={page === 0}
+            className="rounded border border-zinc-700 px-3 py-1 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:hover:text-zinc-400"
+          >
+            ‹ anteriores
+          </button>
+          <span className="tabular-nums text-zinc-500">
+            página {page + 1} de {totalPages}
+          </span>
+          <button
+            onClick={() => setPage(page + 1)}
+            disabled={page >= totalPages - 1}
+            className="rounded border border-zinc-700 px-3 py-1 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:hover:text-zinc-400"
+          >
+            próximos ›
+          </button>
+        </div>
+      )}
     </div>
   )
 }
