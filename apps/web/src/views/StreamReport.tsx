@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
+import ChattersSection from '../components/ChattersSection'
 import PipelineStepper from '../components/PipelineStepper'
 import TimelineChart from '../components/TimelineChart'
 import type {
@@ -9,6 +10,7 @@ import type {
   QueueItem,
   StreamReport as Report,
   Timeline,
+  TopicDetail,
 } from '../types'
 
 const PROCESSING_POLL_MS = 10000
@@ -227,7 +229,67 @@ function MomentCard({
   )
 }
 
-function TopicRow({ insight, onFeedback }: { insight: InsightOut; onFeedback: (value: string | null) => void }) {
+function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId: number }) {
+  const [detail, setDetail] = useState<TopicDetail | null>(null)
+
+  useEffect(() => {
+    apiGet<TopicDetail>(`/api/streams/${streamId}/topics/${insightId}`)
+      .then(setDetail)
+      .catch(() => setDetail(null))
+  }, [streamId, insightId])
+
+  if (detail === null) return <p className="ml-10 mt-2 text-xs text-zinc-500">Carregando detalhes...</p>
+
+  return (
+    <div className="ml-10 mt-2 space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+      <p className="text-xs text-zinc-400">
+        Janela {formatTime(detail.window_start)}–{formatTime(detail.window_end)} ·{' '}
+        {detail.messages_in_window.toLocaleString('pt-BR')} mensagens
+        {detail.chat_rate_lift != null && ` · ${detail.chat_rate_lift}x o ritmo da live`}
+      </p>
+      {detail.top_chatters.length > 0 && (
+        <p className="text-xs text-zinc-400">
+          Quem mais falou aqui:{' '}
+          {detail.top_chatters.map((chatter) => (
+            <span key={chatter.author_login} className="mr-2 text-purple-400">
+              {chatter.author_login} ({chatter.messages})
+            </span>
+          ))}
+        </p>
+      )}
+      <div>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">O que você falou</p>
+        {detail.cited_segments.map((segment) => (
+          <p key={segment.id}>
+            <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
+            {segment.text}
+          </p>
+        ))}
+      </div>
+      {detail.sample_messages.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">O chat na hora</p>
+          {detail.sample_messages.map((message) => (
+            <p key={message.id}>
+              <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
+              <span className="text-purple-400">{message.author_login}:</span> {message.text}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TopicRow({
+  streamId,
+  insight,
+  onFeedback,
+}: {
+  streamId: number
+  insight: InsightOut
+  onFeedback: (value: string | null) => void
+}) {
   const [name, ...rest] = insight.content.split('\n')
   const description = rest.join(' ').trim()
   const rank = typeof insight.evidence.rank === 'number' ? insight.evidence.rank : null
@@ -240,7 +302,7 @@ function TopicRow({ insight, onFeedback }: { insight: InsightOut; onFeedback: (v
         </span>
         <div className="min-w-0 flex-1">
           <button onClick={() => setOpen(!open)} className="text-left text-sm font-semibold hover:text-purple-300">
-            {name}
+            {name} <span className="text-xs font-normal text-zinc-600">{open ? '▲' : '▼ detalhes'}</span>
           </button>
           {description && <p className="text-xs text-zinc-500">{description}</p>}
         </div>
@@ -254,16 +316,7 @@ function TopicRow({ insight, onFeedback }: { insight: InsightOut; onFeedback: (v
         )}
         <FeedbackButtons insight={insight} onFeedback={onFeedback} />
       </div>
-      {open && insight.cited_segments.length > 0 && (
-        <div className="ml-10 mt-2 space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
-          {insight.cited_segments.map((segment) => (
-            <p key={segment.id}>
-              <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
-              {segment.text}
-            </p>
-          ))}
-        </div>
-      )}
+      {open && <TopicDetailPanel streamId={streamId} insightId={insight.id} />}
     </div>
   )
 }
@@ -375,10 +428,17 @@ export default function StreamReport({ streamId }: { streamId: number }) {
         <div className="mb-6">
           <h3 className="mb-3 text-lg font-bold">Assuntos da live</h3>
           {topics.map((topic) => (
-            <TopicRow key={topic.id} insight={topic} onFeedback={(value) => sendFeedback(topic, value)} />
+            <TopicRow
+              key={topic.id}
+              streamId={report.id}
+              insight={topic}
+              onFeedback={(value) => sendFeedback(topic, value)}
+            />
           ))}
         </div>
       )}
+
+      <ChattersSection streamId={report.id} />
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (
         <p className="text-sm text-zinc-500">

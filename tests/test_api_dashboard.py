@@ -316,3 +316,80 @@ def test_report_hides_music_lyrics_never_stored(api_client, db) -> None:
     detail = api_client.get(f"/api/streams/{stream.id}/peaks/{peak.id}").json()
     assert detail["segments"][0]["kind"] == "music"
     assert detail["segments"][0]["text"] is None
+
+
+def test_chatters_stats_labels_and_isolation(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=30)
+    # heavy chatter present the whole stream
+    add_chat(db, stream, 12, author="fiel", offset_seconds=0, spread_seconds=1700)
+    # light chatter concentrated in the peak window
+    add_peak(db, stream, offset_seconds=300)
+    add_chat(db, stream, 4, author="do_pico", offset_seconds=310, spread_seconds=30)
+    # follow event carries the login of the light chatter
+    follow = add_event(db, stream, "channel.follow", offset_seconds=100)
+    follow.payload = {"user_login": "do_pico"}
+    db.flush()
+
+    login_as(api_client, channel)
+    chatters = api_client.get(f"/api/streams/{stream.id}/chatters").json()
+
+    assert [c["author_login"] for c in chatters] == ["fiel", "do_pico"]
+    top = chatters[0]
+    assert top["messages"] == 12
+    assert top["pct_of_total"] == 75.0
+    assert "nº 1 do chat" in top["labels"]
+    assert "presente a live toda" in top["labels"]
+    assert len(top["sample_messages"]) == 3
+
+    light = chatters[1]
+    assert light["peak_messages"] == 4
+    assert "ativou nos picos" in light["labels"]
+    assert light["followed_during_stream"] is True
+    assert "seguiu durante a live" in light["labels"]
+
+    other = make_channel(db)
+    login_as(api_client, other)
+    assert api_client.get(f"/api/streams/{stream.id}/chatters").status_code == 404
+
+
+def test_chatters_empty_stream(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel)
+    login_as(api_client, channel)
+    assert api_client.get(f"/api/streams/{stream.id}/chatters").json() == []
+
+
+def test_topic_detail_window_stats_and_404s(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=20)
+    segment = add_segment(db, stream, 300, "falando do assunto principal")
+    # dense chat inside the topic window, sparse elsewhere
+    add_chat(db, stream, 30, author="dentro", offset_seconds=290, spread_seconds=60)
+    add_chat(db, stream, 6, author="fora", offset_seconds=900, spread_seconds=200)
+    topic = add_insight(
+        db,
+        stream,
+        InsightType.TOPIC,
+        "Assunto\ndescrição",
+        {"segment_ids": [segment.id], "message_ids": [], "rank": 1},
+    )
+    summary = add_insight(
+        db, stream, InsightType.SUMMARY, "Resumo.", {"segment_ids": [segment.id]}
+    )
+
+    login_as(api_client, channel)
+    detail = api_client.get(f"/api/streams/{stream.id}/topics/{topic.id}").json()
+
+    assert detail["messages_in_window"] == 30
+    assert detail["chat_rate_lift"] is not None and detail["chat_rate_lift"] > 1
+    assert detail["top_chatters"][0]["author_login"] == "dentro"
+    assert len(detail["sample_messages"]) == 8
+    assert detail["cited_segments"][0]["text"] == "falando do assunto principal"
+
+    # summary insight is not a topic
+    assert (
+        api_client.get(f"/api/streams/{stream.id}/topics/{summary.id}").status_code
+        == 404
+    )
+    assert api_client.get(f"/api/streams/{stream.id}/topics/999999").status_code == 404

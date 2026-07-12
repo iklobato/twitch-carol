@@ -100,6 +100,32 @@ export type SearchHit = {
   author_login: string | null
 }
 
+export type ChatterMessage = { sent_at: string; text: string }
+
+export type ChatterOut = {
+  author_login: string
+  messages: number
+  pct_of_total: number
+  first_at: string
+  last_at: string
+  active_minutes: number
+  peak_messages: number
+  followed_during_stream: boolean
+  labels: string[]
+  sample_messages: ChatterMessage[]
+}
+
+export type TopicDetail = {
+  insight_id: number
+  window_start: string
+  window_end: string
+  messages_in_window: number
+  chat_rate_lift: number | null
+  top_chatters: { author_login: string; messages: number }[]
+  sample_messages: { id: number; sent_at: string; author_login: string; text: string }[]
+  cited_segments: CitedSegment[]
+}
+
 export type QueueItem = {
   stream_id: number
   job_type: string
