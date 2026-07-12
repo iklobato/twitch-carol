@@ -66,7 +66,7 @@ function mockFetch() {
       }
       const body = url.startsWith('/api/streams/6/timeline')
         ? { chat: [], viewers: [], events: [], peaks: [] }
-        : url.startsWith('/api/queue')
+        : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
           ? []
           : report
       return new Response(JSON.stringify(body), { status: 200 })

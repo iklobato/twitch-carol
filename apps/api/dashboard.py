@@ -531,6 +531,285 @@ def search(
     return sorted(hits, key=lambda hit: hit.at, reverse=True)[:SEARCH_LIMIT]
 
 
+CHATTERS_LIMIT = 20
+CHATTER_SAMPLE_MESSAGES = 3
+TOPIC_WINDOW_PADDING = timedelta(seconds=60)
+TOPIC_TOP_CHATTERS = 3
+TOPIC_SAMPLE_MESSAGES = 8
+FULL_PRESENCE_MARGIN = timedelta(minutes=5)
+
+
+class ChatterMessage(BaseModel):
+    sent_at: datetime
+    text: str
+
+
+class ChatterOut(BaseModel):
+    author_login: str
+    messages: int
+    pct_of_total: float
+    first_at: datetime
+    last_at: datetime
+    active_minutes: int
+    peak_messages: int
+    followed_during_stream: bool
+    labels: list[str]
+    sample_messages: list[ChatterMessage]
+
+
+def _follower_logins(db: Session, stream_id: int) -> set[str]:
+    rows = db.scalars(
+        select(Event.payload["user_login"].astext)
+        .where(Event.stream_id == stream_id)
+        .where(Event.type == "channel.follow")
+    )
+    return {login for login in rows if login}
+
+
+def _peak_message_counts(db: Session, stream: Stream) -> dict[str, int]:
+    peaks = db.scalars(select(Peak).where(Peak.stream_id == stream.id)).all()
+    if not peaks:
+        return {}
+    from sqlalchemy import and_, or_
+
+    in_any_peak = or_(
+        *(
+            and_(
+                ChatMessage.sent_at >= p.window_start,
+                ChatMessage.sent_at < p.window_end,
+            )
+            for p in peaks
+        )
+    )
+    rows = db.execute(
+        select(ChatMessage.author_login, func.count())
+        .where(ChatMessage.stream_id == stream.id)
+        .where(in_any_peak)
+        .group_by(ChatMessage.author_login)
+    ).all()
+    return {login: count for login, count in rows}
+
+
+def _chatter_samples(
+    db: Session, stream_id: int, logins: list[str]
+) -> dict[str, list[ChatterMessage]]:
+    if not logins:
+        return {}
+    ranked = (
+        select(
+            ChatMessage.author_login,
+            ChatMessage.sent_at,
+            ChatMessage.text,
+            func.row_number()
+            .over(
+                partition_by=ChatMessage.author_login,
+                order_by=ChatMessage.sent_at.desc(),
+            )
+            .label("rn"),
+        )
+        .where(ChatMessage.stream_id == stream_id)
+        .where(ChatMessage.author_login.in_(logins))
+        .subquery()
+    )
+    rows = db.execute(
+        select(ranked.c.author_login, ranked.c.sent_at, ranked.c.text)
+        .where(ranked.c.rn <= CHATTER_SAMPLE_MESSAGES)
+        .order_by(ranked.c.author_login, ranked.c.sent_at)
+    ).all()
+    samples: dict[str, list[ChatterMessage]] = {}
+    for login, sent_at, text in rows:
+        samples.setdefault(login, []).append(ChatterMessage(sent_at=sent_at, text=text))
+    return samples
+
+
+def _chatter_labels(
+    rank: int,
+    stream: Stream,
+    first_at: datetime,
+    last_at: datetime,
+    messages: int,
+    peak_messages: int,
+    followed: bool,
+) -> list[str]:
+    labels = []
+    if rank == 0:
+        labels.append("nº 1 do chat")
+    if (
+        stream.ended_at is not None
+        and first_at <= stream.started_at + FULL_PRESENCE_MARGIN
+        and last_at >= stream.ended_at - FULL_PRESENCE_MARGIN
+    ):
+        labels.append("presente a live toda")
+    if peak_messages > 0 and peak_messages >= messages / 2:
+        labels.append("ativou nos picos")
+    if followed:
+        labels.append("seguiu durante a live")
+    return labels
+
+
+@router.get("/streams/{stream_id}/chatters")
+def stream_chatters(
+    stream_id: int, channel: CurrentChannel, db: DbSession
+) -> list[ChatterOut]:
+    stream = _owned_stream(db, channel, stream_id)
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(ChatMessage.stream_id == stream.id)
+        )
+        or 0
+    )
+    if total == 0:
+        return []
+
+    minute_bucket = func.date_bin(
+        timedelta(seconds=60), ChatMessage.sent_at, datetime(2000, 1, 1)
+    )
+    rows = db.execute(
+        select(
+            ChatMessage.author_login,
+            func.count(),
+            func.min(ChatMessage.sent_at),
+            func.max(ChatMessage.sent_at),
+            func.count(func.distinct(minute_bucket)),
+        )
+        .where(ChatMessage.stream_id == stream.id)
+        .group_by(ChatMessage.author_login)
+        .order_by(func.count().desc())
+        .limit(CHATTERS_LIMIT)
+    ).all()
+
+    peak_counts = _peak_message_counts(db, stream)
+    followers = _follower_logins(db, stream.id)
+    samples = _chatter_samples(db, stream.id, [row[0] for row in rows])
+
+    chatters = []
+    for rank, (login, messages, first_at, last_at, active_minutes) in enumerate(rows):
+        followed = login in followers
+        peak_messages = peak_counts.get(login, 0)
+        chatters.append(
+            ChatterOut(
+                author_login=login,
+                messages=messages,
+                pct_of_total=round(messages / total * 100, 1),
+                first_at=first_at,
+                last_at=last_at,
+                active_minutes=active_minutes,
+                peak_messages=peak_messages,
+                followed_during_stream=followed,
+                labels=_chatter_labels(
+                    rank, stream, first_at, last_at, messages, peak_messages, followed
+                ),
+                sample_messages=samples.get(login, []),
+            )
+        )
+    return chatters
+
+
+class TopicChatter(BaseModel):
+    author_login: str
+    messages: int
+
+
+class TopicDetail(BaseModel):
+    insight_id: int
+    window_start: datetime
+    window_end: datetime
+    messages_in_window: int
+    chat_rate_lift: float | None
+    top_chatters: list[TopicChatter]
+    sample_messages: list[PeakChatMessage]
+    cited_segments: list[CitedSegment]
+
+
+@router.get("/streams/{stream_id}/topics/{insight_id}")
+def topic_detail(
+    stream_id: int, insight_id: int, channel: CurrentChannel, db: DbSession
+) -> TopicDetail:
+    stream = _owned_stream(db, channel, stream_id)
+    insight = db.get(Insight, insight_id)
+    if (
+        insight is None
+        or insight.stream_id != stream.id
+        or insight.type != InsightType.TOPIC
+    ):
+        raise HTTPException(status_code=404, detail="Topic not found")
+
+    segments = db.scalars(
+        select(TranscriptSegment)
+        .where(TranscriptSegment.stream_id == stream.id)
+        .where(TranscriptSegment.id.in_(_cited_ids(insight, "segment_ids")))
+        .order_by(TranscriptSegment.started_at)
+    ).all()
+    if not segments:
+        raise HTTPException(status_code=404, detail="Topic has no cited window")
+
+    window_start = min(s.started_at for s in segments) - TOPIC_WINDOW_PADDING
+    window_end = max(s.ended_at for s in segments) + TOPIC_WINDOW_PADDING
+
+    in_window = (
+        select(ChatMessage)
+        .where(ChatMessage.stream_id == stream.id)
+        .where(ChatMessage.sent_at >= window_start)
+        .where(ChatMessage.sent_at < window_end)
+    )
+    messages_in_window = (
+        db.scalar(select(func.count()).select_from(in_window.subquery())) or 0
+    )
+
+    lift = None
+    total_messages = (
+        db.scalar(
+            select(func.count())
+            .select_from(ChatMessage)
+            .where(ChatMessage.stream_id == stream.id)
+        )
+        or 0
+    )
+    ended_at = stream.ended_at if stream.ended_at is not None else stream.started_at
+    stream_minutes = max((ended_at - stream.started_at).total_seconds() / 60, 1)
+    window_minutes = max((window_end - window_start).total_seconds() / 60, 1)
+    stream_rate = total_messages / stream_minutes
+    if stream_rate > 0:
+        lift = round((messages_in_window / window_minutes) / stream_rate, 2)
+
+    top_rows = db.execute(
+        select(ChatMessage.author_login, func.count())
+        .where(ChatMessage.stream_id == stream.id)
+        .where(ChatMessage.sent_at >= window_start)
+        .where(ChatMessage.sent_at < window_end)
+        .group_by(ChatMessage.author_login)
+        .order_by(func.count().desc())
+        .limit(TOPIC_TOP_CHATTERS)
+    ).all()
+    sample = db.scalars(
+        in_window.order_by(ChatMessage.sent_at).limit(TOPIC_SAMPLE_MESSAGES)
+    ).all()
+
+    return TopicDetail(
+        insight_id=insight.id,
+        window_start=window_start,
+        window_end=window_end,
+        messages_in_window=messages_in_window,
+        chat_rate_lift=lift,
+        top_chatters=[
+            TopicChatter(author_login=login, messages=count)
+            for login, count in top_rows
+        ],
+        sample_messages=[
+            PeakChatMessage(
+                id=m.id, sent_at=m.sent_at, author_login=m.author_login, text=m.text
+            )
+            for m in sample
+        ],
+        cited_segments=[
+            CitedSegment(id=s.id, started_at=s.started_at, text=s.text)
+            for s in segments
+        ],
+    )
+
+
 class QueueItem(BaseModel):
     stream_id: int
     job_type: str
