@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Awaitable, Callable
 
@@ -52,6 +53,7 @@ class LivePixClient:
         self._client_secret = settings.livepix_client_secret
         self._http = httpx.AsyncClient(base_url=LIVEPIX_API_BASE, timeout=10.0)
         self._token: str | None = None
+        self._token_lock = asyncio.Lock()
 
     async def __aenter__(self) -> "LivePixClient":
         return self
@@ -62,19 +64,22 @@ class LivePixClient:
     async def _authorize(self) -> str:
         if self._token:
             return self._token
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(
-                LIVEPIX_TOKEN_URL,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self._client_id,
-                    "client_secret": self._client_secret,
-                    "scope": LIVEPIX_SCOPES,
-                },
-            )
-        response.raise_for_status()
-        self._token = response.json()["access_token"]
-        return self._token
+        async with self._token_lock:
+            if self._token:
+                return self._token
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(
+                    LIVEPIX_TOKEN_URL,
+                    data={
+                        "grant_type": "client_credentials",
+                        "client_id": self._client_id,
+                        "client_secret": self._client_secret,
+                        "scope": LIVEPIX_SCOPES,
+                    },
+                )
+            response.raise_for_status()
+            self._token = response.json()["access_token"]
+            return self._token
 
     async def _get(self, path: str) -> dict:
         token = await self._authorize()

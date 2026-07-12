@@ -53,4 +53,6 @@ class StreamAlert:
 
 
 def tier_label(tier: str | None) -> str:
-    return TIERS.get(str(tier), "Tier 1")
+    if tier is None:
+        return "Tier 1"
+    return TIERS.get(str(tier), str(tier))

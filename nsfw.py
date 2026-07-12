@@ -26,7 +26,8 @@ class NsfwFilter:
         if not path.exists():
             return []
         lines = path.read_text(encoding="utf-8").splitlines()
-        return [w.strip().lower() for w in lines if w.strip() and not w.startswith("#")]
+        words = [line.strip().lower() for line in lines]
+        return [w for w in words if w and not w.startswith("#")]
 
     def is_flagged(self, text: str) -> bool:
         return profanity.contains_profanity(text)

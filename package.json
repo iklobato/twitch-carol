@@ -1,0 +1,12 @@
+{
+  "name": "twitch-carol-overlay-tests",
+  "private": true,
+  "description": "Vitest suite for the OBS overlay client (static/overlay.js)",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1",
+    "vitest": "^2.1.9"
+  }
+}

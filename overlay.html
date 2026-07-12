@@ -12,39 +12,12 @@
   #alert.show { transform: translateX(-50%) translateY(0); }
   #headline { font-size: 28px; font-weight: 700; }
   #detail { font-size: 18px; opacity: .85; margin-top: 6px; }
-  .pix_donation { box-shadow: 0 8px 40px rgba(16, 185, 129, 0.6); }
-  .gift { box-shadow: 0 8px 40px rgba(244, 114, 182, 0.6); }
+  #alert.pix_donation { box-shadow: 0 8px 40px rgba(16, 185, 129, 0.6); }
+  #alert.gift { box-shadow: 0 8px 40px rgba(244, 114, 182, 0.6); }
 </style>
 </head>
 <body>
 <div id="alert"><div id="headline"></div><div id="detail"></div></div>
-<script>
-  const box = document.getElementById('alert');
-  const headline = document.getElementById('headline');
-  const detail = document.getElementById('detail');
-  const queue = [];
-  let busy = false;
-
-  function play(alert) {
-    busy = true;
-    box.className = alert.kind;
-    headline.textContent = alert.headline;
-    detail.textContent = alert.detail || '';
-    box.classList.add('show');
-    setTimeout(() => {
-      box.classList.remove('show');
-      setTimeout(() => { busy = false; pump(); }, 600);
-    }, 6000);
-  }
-
-  function pump() { if (!busy && queue.length) play(queue.shift()); }
-
-  function connect() {
-    const ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onmessage = (event) => { queue.push(JSON.parse(event.data)); pump(); };
-    ws.onclose = () => setTimeout(connect, 2000);
-  }
-  connect();
-</script>
+<script src="/static/overlay.js"></script>
 </body>
 </html>
