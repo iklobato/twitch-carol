@@ -1,143 +1,77 @@
-# twitch-carol
+# twitch logger
 
-Um ajudante para a sua live na Twitch.
+Grava tudo que acontece numa live da Twitch em um arquivo de texto: o chat, a
+fala do streamer (transcrita) e os eventos (sub, timeout, ban, raid, follow,
+pontos do canal, live on/off). Tudo no mesmo arquivo `chat-log.txt`, uma linha
+por evento, na ordem em que acontece.
 
-Ele funciona junto com a sua transmissão e cuida de três coisas: mostra avisos
-na tela quando alguém te ajuda, vigia o chat e tira mensagens com palavrão, e
-avisa na tela quando você recebe um Pix.
+## O que ele grava
 
-## O que ele faz
+- **Chat**: mensagens, sub, resub, timeout, ban, raid, mensagem apagada (leitura
+  anonima, funciona em qualquer canal).
+- **Fala do streamer**: transcrita com o faster-whisper (linhas com 🎤).
+- **Eventos do canal** (EventSub): live comecou/terminou, follow, resgate de
+  pontos. Follow e pontos so funcionam no seu proprio canal ou onde voce e mod.
 
-### 1. Avisos de inscrição (sub) na tela
-Quando alguém se inscreve no seu canal, renova a inscrição ou dá inscrições de
-presente para outras pessoas, aparece um aviso na sua transmissão agradecendo.
+Roda tudo junto em um processo so, com asyncio.
 
-Funciona quando:
-- Alguém se inscreve
-- Alguém renova a inscrição (com a mensagem que a pessoa escreveu)
-- Alguém dá inscrição de presente
+## O que voce precisa
 
-### 2. Vigia o chat e tira mensagem
-O programa lê as mensagens do chat e compara com uma lista de palavras
-(palavrão, ofensa, conteúdo). Quando alguém manda uma dessas palavras, ele apaga
-a mensagem na hora. Se você quiser, ele também pode deixar a pessoa de castigo
-(timeout) por um tempo.
+1. Python 3.11+.
+2. `ffmpeg` instalado no sistema.
+3. Uma conta de aplicativo na Twitch (de graca, em dev.twitch.tv/console/apps).
 
-A lista já vem em português e você pode aumentar ou diminuir quando quiser. É um
-arquivo de texto.
-
-### 3. Avisos de Pix (doação) na tela
-Quando alguém te manda um Pix pelo LivePix, aparece um aviso na sua transmissão
-com o valor e o nome de quem ajudou.
-
-### Onde os avisos aparecem
-Os avisos são mostrados por uma telinha (chamada de overlay) que você coloca
-dentro do OBS.
-
-## O que você precisa antes de começar
-
-1. Um computador com o programa Python (versão 3.11 ou acima).
-2. O OBS (o programa que você usa para transmitir).
-3. Uma conta de aplicativo na Twitch (é de graça; você cria no site de
-   desenvolvedores da Twitch).
-4. Uma conta no LivePix com acesso de aplicativo (para receber os avisos de Pix).
-
-Se você não tem as contas de aplicativo da Twitch e do LivePix, peça ajuda para
-alguém de confiança que entenda um pouco.
-
-## Como instalar (passo a passo)
-
-Abra o programa Terminal do seu computador e digite os comandos abaixo, um de
-cada vez, apertando Enter depois de cada linha.
-
-1. Entrar na pasta do projeto:
-   ```
-   cd caminho/para/twitch-carol
-   ```
-
-2. Criar um espaço para o programa:
-   ```
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Instalar as peças que o programa precisa:
-   ```
-   pip install -r requirements.txt
-   ```
-
-Pronto.
-
-## Como configurar
-
-O programa precisa saber as suas senhas e códigos de acesso. Eles ficam em um
-arquivo chamado `.env`.
-
-1. Faça uma cópia do arquivo de exemplo:
-   ```
-   cp env.example .env
-   ```
-
-2. Abra o arquivo `.env` em qualquer editor de texto e preencha os campos. O
-   arquivo tem uma explicação ao lado de cada campo. Os campos são:
-   - Os dados da sua conta de aplicativo da Twitch.
-   - Os dados da sua conta de aplicativo do LivePix.
-   - Uma senha que você inventa para o Pix (qualquer texto serve; não conte para
-     ninguém).
-
-Atenção: esse arquivo `.env` tem as suas senhas. Nunca mande ele para ninguém e
-nunca coloque na internet.
-
-## Como ligar o programa
-
-Depois de instalar e configurar, ligue o programa assim:
+## Instalar
 
 ```
+python3 -m venv .venv
 source .venv/bin/activate
-python main.py
+pip install -r requirements.txt
 ```
 
-Não feche essa janela enquanto estiver transmitindo. Para desligar, clique na
-janela e aperte as teclas Control e C ao mesmo tempo.
+## Configurar
 
-Na primeira vez, a Twitch vai pedir para você autorizar o programa. Basta abrir o
-endereço que aparece na tela e clicar em permitir, com a conta do robô e com a
-sua conta de canal.
+Copie o exemplo e preencha:
 
-## Como colocar os avisos no OBS
+```
+cp env.example .env
+```
 
-1. No OBS, crie uma Fonte do tipo Fonte do Navegador (Browser Source).
-2. No campo de endereço, coloque:
-   ```
-   http://127.0.0.1:8080/overlay
-   ```
-3. Posicione a telinha onde você quiser na sua transmissão.
+O `.env` precisa de tres valores:
 
-A partir daí, todo aviso de inscrição e de Pix vai aparecer ali.
+- `TWITCH_CHANNEL`: o login do canal (ex: `iklobato`), nao o numero.
+- `TWITCH_CLIENT_ID`: o Client-ID do seu app da Twitch.
+- `TWITCH_USER_TOKEN`: um user OAuth token com os scopes
+  `moderator:read:followers` e `channel:read:redemptions`. Gere em
+  twitchtokengenerator.com (Custom Scope Token).
 
-## Como mudar a lista de palavras
+O Client-ID e o token tem que ser do mesmo app, senao a Twitch recusa os
+eventos. Nunca mande o `.env` para ninguem.
 
-A lista fica no arquivo `nsfw_words_pt.txt`. É um texto, com uma palavra por
-linha. Para deixar o chat com menos palavrão, adicione mais palavras, uma
-embaixo da outra. Para liberar alguma palavra, apague a linha dela.
+## Rodar
 
-As linhas que começam com `#` são comentários para te ajudar a se organizar.
-Elas não contam como palavra da lista.
+```
+python stream_logger.py
+```
 
-## Dúvidas
+Para um canal diferente do `.env`, sem editar o arquivo:
 
-**Os avisos não aparecem no OBS.**
-Confira se o programa está funcionando (a janela do Terminal precisa continuar
-funcionando) e se o endereço da Fonte do Navegador é o que está acima.
+```
+TWITCH_CHANNEL=nomedocanal python stream_logger.py
+```
 
-**O aviso de Pix não chega.**
-O LivePix precisa conseguir falar com o seu computador pela internet. Para isso
-você usa um programa que cria um endereço na internet (por exemplo o ngrok).
-Depois coloque esse endereço nas configurações de aviso do LivePix. Se precisar,
-peça ajuda para configurar essa parte.
+O resultado vai para `chat-log.txt` na mesma pasta. Para desligar, aperte
+Control e C.
 
-**O programa apagou uma mensagem que não devia.**
-Abra o arquivo `nsfw_words_pt.txt` e apague a palavra que causou isso.
+## Testes
 
-**O programa deixou passar uma mensagem que devia apagar.**
-Abra o arquivo `nsfw_words_pt.txt` e adicione a palavra que faltou.
+```
+python test_stream_logger.py
+```
+
+## Ajustes de transcricao (opcionais, no `.env`)
+
+- `WHISPER_MODEL`: `base`, `small` (padrao), `medium`, `large-v3`. Maior = melhor
+  e mais lento.
+- `WHISPER_LANG`: idioma (padrao `pt`).
+- `TRANSCRIBE_CHUNK_SECONDS`: tamanho do bloco de audio (padrao 20).
