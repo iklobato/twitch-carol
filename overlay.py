@@ -31,5 +31,8 @@ class OverlayHub:
                 await socket.send_json(payload)
             except (WebSocketDisconnect, RuntimeError):
                 dead.append(socket)
+            except Exception:
+                logger.exception("unexpected error sending to overlay socket")
+                dead.append(socket)
         for socket in dead:
             self.disconnect(socket)

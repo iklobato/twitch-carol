@@ -11,6 +11,10 @@ wheels/
 
 # Tooling caches
 .ruff_cache/
+.pytest_cache/
+
+# Node (overlay tests)
+node_modules/
 
 # Secrets
 .env
