@@ -1,0 +1,21 @@
+# Production: SITE_ADDRESS env (e.g. 1-2-3-4.sslip.io) enables automatic
+# Let's Encrypt TLS. Swap for a real domain by changing SITE_ADDRESS only.
+{$SITE_ADDRESS} {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /auth/* {
+		reverse_proxy api:8000
+	}
+	handle /eventsub/* {
+		reverse_proxy api:8000
+	}
+	handle /healthz {
+		reverse_proxy api:8000
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

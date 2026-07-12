@@ -1,0 +1,57 @@
+[project]
+name = "stream-intel"
+version = "0.1.0"
+description = "Multimodal analytics platform for Twitch streamers"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "redis>=5.0",
+    "cryptography>=42",
+    "httpx>=0.27",
+    "boto3>=1.34",
+    "streamlink>=6.7",
+    "faster-whisper>=1.1",
+    # onnxruntime >=1.20 dropped Intel-mac wheels; 1.19 still ships them
+    # (dev laptop) and works on the linux droplet the same way.
+    "onnxruntime<1.20",
+    "numpy>=1.26",
+    # linux-only: analysis runs in Docker; building llama.cpp on the Intel
+    # mac would need a local toolchain for no benefit (tests use a fake LLM)
+    "llama-cpp-python>=0.3; sys_platform == 'linux'",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*", "apps*", "workers*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["stream_logger.py", "test_stream_logger.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+files = ["core", "apps", "workers", "tests", "migrations"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

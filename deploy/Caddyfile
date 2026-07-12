@@ -1,0 +1,20 @@
+# TLS and real domain land in M7. Plain HTTP reverse proxy for now.
+:80 {
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /auth/* {
+		reverse_proxy api:8000
+	}
+	handle /eventsub/* {
+		reverse_proxy api:8000
+	}
+	handle /healthz {
+		reverse_proxy api:8000
+	}
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
