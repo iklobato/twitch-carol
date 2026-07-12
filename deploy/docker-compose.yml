@@ -1,0 +1,154 @@
+# Dev credentials (app/app) are compose-local only; production values come
+# from .env (see .env.example). Worker services land in M3/M4.
+services:
+  postgres:
+    restart: unless-stopped
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      # 5433: another compose project (gateway) already holds 5432 on this host
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    restart: unless-stopped
+    image: valkey/valkey:8-alpine
+    ports:
+      # 6380: another compose project (gateway) already holds 6379 on this host
+      - "127.0.0.1:6380:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: sh -c "alembic upgrade head && uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"
+    env_file:
+      - path: ./sim.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+      VALKEY_URL: redis://valkey:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  worker-capture:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from core.db import get_engine; get_engine().connect().close()"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: python -m workers.capture.main
+    env_file:
+      - path: ./sim.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+      VALKEY_URL: redis://valkey:6379/0
+    volumes:
+      - ../data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  worker-transcribe:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from core.db import get_engine; get_engine().connect().close()"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: python -m workers.transcribe.main
+    env_file:
+      - path: ./sim.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+      VALKEY_URL: redis://valkey:6379/0
+    volumes:
+      - ../data:/data
+      - whisper_cache:/root/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  worker-analyze:
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from core.db import get_engine; get_engine().connect().close()"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: python -m workers.analyze.main
+    env_file:
+      - path: ./sim.env
+        required: false
+      - path: ../.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
+      VALKEY_URL: redis://valkey:6379/0
+    volumes:
+      - ../data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  caddy:
+    restart: unless-stopped
+    image: caddy:2
+    ports:
+      - "8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../apps/web/dist:/srv:ro
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  whisper_cache:

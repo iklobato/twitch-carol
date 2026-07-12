@@ -1,0 +1,60 @@
+# Production override:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Interpolation values (SITE_ADDRESS, STREAMINTEL_DATABASE_URL) come from
+# deploy/.env on the server. App secrets stay in the repo-root .env.
+# Postgres is DigitalOcean Managed (private VPC host); the local postgres
+# service only runs under the "local-db" profile.
+services:
+  api:
+    # !override on env_file: dev defaults from sim.env must never leak to prod
+    env_file: !override
+      - path: ../.env
+    environment:
+      DATABASE_URL: ${STREAMINTEL_DATABASE_URL:?set in deploy/.env}
+    depends_on: !override
+      valkey:
+        condition: service_healthy
+
+  worker-capture:
+    env_file: !override
+      - path: ../.env
+    environment:
+      DATABASE_URL: ${STREAMINTEL_DATABASE_URL:?set in deploy/.env}
+    depends_on: !override
+      valkey:
+        condition: service_healthy
+
+  worker-transcribe:
+    env_file: !override
+      - path: ../.env
+    environment:
+      DATABASE_URL: ${STREAMINTEL_DATABASE_URL:?set in deploy/.env}
+    depends_on: !override
+      valkey:
+        condition: service_healthy
+
+  worker-analyze:
+    env_file: !override
+      - path: ../.env
+    environment:
+      DATABASE_URL: ${STREAMINTEL_DATABASE_URL:?set in deploy/.env}
+    depends_on: !override
+      valkey:
+        condition: service_healthy
+
+  postgres:
+    profiles: ["local-db"]
+
+  caddy:
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes: !override
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - ../apps/web/dist:/srv:ro
+      - caddy_data:/data
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS to the public hostname}
+
+volumes:
+  caddy_data:

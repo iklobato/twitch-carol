@@ -1,0 +1,221 @@
+"""Database models. All timestamps are UTC (timestamptz)."""
+
+from __future__ import annotations
+
+import enum
+from datetime import datetime
+
+from sqlalchemy import (
+    BigInteger,
+    Computed,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Identity,
+    Index,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class StreamStatus(enum.StrEnum):
+    CAPTURING = "capturing"
+    QUEUED_TRANSCRIPTION = "queued_transcription"
+    TRANSCRIBING = "transcribing"
+    QUEUED_ANALYSIS = "queued_analysis"
+    ANALYZING = "analyzing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class SegmentKind(enum.StrEnum):
+    SPEECH = "speech"
+    MUSIC = "music"
+    GUEST_CONVERSATION = "guest_conversation"
+    SILENCE = "silence"
+
+
+class InsightType(enum.StrEnum):
+    SUMMARY = "summary"
+    PEAK_EXPLANATION = "peak_explanation"
+    TOPIC = "topic"
+
+
+class InsightFeedback(enum.StrEnum):
+    USEFUL = "useful"
+    NOT_USEFUL = "not_useful"
+
+
+class JobStatus(enum.StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [str(member.value) for member in enum_cls]
+
+
+def _enum(enum_cls: type[enum.Enum], name: str) -> Enum:
+    # VARCHAR + CHECK constraint instead of a native pg enum: adding members
+    # later is a plain migration, not an ALTER TYPE dance.
+    return Enum(enum_cls, name=name, native_enum=False, values_callable=_enum_values)
+
+
+class Channel(Base):
+    __tablename__ = "channels"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    login: Mapped[str] = mapped_column(String(64), unique=True)
+    display_name: Mapped[str] = mapped_column(String(128))
+    access_token_encrypted: Mapped[bytes | None]
+    refresh_token_encrypted: Mapped[bytes | None]
+    scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Stream(Base):
+    __tablename__ = "streams"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    title: Mapped[str | None] = mapped_column(String(256))
+    category: Mapped[str | None] = mapped_column(String(128))
+    status: Mapped[StreamStatus] = mapped_column(
+        _enum(StreamStatus, "stream_status"), default=StreamStatus.CAPTURING
+    )
+    audit: Mapped[dict | None] = mapped_column(JSONB)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_stream_sent", "stream_id", "sent_at"),
+        Index("ix_chat_messages_text_search", "text_search", postgresql_using="gin"),
+        {"postgresql_partition_by": "RANGE (sent_at)"},
+    )
+
+    # Partitioned by month on sent_at, so the partition key joins the PK.
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    message_id: Mapped[str | None] = mapped_column(String(64))
+    author_id: Mapped[str] = mapped_column(String(64))
+    author_login: Mapped[str] = mapped_column(String(64))
+    badges: Mapped[dict | None] = mapped_column(JSONB)
+    emotes: Mapped[dict | None] = mapped_column(JSONB)
+    text: Mapped[str] = mapped_column(Text)
+    text_search: Mapped[str | None] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('portuguese', text)", persisted=True)
+    )
+
+
+class Event(Base):
+    __tablename__ = "events"
+    __table_args__ = (Index("ix_events_stream_occurred", "stream_id", "occurred_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    type: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict | None] = mapped_column(JSONB)
+    amount: Mapped[int | None]
+
+
+class TranscriptSegment(Base):
+    __tablename__ = "transcript_segments"
+    __table_args__ = (
+        Index("ix_transcript_segments_stream_started", "stream_id", "started_at"),
+        Index(
+            "ix_transcript_segments_text_search", "text_search", postgresql_using="gin"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    kind: Mapped[SegmentKind] = mapped_column(_enum(SegmentKind, "segment_kind"))
+    text: Mapped[str | None] = mapped_column(Text)
+    text_search: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('portuguese', coalesce(text, ''))", persisted=True),
+    )
+
+
+class ViewerSample(Base):
+    __tablename__ = "viewer_samples"
+    __table_args__ = (
+        Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
+    sampled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    viewer_count: Mapped[int]
+
+
+class Peak(Base):
+    __tablename__ = "peaks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metric: Mapped[str] = mapped_column(String(32))
+    score: Mapped[float] = mapped_column(Float)
+
+
+class Insight(Base):
+    __tablename__ = "insights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    type: Mapped[InsightType] = mapped_column(_enum(InsightType, "insight_type"))
+    content: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    feedback: Mapped[InsightFeedback | None] = mapped_column(
+        _enum(InsightFeedback, "insight_feedback")
+    )
+    model_used: Mapped[str] = mapped_column(String(128))
+    tokens_in: Mapped[int]
+    tokens_out: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    type: Mapped[str] = mapped_column(String(64))
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    status: Mapped[JobStatus] = mapped_column(
+        _enum(JobStatus, "job_status"), default=JobStatus.QUEUED
+    )
+    attempts: Mapped[int] = mapped_column(default=0)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

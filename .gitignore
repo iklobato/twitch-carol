@@ -11,6 +11,20 @@ wheels/
 
 # Tooling caches
 .ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Local data (sim audio input, local audio store)
+data/
+
+# Node
+node_modules/
+apps/web/dist/
+
+# Local data/artifacts
+chat-log.txt
+chat-log.csv
+.playwright-mcp/
 
 # Secrets
 .env

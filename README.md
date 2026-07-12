@@ -1,143 +1,161 @@
-# twitch-carol
+# Stream Intel
 
-Um ajudante para a sua live na Twitch.
+Plataforma de analytics multimodal para streamers da Twitch. Captura chat,
+eventos (EventSub) e áudio de cada live, transcreve com faster-whisper,
+detecta picos por SQL e gera relatório com LLM local (llama.cpp): resumo,
+explicação dos picos e assuntos ranqueados, sempre com evidência clicável
+verificada contra o banco. Todo o processamento de IA roda em CPU local;
+nenhuma API paga no caminho principal.
 
-Ele funciona junto com a sua transmissão e cuida de três coisas: mostra avisos
-na tela quando alguém te ajuda, vigia o chat e tira mensagens com palavrão, e
-avisa na tela quando você recebe um Pix.
+Produção de referência: https://streamintel.cc
 
-## O que ele faz
-
-### 1. Avisos de inscrição (sub) na tela
-Quando alguém se inscreve no seu canal, renova a inscrição ou dá inscrições de
-presente para outras pessoas, aparece um aviso na sua transmissão agradecendo.
-
-Funciona quando:
-- Alguém se inscreve
-- Alguém renova a inscrição (com a mensagem que a pessoa escreveu)
-- Alguém dá inscrição de presente
-
-### 2. Vigia o chat e tira mensagem
-O programa lê as mensagens do chat e compara com uma lista de palavras
-(palavrão, ofensa, conteúdo). Quando alguém manda uma dessas palavras, ele apaga
-a mensagem na hora. Se você quiser, ele também pode deixar a pessoa de castigo
-(timeout) por um tempo.
-
-A lista já vem em português e você pode aumentar ou diminuir quando quiser. É um
-arquivo de texto.
-
-### 3. Avisos de Pix (doação) na tela
-Quando alguém te manda um Pix pelo LivePix, aparece um aviso na sua transmissão
-com o valor e o nome de quem ajudou.
-
-### Onde os avisos aparecem
-Os avisos são mostrados por uma telinha (chamada de overlay) que você coloca
-dentro do OBS.
-
-## O que você precisa antes de começar
-
-1. Um computador com o programa Python (versão 3.11 ou acima).
-2. O OBS (o programa que você usa para transmitir).
-3. Uma conta de aplicativo na Twitch (é de graça; você cria no site de
-   desenvolvedores da Twitch).
-4. Uma conta no LivePix com acesso de aplicativo (para receber os avisos de Pix).
-
-Se você não tem as contas de aplicativo da Twitch e do LivePix, peça ajuda para
-alguém de confiança que entenda um pouco.
-
-## Como instalar (passo a passo)
-
-Abra o programa Terminal do seu computador e digite os comandos abaixo, um de
-cada vez, apertando Enter depois de cada linha.
-
-1. Entrar na pasta do projeto:
-   ```
-   cd caminho/para/twitch-carol
-   ```
-
-2. Criar um espaço para o programa:
-   ```
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Instalar as peças que o programa precisa:
-   ```
-   pip install -r requirements.txt
-   ```
-
-Pronto.
-
-## Como configurar
-
-O programa precisa saber as suas senhas e códigos de acesso. Eles ficam em um
-arquivo chamado `.env`.
-
-1. Faça uma cópia do arquivo de exemplo:
-   ```
-   cp env.example .env
-   ```
-
-2. Abra o arquivo `.env` em qualquer editor de texto e preencha os campos. O
-   arquivo tem uma explicação ao lado de cada campo. Os campos são:
-   - Os dados da sua conta de aplicativo da Twitch.
-   - Os dados da sua conta de aplicativo do LivePix.
-   - Uma senha que você inventa para o Pix (qualquer texto serve; não conte para
-     ninguém).
-
-Atenção: esse arquivo `.env` tem as suas senhas. Nunca mande ele para ninguém e
-nunca coloque na internet.
-
-## Como ligar o programa
-
-Depois de instalar e configurar, ligue o programa assim:
+## Arquitetura
 
 ```
-source .venv/bin/activate
-python main.py
+apps/api           FastAPI: OAuth Twitch, webhook EventSub, API do dashboard
+apps/web           React + Vite + Tailwind + Chart.js (build servido pelo Caddy)
+workers/capture    IRC do chat, amostrador de viewers, gravador HLS->Opus
+workers/transcribe VAD + faster-whisper (fila com prioridade por próxima live)
+workers/analyze    picos por SQL + insights via llama.cpp com evidência validada
+core               modelos, config, filas, crypto, cliente Twitch, métricas
+scripts            simulador de live, seed de estados, benchmark, backup
+deploy             Dockerfile, docker compose (dev + prod), Caddyfile
 ```
 
-Não feche essa janela enquanto estiver transmitindo. Para desligar, clique na
-janela e aperte as teclas Control e C ao mesmo tempo.
+Serviços do compose: `api`, `worker-capture`, `worker-transcribe`,
+`worker-analyze`, `valkey`, `caddy` e `postgres` (dev; em produção usamos um
+Postgres gerenciado e o serviço local fica atrás do profile `local-db`).
 
-Na primeira vez, a Twitch vai pedir para você autorizar o programa. Basta abrir o
-endereço que aparece na tela e clicar em permitir, com a conta do robô e com a
-sua conta de canal.
+## Desenvolvimento local
 
-## Como colocar os avisos no OBS
+Pré-requisitos: Docker, uv, Node 20+.
 
-1. No OBS, crie uma Fonte do tipo Fonte do Navegador (Browser Source).
-2. No campo de endereço, coloque:
-   ```
-   http://127.0.0.1:8080/overlay
-   ```
-3. Posicione a telinha onde você quiser na sua transmissão.
+```bash
+uv sync                        # deps Python (.venv)
+make web                       # build do frontend (apps/web/dist)
+make up                        # sobe o stack (Caddy em http://localhost:8080)
+```
 
-A partir daí, todo aviso de inscrição e de Pix vai aparecer ali.
+Portas no host: web/api `8080`, Postgres `5433`, Valkey `6380`.
+`deploy/sim.env` fornece defaults de dev (secret do EventSub, whisper tiny,
+LLM 1.5B); qualquer valor no `.env` da raiz tem precedência.
 
-## Como mudar a lista de palavras
+Modelos locais (uma vez): baixe um GGUF para `data/models/` e confira o
+caminho em `deploy/sim.env` (`LLM_GGUF_PATH`). O whisper baixa sozinho no
+primeiro uso.
 
-A lista fica no arquivo `nsfw_words_pt.txt`. É um texto, com uma palavra por
-linha. Para deixar o chat com menos palavrão, adicione mais palavras, uma
-embaixo da outra. Para liberar alguma palavra, apague a linha dela.
+### Simulação de live (sem Twitch real)
 
-As linhas que começam com `#` são comentários para te ajudar a se organizar.
-Elas não contam como palavra da lista.
+```bash
+uv run python scripts/simulate_stream.py --minutes 4 --audio caminho/audio.mp3
+```
 
-## Dúvidas
+Publica chat/eventos/viewers/áudio pelos MESMOS caminhos de código da
+captura real (webhook assinado, parser IRC). Ao final, a live percorre
+transcrição -> análise -> `ready` sozinha.
 
-**Os avisos não aparecem no OBS.**
-Confira se o programa está funcionando (a janela do Terminal precisa continuar
-funcionando) e se o endereço da Fonte do Navegador é o que está acima.
+Para popular o dashboard com todos os estados do pipeline (e uma live
+analisável pelo LLM):
 
-**O aviso de Pix não chega.**
-O LivePix precisa conseguir falar com o seu computador pela internet. Para isso
-você usa um programa que cria um endereço na internet (por exemplo o ngrok).
-Depois coloque esse endereço nas configurações de aviso do LivePix. Se precisar,
-peça ajuda para configurar essa parte.
+```bash
+docker compose -f deploy/docker-compose.yml stop worker-transcribe worker-analyze
+uv run python scripts/seed_pipeline_states.py            # canal mock
+docker compose -f deploy/docker-compose.yml start worker-transcribe worker-analyze
+```
 
-**O programa apagou uma mensagem que não devia.**
-Abra o arquivo `nsfw_words_pt.txt` e apague a palavra que causou isso.
+### Testes e qualidade
 
-**O programa deixou passar uma mensagem que devia apagar.**
-Abra o arquivo `nsfw_words_pt.txt` e adicione a palavra que faltou.
+```bash
+make lint       # ruff + mypy
+make test       # pytest (testes de banco usam o Postgres do compose)
+make test-web   # vitest (frontend)
+make test-all   # tudo
+```
+
+## Variáveis de ambiente
+
+Documentadas em `deploy/env.example`. Essenciais em produção:
+`TWITCH_CLIENT_ID/SECRET` (app em dev.twitch.tv com redirect
+`https://SEU_DOMINIO/auth/callback`), `TWITCH_EVENTSUB_SECRET` (string
+aleatória), `PUBLIC_BASE_URL` (https), `FERNET_KEY`, `DATABASE_URL`,
+`SPACES_*` (áudio + backups; sem eles cai em disco local), `SIMULATION=0`.
+
+## Deploy em produção (droplet DigitalOcean)
+
+Layout de referência: 1 droplet s-4vcpu-8gb (docker) + Postgres gerenciado.
+Para escalar, os workers movem-se para droplets próprios apontando para o
+mesmo banco/Valkey; a imagem é a mesma, muda o `command`.
+
+Do zero, num droplet limpo (imagem "Docker on Ubuntu"):
+
+```bash
+# 1. infra
+doctl compute droplet create stream-intel --size s-4vcpu-8gb --region nyc3 \
+  --image docker-20-04 --ssh-keys SUA_CHAVE --wait
+ssh root@IP "ufw allow 80/tcp && ufw allow 443/tcp && mkdir -p /opt/stream-intel"
+
+# 2. DNS: aponte um registro A do seu domínio para o IP do droplet
+
+# 3. banco gerenciado (ou use o postgres do compose com --profile local-db)
+doctl databases db create CLUSTER_ID streamintel
+doctl databases user create CLUSTER_ID streamintel_app
+doctl databases firewalls append CLUSTER_ID --rule droplet:DROPLET_ID
+# conceda: ALTER SCHEMA public OWNER TO streamintel_app (como doadmin)
+
+# 4. código e segredos
+rsync -az --exclude .git --exclude .venv --exclude node_modules \
+  --exclude data --exclude .env ./ root@IP:/opt/stream-intel/
+ssh root@IP  # crie /opt/stream-intel/.env (veja deploy/env.example)
+             # e /opt/stream-intel/deploy/.env com:
+             #   SITE_ADDRESS=seu.dominio
+             #   STREAMINTEL_DATABASE_URL=postgresql+psycopg://...sslmode=require
+
+# 5. modelo LLM e subida
+ssh root@IP "mkdir -p /opt/stream-intel/data/models && curl -L -o \
+  /opt/stream-intel/data/models/qwen2.5-3b-instruct-q4_k_m.gguf \
+  'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf'"
+ssh root@IP "cd /opt/stream-intel/deploy && docker compose \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build"
+```
+
+O Caddy emite o certificado TLS sozinho quando o DNS resolve. Migrações
+rodam no boot da api. Depois do primeiro login em `https://SEU_DOMINIO`,
+as subscriptions EventSub são registradas automaticamente e qualquer live
+do canal passa a ser capturada.
+
+Atualização de versão: repita o rsync do passo 4 e o `up -d --build` do
+passo 5 (o cache de camadas torna rebuilds de código rápidos).
+
+## Backup e restauração
+
+Backup diário via cron no droplet (pg_dump -> gzip -> Spaces `backups/`
+com retenção de 30 dias; sem Spaces, `data/backups/` com últimos 7):
+
+```cron
+0 9 * * * cd /opt/stream-intel/deploy && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture python scripts/backup_db.py >> /var/log/stream-intel-backup.log 2>&1
+```
+
+Restauração:
+
+```bash
+# baixe o .sql.gz do Spaces (ou pegue em data/backups/), então:
+gunzip -c stream-intel-DATA.sql.gz | \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture \
+  psql "$STREAMINTEL_DATABASE_URL_LIBPQ"   # URL sem o sufixo +psycopg
+```
+
+O banco gerenciado da DigitalOcean também mantém backups diários próprios
+com point-in-time restore; este script é a camada extra e o caminho de
+restauração portátil.
+
+## Operação
+
+- Logs (JSON estruturado): `docker compose ... logs -f api worker-capture`
+- Healthchecks: api via `/healthz`; workers via ping no banco (`docker compose ps`)
+- Reprocessar uma live: enfileire um job `analyze` para o stream
+  (a análise é idempotente; veja `core/queues.enqueue_job`)
+- Re-sincronizar EventSub: refaça o login no dashboard
+- Trocar modelo LLM: troque o GGUF em `data/models/`, ajuste `LLM_GGUF_PATH`
+  e reinicie `worker-analyze`
+- Benchmark de transcrição: `docker compose ... exec worker-transcribe \
+  python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
