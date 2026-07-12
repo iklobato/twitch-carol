@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 
 AUDIO_RETENTION_DAYS = 7
 AUDIO_PREFIX = "audio/"
-LIFECYCLE_RULE_ID = f"expire-audio-{AUDIO_RETENTION_DAYS}d"
+BACKUP_RETENTION_DAYS = 30
+BACKUP_PREFIX = "backups/"
 
 
 class AudioStorage(Protocol):
@@ -71,17 +72,24 @@ class SpacesAudioStorage:
         self._client.download_file(self._bucket, key, str(destination))
 
     def ensure_lifecycle_rule(self) -> None:
-        """Idempotent: audio objects expire after AUDIO_RETENTION_DAYS."""
+        """Idempotent. put_bucket_lifecycle_configuration REPLACES the whole
+        config, so every rule (audio + backups) must live in this one call."""
         self._client.put_bucket_lifecycle_configuration(
             Bucket=self._bucket,
             LifecycleConfiguration={
                 "Rules": [
                     {
-                        "ID": LIFECYCLE_RULE_ID,
+                        "ID": f"expire-audio-{AUDIO_RETENTION_DAYS}d",
                         "Status": "Enabled",
                         "Filter": {"Prefix": AUDIO_PREFIX},
                         "Expiration": {"Days": AUDIO_RETENTION_DAYS},
-                    }
+                    },
+                    {
+                        "ID": f"expire-backups-{BACKUP_RETENTION_DAYS}d",
+                        "Status": "Enabled",
+                        "Filter": {"Prefix": BACKUP_PREFIX},
+                        "Expiration": {"Days": BACKUP_RETENTION_DAYS},
+                    },
                 ]
             },
         )

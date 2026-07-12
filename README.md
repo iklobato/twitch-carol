@@ -1,77 +1,161 @@
-# twitch logger
+# Stream Intel
 
-Grava tudo que acontece numa live da Twitch em um arquivo de texto: o chat, a
-fala do streamer (transcrita) e os eventos (sub, timeout, ban, raid, follow,
-pontos do canal, live on/off). Tudo no mesmo arquivo `chat-log.txt`, uma linha
-por evento, na ordem em que acontece.
+Plataforma de analytics multimodal para streamers da Twitch. Captura chat,
+eventos (EventSub) e áudio de cada live, transcreve com faster-whisper,
+detecta picos por SQL e gera relatório com LLM local (llama.cpp): resumo,
+explicação dos picos e assuntos ranqueados, sempre com evidência clicável
+verificada contra o banco. Todo o processamento de IA roda em CPU local;
+nenhuma API paga no caminho principal.
 
-## O que ele grava
+Produção de referência: https://streamintel.cc
 
-- **Chat**: mensagens, sub, resub, timeout, ban, raid, mensagem apagada (leitura
-  anonima, funciona em qualquer canal).
-- **Fala do streamer**: transcrita com o faster-whisper (linhas com 🎤).
-- **Eventos do canal** (EventSub): live comecou/terminou, follow, resgate de
-  pontos. Follow e pontos so funcionam no seu proprio canal ou onde voce e mod.
-
-Roda tudo junto em um processo so, com asyncio.
-
-## O que voce precisa
-
-1. Python 3.11+.
-2. `ffmpeg` instalado no sistema.
-3. Uma conta de aplicativo na Twitch (de graca, em dev.twitch.tv/console/apps).
-
-## Instalar
+## Arquitetura
 
 ```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+apps/api           FastAPI: OAuth Twitch, webhook EventSub, API do dashboard
+apps/web           React + Vite + Tailwind + Chart.js (build servido pelo Caddy)
+workers/capture    IRC do chat, amostrador de viewers, gravador HLS->Opus
+workers/transcribe VAD + faster-whisper (fila com prioridade por próxima live)
+workers/analyze    picos por SQL + insights via llama.cpp com evidência validada
+core               modelos, config, filas, crypto, cliente Twitch, métricas
+scripts            simulador de live, seed de estados, benchmark, backup
+deploy             Dockerfile, docker compose (dev + prod), Caddyfile
 ```
 
-## Configurar
+Serviços do compose: `api`, `worker-capture`, `worker-transcribe`,
+`worker-analyze`, `valkey`, `caddy` e `postgres` (dev; em produção usamos um
+Postgres gerenciado e o serviço local fica atrás do profile `local-db`).
 
-Copie o exemplo e preencha:
+## Desenvolvimento local
 
-```
-cp env.example .env
-```
+Pré-requisitos: Docker, uv, Node 20+.
 
-O `.env` precisa de tres valores:
-
-- `TWITCH_CHANNEL`: o login do canal (ex: `iklobato`), nao o numero.
-- `TWITCH_CLIENT_ID`: o Client-ID do seu app da Twitch.
-- `TWITCH_USER_TOKEN`: um user OAuth token com os scopes
-  `moderator:read:followers` e `channel:read:redemptions`. Gere em
-  twitchtokengenerator.com (Custom Scope Token).
-
-O Client-ID e o token tem que ser do mesmo app, senao a Twitch recusa os
-eventos. Nunca mande o `.env` para ninguem.
-
-## Rodar
-
-```
-python stream_logger.py
+```bash
+uv sync                        # deps Python (.venv)
+make web                       # build do frontend (apps/web/dist)
+make up                        # sobe o stack (Caddy em http://localhost:8080)
 ```
 
-Para um canal diferente do `.env`, sem editar o arquivo:
+Portas no host: web/api `8080`, Postgres `5433`, Valkey `6380`.
+`deploy/sim.env` fornece defaults de dev (secret do EventSub, whisper tiny,
+LLM 1.5B); qualquer valor no `.env` da raiz tem precedência.
 
+Modelos locais (uma vez): baixe um GGUF para `data/models/` e confira o
+caminho em `deploy/sim.env` (`LLM_GGUF_PATH`). O whisper baixa sozinho no
+primeiro uso.
+
+### Simulação de live (sem Twitch real)
+
+```bash
+uv run python scripts/simulate_stream.py --minutes 4 --audio caminho/audio.mp3
 ```
-TWITCH_CHANNEL=nomedocanal python stream_logger.py
+
+Publica chat/eventos/viewers/áudio pelos MESMOS caminhos de código da
+captura real (webhook assinado, parser IRC). Ao final, a live percorre
+transcrição -> análise -> `ready` sozinha.
+
+Para popular o dashboard com todos os estados do pipeline (e uma live
+analisável pelo LLM):
+
+```bash
+docker compose -f deploy/docker-compose.yml stop worker-transcribe worker-analyze
+uv run python scripts/seed_pipeline_states.py            # canal mock
+docker compose -f deploy/docker-compose.yml start worker-transcribe worker-analyze
 ```
 
-O resultado vai para `chat-log.txt` na mesma pasta. Para desligar, aperte
-Control e C.
+### Testes e qualidade
 
-## Testes
-
+```bash
+make lint       # ruff + mypy
+make test       # pytest (testes de banco usam o Postgres do compose)
+make test-web   # vitest (frontend)
+make test-all   # tudo
 ```
-python test_stream_logger.py
+
+## Variáveis de ambiente
+
+Documentadas em `deploy/env.example`. Essenciais em produção:
+`TWITCH_CLIENT_ID/SECRET` (app em dev.twitch.tv com redirect
+`https://SEU_DOMINIO/auth/callback`), `TWITCH_EVENTSUB_SECRET` (string
+aleatória), `PUBLIC_BASE_URL` (https), `FERNET_KEY`, `DATABASE_URL`,
+`SPACES_*` (áudio + backups; sem eles cai em disco local), `SIMULATION=0`.
+
+## Deploy em produção (droplet DigitalOcean)
+
+Layout de referência: 1 droplet s-4vcpu-8gb (docker) + Postgres gerenciado.
+Para escalar, os workers movem-se para droplets próprios apontando para o
+mesmo banco/Valkey; a imagem é a mesma, muda o `command`.
+
+Do zero, num droplet limpo (imagem "Docker on Ubuntu"):
+
+```bash
+# 1. infra
+doctl compute droplet create stream-intel --size s-4vcpu-8gb --region nyc3 \
+  --image docker-20-04 --ssh-keys SUA_CHAVE --wait
+ssh root@IP "ufw allow 80/tcp && ufw allow 443/tcp && mkdir -p /opt/stream-intel"
+
+# 2. DNS: aponte um registro A do seu domínio para o IP do droplet
+
+# 3. banco gerenciado (ou use o postgres do compose com --profile local-db)
+doctl databases db create CLUSTER_ID streamintel
+doctl databases user create CLUSTER_ID streamintel_app
+doctl databases firewalls append CLUSTER_ID --rule droplet:DROPLET_ID
+# conceda: ALTER SCHEMA public OWNER TO streamintel_app (como doadmin)
+
+# 4. código e segredos
+rsync -az --exclude .git --exclude .venv --exclude node_modules \
+  --exclude data --exclude .env ./ root@IP:/opt/stream-intel/
+ssh root@IP  # crie /opt/stream-intel/.env (veja deploy/env.example)
+             # e /opt/stream-intel/deploy/.env com:
+             #   SITE_ADDRESS=seu.dominio
+             #   STREAMINTEL_DATABASE_URL=postgresql+psycopg://...sslmode=require
+
+# 5. modelo LLM e subida
+ssh root@IP "mkdir -p /opt/stream-intel/data/models && curl -L -o \
+  /opt/stream-intel/data/models/qwen2.5-3b-instruct-q4_k_m.gguf \
+  'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf'"
+ssh root@IP "cd /opt/stream-intel/deploy && docker compose \
+  -f docker-compose.yml -f docker-compose.prod.yml up -d --build"
 ```
 
-## Ajustes de transcricao (opcionais, no `.env`)
+O Caddy emite o certificado TLS sozinho quando o DNS resolve. Migrações
+rodam no boot da api. Depois do primeiro login em `https://SEU_DOMINIO`,
+as subscriptions EventSub são registradas automaticamente e qualquer live
+do canal passa a ser capturada.
 
-- `WHISPER_MODEL`: `base`, `small` (padrao), `medium`, `large-v3`. Maior = melhor
-  e mais lento.
-- `WHISPER_LANG`: idioma (padrao `pt`).
-- `TRANSCRIBE_CHUNK_SECONDS`: tamanho do bloco de audio (padrao 20).
+Atualização de versão: repita o rsync do passo 4 e o `up -d --build` do
+passo 5 (o cache de camadas torna rebuilds de código rápidos).
+
+## Backup e restauração
+
+Backup diário via cron no droplet (pg_dump -> gzip -> Spaces `backups/`
+com retenção de 30 dias; sem Spaces, `data/backups/` com últimos 7):
+
+```cron
+0 9 * * * cd /opt/stream-intel/deploy && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture python scripts/backup_db.py >> /var/log/stream-intel-backup.log 2>&1
+```
+
+Restauração:
+
+```bash
+# baixe o .sql.gz do Spaces (ou pegue em data/backups/), então:
+gunzip -c stream-intel-DATA.sql.gz | \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture \
+  psql "$STREAMINTEL_DATABASE_URL_LIBPQ"   # URL sem o sufixo +psycopg
+```
+
+O banco gerenciado da DigitalOcean também mantém backups diários próprios
+com point-in-time restore; este script é a camada extra e o caminho de
+restauração portátil.
+
+## Operação
+
+- Logs (JSON estruturado): `docker compose ... logs -f api worker-capture`
+- Healthchecks: api via `/healthz`; workers via ping no banco (`docker compose ps`)
+- Reprocessar uma live: enfileire um job `analyze` para o stream
+  (a análise é idempotente; veja `core/queues.enqueue_job`)
+- Re-sincronizar EventSub: refaça o login no dashboard
+- Trocar modelo LLM: troque o GGUF em `data/models/`, ajuste `LLM_GGUF_PATH`
+  e reinicie `worker-analyze`
+- Benchmark de transcrição: `docker compose ... exec worker-transcribe \
+  python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
