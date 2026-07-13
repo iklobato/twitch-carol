@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
+import ActionableSection from '../components/ActionableSection'
 import ChattersSection from '../components/ChattersSection'
 import CommunitySection from '../components/CommunitySection'
 import PipelineStepper from '../components/PipelineStepper'
@@ -443,6 +444,8 @@ export default function StreamReport({ streamId }: { streamId: number }) {
           ))}
         </div>
       )}
+
+      <ActionableSection streamId={report.id} />
 
       {topics.length > 0 && (
         <div className="mb-6">

@@ -76,9 +76,17 @@ function mockFetch() {
               sentiment_by_chatter: [],
               presence: { slots: [], rows: [] },
             }
-          : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
-            ? []
-            : report
+          : url.startsWith('/api/streams/6/actionable')
+            ? {
+                retention: null,
+                dips: [],
+                clips: [],
+                unanswered_questions_count: 0,
+                unanswered_questions: [],
+              }
+            : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
+              ? []
+              : report
       return new Response(JSON.stringify(body), { status: 200 })
     }),
   )

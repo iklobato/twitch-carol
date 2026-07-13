@@ -140,6 +140,37 @@ export type CommunityOut = {
   presence: { slots: string[]; rows: { login: string; cells: number[] }[] }
 }
 
+export type ViewerDip = {
+  at: string
+  viewers_before: number
+  viewers_after: number
+  pct_drop: number
+  speech_context: string | null
+}
+
+export type Retention = {
+  peak_viewers: number
+  final_viewers: number
+  retained_pct: number
+  biggest_drop_at: string | null
+}
+
+export type ClipSuggestion = {
+  window_start: string
+  window_end: string
+  offset_seconds: number
+  offset_label: string
+  score: number
+}
+
+export type ActionableOut = {
+  retention: Retention | null
+  dips: ViewerDip[]
+  clips: ClipSuggestion[]
+  unanswered_questions_count: number
+  unanswered_questions: { sent_at: string; author_login: string; text: string }[]
+}
+
 export type LoyalChatter = {
   author_login: string
   streams_attended: number
