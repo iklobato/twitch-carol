@@ -252,6 +252,14 @@ export type Community = {
   goals: GoalOut[]
 }
 
+export type Subscribers = {
+  total: number
+  tiers: { tier: string; count: number }[]
+  gifted_pct: number
+  subs_ended: number
+  top_bits: { login: string; score: number }[]
+}
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -266,6 +274,7 @@ export type ChannelOverview = {
   content_revenue: ContentBucket[]
   engagement: Engagement
   community: Community
+  subscribers: Subscribers
 }
 
 export type QueueItem = {

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from core.models import (
+    BitsLeader,
     Channel,
     ChatMessage,
     Event,
@@ -21,6 +22,7 @@ from core.models import (
     SegmentKind,
     Stream,
     StreamStatus,
+    Subscription,
     TranscriptSegment,
     ViewerSample,
     Vip,
@@ -75,6 +77,37 @@ def add_goal(
     db.add(goal)
     db.flush()
     return goal
+
+
+def add_subscription(
+    db: Session,
+    channel: Channel,
+    login: str,
+    tier: str = "1000",
+    is_gift: bool = False,
+    gifter_login: str | None = None,
+) -> Subscription:
+    unique = next(_sequence)
+    sub = Subscription(
+        channel_id=channel.id,
+        twitch_user_id=unique,
+        login=login,
+        tier=tier,
+        is_gift=is_gift,
+        gifter_login=gifter_login,
+    )
+    db.add(sub)
+    db.flush()
+    return sub
+
+
+def add_bits_leader(
+    db: Session, channel: Channel, login: str, rank: int, score: int
+) -> BitsLeader:
+    leader = BitsLeader(channel_id=channel.id, login=login, rank=rank, score=score)
+    db.add(leader)
+    db.flush()
+    return leader
 
 
 def add_past_broadcast(

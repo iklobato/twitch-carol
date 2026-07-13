@@ -6,12 +6,27 @@ viewers, money, engagement) is forward-only and cannot be backfilled."""
 import logging
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.channels import ensure_fresh_token
-from core.models import Channel, Follower, Goal, PastBroadcast, Vip
-from core.twitch import get_goals, get_videos, get_vips, iter_followers
+from core.models import (
+    BitsLeader,
+    Channel,
+    Follower,
+    Goal,
+    PastBroadcast,
+    Subscription,
+    Vip,
+)
+from core.twitch import (
+    get_bits_leaderboard,
+    get_goals,
+    get_subscriptions,
+    get_videos,
+    get_vips,
+    iter_followers,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -138,3 +153,45 @@ def backfill_videos(
         )
         added += 1
     return added
+
+
+def backfill_subscriptions(
+    db: Session, channel: Channel, client: httpx.Client | None = None
+) -> int:
+    """Replace the current-subscriber snapshot from Helix. Affiliate-only, so
+    this stays empty until the channel monetizes. Returns the snapshot size."""
+    token = ensure_fresh_token(db, channel, client)
+    records = get_subscriptions(channel.twitch_user_id, token, client)
+    db.execute(delete(Subscription).where(Subscription.channel_id == channel.id))
+    for record in records:
+        db.add(
+            Subscription(
+                channel_id=channel.id,
+                twitch_user_id=int(record.user_id),
+                login=record.user_login,
+                tier=record.tier,
+                is_gift=record.is_gift,
+                gifter_login=record.gifter_login,
+            )
+        )
+    return len(records)
+
+
+def backfill_bits_leaders(
+    db: Session, channel: Channel, client: httpx.Client | None = None
+) -> int:
+    """Replace the all-time bits leaderboard snapshot from Helix (affiliate
+    only). Returns the number of leaders stored."""
+    token = ensure_fresh_token(db, channel, client)
+    records = get_bits_leaderboard(token, client)
+    db.execute(delete(BitsLeader).where(BitsLeader.channel_id == channel.id))
+    for record in records:
+        db.add(
+            BitsLeader(
+                channel_id=channel.id,
+                login=record.user_login,
+                rank=record.rank,
+                score=record.score,
+            )
+        )
+    return len(records)

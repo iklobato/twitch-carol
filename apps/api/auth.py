@@ -7,8 +7,10 @@ from fastapi.responses import RedirectResponse
 
 from apps.api.deps import SESSION_COOKIE, DbSession
 from core.backfill import (
+    backfill_bits_leaders,
     backfill_followers,
     backfill_goals,
+    backfill_subscriptions,
     backfill_videos,
     backfill_vips,
 )
@@ -99,17 +101,21 @@ def _backfill_best_effort(db: DbSession, channel: Channel) -> None:
         videos = backfill_videos(db, channel)
         vips = backfill_vips(db, channel)
         goals = backfill_goals(db, channel)
+        subs = backfill_subscriptions(db, channel)
+        bits = backfill_bits_leaders(db, channel)
         db.commit()
     except (httpx.HTTPError, TwitchAuthError):
         db.rollback()
         logger.exception("backfill failed", extra={"channel_id": channel.id})
         return
     logger.info(
-        "backfill done: %d followers, %d videos, %d vips, %d goals",
+        "backfill done: %d followers, %d videos, %d vips, %d goals, %d subs, %d bits",
         followers,
         videos,
         vips,
         goals,
+        subs,
+        bits,
         extra={"channel_id": channel.id},
     )
 

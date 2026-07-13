@@ -347,6 +347,74 @@ def get_goals(
     return [GoalRecord.model_validate(row) for row in response.json().get("data", [])]
 
 
+class SubscriptionRecord(BaseModel):
+    user_id: str
+    user_login: str
+    tier: str
+    is_gift: bool = False
+    gifter_login: str | None = None
+
+
+class BitsLeaderRecord(BaseModel):
+    user_login: str
+    rank: int
+    score: int
+
+
+def get_subscriptions(
+    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
+) -> list[SubscriptionRecord]:
+    """Helix Get Broadcaster Subscriptions (affiliate/partner only; returns an
+    empty list for a channel that has not monetized)."""
+    subs: list[SubscriptionRecord] = []
+    cursor: str | None = None
+    with _http(client) as http:
+        for _ in range(FOLLOWER_PAGE_CAP):
+            params = {
+                "broadcaster_id": str(broadcaster_id),
+                "first": str(HELIX_PAGE_SIZE),
+            }
+            if cursor:
+                params["after"] = cursor
+            response = http.get(
+                f"{HELIX_URL}/subscriptions",
+                params=params,
+                headers=_user_headers(access_token),
+            )
+            if response.status_code != 200:
+                raise TwitchAuthError(
+                    f"Twitch /subscriptions returned {response.status_code}"
+                )
+            body = response.json()
+            subs.extend(
+                SubscriptionRecord.model_validate(row) for row in body.get("data", [])
+            )
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                break
+    return subs
+
+
+def get_bits_leaderboard(
+    access_token: str, client: httpx.Client | None = None
+) -> list[BitsLeaderRecord]:
+    """Helix Get Bits Leaderboard, all-time (affiliate only; empty otherwise).
+    The broadcaster is implied by the user token, so no broadcaster_id."""
+    with _http(client) as http:
+        response = http.get(
+            f"{HELIX_URL}/bits/leaderboard",
+            params={"count": str(HELIX_PAGE_SIZE), "period": "all"},
+            headers=_user_headers(access_token),
+        )
+    if response.status_code != 200:
+        raise TwitchAuthError(
+            f"Twitch /bits/leaderboard returned {response.status_code}"
+        )
+    return [
+        BitsLeaderRecord.model_validate(row) for row in response.json().get("data", [])
+    ]
+
+
 def get_stream_info(
     broadcaster_id: int, client: httpx.Client | None = None
 ) -> StreamInfo | None:

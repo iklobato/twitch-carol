@@ -161,6 +161,42 @@ class Goal(Base):
     target_amount: Mapped[int]
 
 
+class Subscription(Base):
+    """Current subscriber snapshot from Helix (affiliate/partner only), seeded
+    on connect. Churn is derived separately from channel.subscription.end."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        Index(
+            "uq_subscriptions_channel_user",
+            "channel_id",
+            "twitch_user_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+    tier: Mapped[str] = mapped_column(String(8))
+    is_gift: Mapped[bool] = mapped_column(default=False)
+    gifter_login: Mapped[str | None] = mapped_column(String(64))
+
+
+class BitsLeader(Base):
+    """All-time bits leaderboard snapshot from Helix (affiliate only)."""
+
+    __tablename__ = "bits_leaders"
+    __table_args__ = (Index("ix_bits_leaders_channel_rank", "channel_id", "rank"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    login: Mapped[str] = mapped_column(String(64))
+    rank: Mapped[int]
+    score: Mapped[int]
+
+
 class Stream(Base):
     __tablename__ = "streams"
 

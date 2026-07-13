@@ -7,13 +7,23 @@ import pytest
 from sqlalchemy import func, select
 
 from core.backfill import (
+    backfill_bits_leaders,
     backfill_followers,
     backfill_goals,
+    backfill_subscriptions,
     backfill_videos,
     backfill_vips,
 )
 from core.crypto import encrypt_secret
-from core.models import Channel, Follower, Goal, PastBroadcast, Vip
+from core.models import (
+    BitsLeader,
+    Channel,
+    Follower,
+    Goal,
+    PastBroadcast,
+    Subscription,
+    Vip,
+)
 from tests.factories import make_channel
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
@@ -164,3 +174,76 @@ def test_backfill_goals_replaces_snapshot(db) -> None:
         select(Goal.current_amount).where(Goal.channel_id == channel.id)
     )
     assert refreshed == 750
+
+
+def test_backfill_subscriptions_replaces_snapshot(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "user_id": "1",
+                        "user_login": "sub_a",
+                        "tier": "1000",
+                        "is_gift": False,
+                    },
+                    {
+                        "user_id": "2",
+                        "user_login": "sub_b",
+                        "tier": "2000",
+                        "is_gift": True,
+                        "gifter_login": "baleia",
+                    },
+                ],
+                "pagination": {},
+            },
+        )
+
+    added = backfill_subscriptions(db, channel, client=_mock_client(handler))
+    db.flush()
+    assert added == 2
+    tiers = {
+        s.login: s.tier
+        for s in db.scalars(
+            select(Subscription).where(Subscription.channel_id == channel.id)
+        )
+    }
+    assert tiers == {"sub_a": "1000", "sub_b": "2000"}
+    # a re-connect replaces, not duplicates
+    assert backfill_subscriptions(db, channel, client=_mock_client(handler)) == 2
+    total = db.scalar(
+        select(func.count())
+        .select_from(Subscription)
+        .where(Subscription.channel_id == channel.id)
+    )
+    assert total == 2
+
+
+def test_backfill_bits_leaders_replaces_snapshot(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"user_login": "whale", "rank": 1, "score": 5000},
+                    {"user_login": "fan", "rank": 2, "score": 1200},
+                ]
+            },
+        )
+
+    added = backfill_bits_leaders(db, channel, client=_mock_client(handler))
+    db.flush()
+    assert added == 2
+    top = db.scalar(
+        select(BitsLeader.login)
+        .where(BitsLeader.channel_id == channel.id)
+        .order_by(BitsLeader.rank)
+    )
+    assert top == "whale"

@@ -237,6 +237,73 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+const TIER_LABELS: Record<string, string> = {
+  '1000': 'Tier 1',
+  '2000': 'Tier 2',
+  '3000': 'Tier 3',
+}
+
+function SubscribersSection({ overview }: { overview: ChannelOverview }) {
+  const { total, tiers, gifted_pct, subs_ended, top_bits } = overview.subscribers
+  if (total === 0 && top_bits.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-lg font-bold">Assinantes e bits</h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Assinantes ativos
+          </p>
+          <p className="text-2xl font-bold text-purple-300">{total.toLocaleString('pt-BR')}</p>
+          <div className="mt-2 space-y-1 text-sm">
+            {tiers.map((t) => (
+              <div key={t.tier} className="flex justify-between text-zinc-400">
+                <span>{TIER_LABELS[t.tier] ?? t.tier}</span>
+                <span>{t.count}</span>
+              </div>
+            ))}
+            <div className="flex justify-between text-zinc-500">
+              <span>Presenteados</span>
+              <span>{gifted_pct}%</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Churn
+          </p>
+          <p className="text-2xl font-bold text-red-400">{subs_ended}</p>
+          <p className="text-xs text-zinc-500">assinaturas encerradas nas lives capturadas</p>
+        </div>
+
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Top bits (todos os tempos)
+          </p>
+          {top_bits.length > 0 ? (
+            <div className="space-y-1 text-sm">
+              {top_bits.slice(0, 5).map((leader, index) => (
+                <div key={leader.login} className="flex justify-between">
+                  <span>
+                    <span className="mr-2 text-zinc-600">{index + 1}º</span>
+                    <span className="text-purple-300">{leader.login}</span>
+                  </span>
+                  <span className="text-zinc-400">
+                    {leader.score.toLocaleString('pt-BR')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600">Sem leaderboard (requer afiliação).</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const GOAL_LABELS: Record<string, string> = {
   follower: 'Seguidores',
   subscription: 'Inscritos',
@@ -592,6 +659,7 @@ export default function ChannelView() {
         />
       </div>
       <ChannelMonetization overview={overview} />
+      <SubscribersSection overview={overview} />
       <ContentRevenue overview={overview} />
       <EngagementSection overview={overview} />
       <CommunityHealth overview={overview} />

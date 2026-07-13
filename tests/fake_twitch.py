@@ -43,6 +43,8 @@ class FakeTwitch:
         self.videos: list[dict] = []  # helix /videos backfill
         self.vips: list[dict] = []  # helix /channels/vips backfill
         self.goals: list[dict] = []  # helix /goals backfill
+        self.subscriptions_list: list[dict] = []  # helix /subscriptions backfill
+        self.bits_leaders: list[dict] = []  # helix /bits/leaderboard backfill
         self.client = httpx.Client(transport=httpx.MockTransport(self._handle))
 
     # --- consent / webhook emission helpers -------------------------------
@@ -123,6 +125,12 @@ class FakeTwitch:
             return httpx.Response(200, json={"data": self.vips, "pagination": {}})
         if path == "/helix/goals":
             return httpx.Response(200, json={"data": self.goals})
+        if path == "/helix/subscriptions":
+            return httpx.Response(
+                200, json={"data": self.subscriptions_list, "pagination": {}}
+            )
+        if path == "/helix/bits/leaderboard":
+            return httpx.Response(200, json={"data": self.bits_leaders})
         if path == "/helix/eventsub/subscriptions":
             if request.method == "GET":
                 return httpx.Response(200, json={"data": self.subscriptions})

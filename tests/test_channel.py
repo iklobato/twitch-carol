@@ -8,6 +8,7 @@ import pytest
 from core.models import InsightType
 from tests.conftest import login_as
 from tests.factories import (
+    add_bits_leader,
     add_chat,
     add_event,
     add_follower,
@@ -15,6 +16,7 @@ from tests.factories import (
     add_insight,
     add_past_broadcast,
     add_segment,
+    add_subscription,
     add_viewer_samples,
     add_vip,
     make_channel,
@@ -294,6 +296,31 @@ def test_channel_community_goals_vips_engagement(api_client, db) -> None:
     assert community["engaged_viewer_pct"] == 2.0
 
 
+def test_channel_subscribers_tiers_churn_bits(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel)
+    add_subscription(db, channel, "sub_a", tier="1000")
+    add_subscription(db, channel, "sub_b", tier="1000")
+    add_subscription(
+        db, channel, "sub_c", tier="2000", is_gift=True, gifter_login="baleia"
+    )
+    add_bits_leader(db, channel, "whale", rank=1, score=5000)
+    add_bits_leader(db, channel, "fan", rank=2, score=1200)
+    # one sub ended during a stream (churn)
+    add_event(db, stream, "channel.subscription.end", offset_seconds=30)
+    db.flush()
+
+    login_as(api_client, channel)
+    subs = api_client.get("/api/channel").json()["subscribers"]
+
+    assert subs["total"] == 3
+    tier_map = {t["tier"]: t["count"] for t in subs["tiers"]}
+    assert tier_map == {"1000": 2, "2000": 1}
+    assert subs["gifted_pct"] == round(1 / 3 * 100, 1)
+    assert subs["subs_ended"] == 1
+    assert subs["top_bits"][0] == {"login": "whale", "score": 5000}
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)
@@ -307,6 +334,8 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["content_revenue"] == []
     assert overview["community"]["vips"] == []
     assert overview["community"]["goals"] == []
+    assert overview["subscribers"]["total"] == 0
+    assert overview["subscribers"]["top_bits"] == []
 
 
 def test_channel_requires_session(api_client) -> None:

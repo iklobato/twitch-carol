@@ -19,6 +19,7 @@ from core.finance import (
     event_usd,
 )
 from core.models import (
+    BitsLeader,
     ChatMessage,
     Event,
     Follower,
@@ -28,6 +29,7 @@ from core.models import (
     PastBroadcast,
     Stream,
     StreamStatus,
+    Subscription,
     TranscriptSegment,
     ViewerSample,
     Vip,
@@ -46,6 +48,8 @@ POINTS_REWARD_LIMIT = 8
 AD_WINDOW = timedelta(seconds=90)
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
+SUB_END = "channel.subscription.end"
+BITS_LEADER_LIMIT = 10
 HYPE_TRAIN_END = "channel.hype_train.end"
 REDEMPTION_ADD = "channel.channel_points_custom_reward_redemption.add"
 AD_BREAK = "channel.ad_break.begin"
@@ -136,6 +140,24 @@ class Community(BaseModel):
     goals: list[GoalOut]
 
 
+class TierCount(BaseModel):
+    tier: str
+    count: int
+
+
+class BitsLeaderOut(BaseModel):
+    login: str
+    score: int
+
+
+class Subscribers(BaseModel):
+    total: int
+    tiers: list[TierCount]
+    gifted_pct: float
+    subs_ended: int
+    top_bits: list[BitsLeaderOut]
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -171,6 +193,7 @@ class ChannelOverview(BaseModel):
     content_revenue: list[ContentBucket]
     engagement: Engagement
     community: Community
+    subscribers: Subscribers
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -305,6 +328,51 @@ def _content_revenue(
     ]
     buckets.sort(key=lambda bucket: bucket.estimated_usd, reverse=True)
     return buckets[:CONTENT_LIMIT]
+
+
+def _subscribers(db: DbSession, channel_id: int, ready_ids: list[int]) -> Subscribers:
+    """Subscriber mix (tiers, gifted share), churn from subscription.end events,
+    and the all-time bits leaderboard. Snapshot data is affiliate-only, so this
+    is empty until the channel monetizes."""
+    tier_rows = db.execute(
+        select(Subscription.tier, func.count())
+        .where(Subscription.channel_id == channel_id)
+        .group_by(Subscription.tier)
+        .order_by(Subscription.tier)
+    ).all()
+    tiers = [TierCount(tier=tier, count=count) for tier, count in tier_rows]
+    total = sum(t.count for t in tiers)
+    gifted = db.scalar(
+        select(func.count()).where(
+            Subscription.channel_id == channel_id, Subscription.is_gift.is_(True)
+        )
+    )
+    subs_ended = 0
+    if ready_ids:
+        subs_ended = int(
+            db.scalar(
+                select(func.count()).where(
+                    Event.stream_id.in_(ready_ids), Event.type == SUB_END
+                )
+            )
+            or 0
+        )
+    top_bits = [
+        BitsLeaderOut(login=login, score=score)
+        for login, score in db.execute(
+            select(BitsLeader.login, BitsLeader.score)
+            .where(BitsLeader.channel_id == channel_id)
+            .order_by(BitsLeader.rank)
+            .limit(BITS_LEADER_LIMIT)
+        )
+    ]
+    return Subscribers(
+        total=total,
+        tiers=tiers,
+        gifted_pct=round((gifted or 0) / total * 100, 1) if total else 0.0,
+        subs_ended=subs_ended,
+        top_bits=top_bits,
+    )
 
 
 def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Community:
@@ -693,4 +761,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         content_revenue=_content_revenue(db, channel.id, ready_ids),
         engagement=_engagement(db, ready_ids),
         community=_community(db, channel.id, ready_ids),
+        subscribers=_subscribers(db, channel.id, ready_ids),
     )
