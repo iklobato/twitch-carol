@@ -194,6 +194,49 @@ function usd(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
 }
 
+function ContentRevenue({ overview }: { overview: ChannelOverview }) {
+  const buckets = overview.content_revenue
+  if (buckets.length === 0) return null
+  const maxPerHour = Math.max(...buckets.map((b) => b.usd_per_hour), 0.01)
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Conteúdo que converte</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        Receita por categoria e por hora transmitida. Faça mais do que rende mais por hora.
+      </p>
+      <div className="space-y-2 text-sm">
+        {buckets.map((bucket) => (
+          <div
+            key={bucket.category}
+            className="rounded-lg border border-zinc-800 bg-zinc-900 p-3"
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold">{bucket.category}</span>
+              <span className="text-emerald-400">
+                {usd(bucket.usd_per_hour)}
+                <span className="text-xs text-zinc-500">/h</span>
+              </span>
+            </div>
+            <div className="h-2 overflow-hidden rounded bg-zinc-800">
+              <div
+                className="h-full rounded bg-emerald-500"
+                style={{ width: `${(bucket.usd_per_hour / maxPerHour) * 100}%` }}
+              />
+            </div>
+            <div className="mt-1 flex justify-between text-xs text-zinc-500">
+              <span>
+                {bucket.streams} live{bucket.streams > 1 ? 's' : ''} · pico médio{' '}
+                {bucket.avg_peak_viewers.toLocaleString('pt-BR')}
+              </span>
+              <span>{usd(bucket.estimated_usd)} no total</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -391,6 +434,7 @@ export default function ChannelView() {
         />
       </div>
       <ChannelMonetization overview={overview} />
+      <ContentRevenue overview={overview} />
       <LoyalChatters overview={overview} />
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />

@@ -224,6 +224,14 @@ export type PastBroadcast = {
   url: string
 }
 
+export type ContentBucket = {
+  category: string
+  estimated_usd: number
+  usd_per_hour: number
+  streams: number
+  avg_peak_viewers: number
+}
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -235,6 +243,7 @@ export type ChannelOverview = {
   recurring_topics: { name: string; streams: number }[]
   finance: ChannelFinance
   past_broadcasts: PastBroadcast[]
+  content_revenue: ContentBucket[]
 }
 
 export type QueueItem = {

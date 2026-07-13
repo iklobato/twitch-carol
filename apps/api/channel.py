@@ -38,6 +38,8 @@ TOPIC_LIMIT = 10
 CONTRIBUTORS_LIMIT = 10
 MONETIZING_TOPIC_LIMIT = 8
 PAST_BROADCAST_LIMIT = 20
+CONTENT_LIMIT = 8
+SECONDS_PER_HOUR = 3600
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -82,6 +84,14 @@ class PastBroadcastOut(BaseModel):
     url: str
 
 
+class ContentBucket(BaseModel):
+    category: str
+    estimated_usd: float
+    usd_per_hour: float
+    streams: int
+    avg_peak_viewers: float
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -114,6 +124,7 @@ class ChannelOverview(BaseModel):
     recurring_topics: list[RecurringTopic]
     finance: ChannelFinance
     past_broadcasts: list[PastBroadcastOut]
+    content_revenue: list[ContentBucket]
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -189,6 +200,65 @@ def _past_broadcasts(db: DbSession, channel_id: int) -> list[PastBroadcastOut]:
         )
         for row in rows
     ]
+
+
+def _content_revenue(
+    db: DbSession, channel_id: int, ready_ids: list[int]
+) -> list[ContentBucket]:
+    """Revenue and efficiency ($/hour) grouped by the stream's category, so the
+    streamer sees which content actually converts, not just which drew viewers."""
+    if not ready_ids:
+        return []
+    streams = db.execute(
+        select(Stream.id, Stream.category, Stream.started_at, Stream.ended_at).where(
+            Stream.id.in_(ready_ids)
+        )
+    ).all()
+    revenue: dict[int, float] = defaultdict(float)
+    for event in db.scalars(
+        select(Event)
+        .where(Event.stream_id.in_(ready_ids))
+        .where(Event.type.in_(MONEY_EVENT_TYPES))
+    ):
+        revenue[event.stream_id] += event_usd(event)
+    peaks: dict[int, int] = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(ViewerSample.stream_id, func.max(ViewerSample.viewer_count))
+            .where(ViewerSample.stream_id.in_(ready_ids))
+            .group_by(ViewerSample.stream_id)
+        )
+    }
+
+    usd: dict[str, float] = defaultdict(float)
+    seconds: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    peak_sum: dict[str, int] = defaultdict(int)
+    for stream_id, category, started_at, ended_at in streams:
+        if not category:
+            continue  # can't attribute revenue to unknown content
+        usd[category] += revenue.get(stream_id, 0.0)
+        counts[category] += 1
+        peak_sum[category] += int(peaks.get(stream_id, 0))
+        if ended_at is not None:
+            seconds[category] += (ended_at - started_at).total_seconds()
+
+    buckets = [
+        ContentBucket(
+            category=category,
+            estimated_usd=round(total, 2),
+            usd_per_hour=(
+                round(total / (seconds[category] / SECONDS_PER_HOUR), 2)
+                if seconds[category] > 0
+                else 0.0
+            ),
+            streams=counts[category],
+            avg_peak_viewers=round(peak_sum[category] / counts[category], 1),
+        )
+        for category, total in usd.items()
+    ]
+    buckets.sort(key=lambda bucket: bucket.estimated_usd, reverse=True)
+    return buckets[:CONTENT_LIMIT]
 
 
 def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
@@ -440,4 +510,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         recurring_topics=_recurring_topics(db, ready_ids),
         finance=_channel_finance(db, channel.id, ready_ids),
         past_broadcasts=_past_broadcasts(db, channel.id),
+        content_revenue=_content_revenue(db, channel.id, ready_ids),
     )

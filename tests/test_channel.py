@@ -196,6 +196,44 @@ def test_channel_past_broadcasts_listed_newest_first(api_client, db) -> None:
     assert broadcasts[0]["view_count"] == 42
 
 
+def test_channel_content_revenue_by_category(api_client, db) -> None:
+    channel = make_channel(db)
+    # "Software" earns more per hour than "Just Chatting"
+    coding = make_stream(db, channel, duration_minutes=60, title="Deploy")
+    coding.category = "Software and Game Development"
+    add_viewer_samples(db, coding, [40, 60])
+    cheer = add_event(db, coding, "channel.cheer", offset_seconds=60, amount=2000)
+    cheer.payload = {"user_login": "dev_fan"}
+    chatting = make_stream(db, channel, duration_minutes=120, title="Papo")
+    chatting.category = "Just Chatting"
+    add_viewer_samples(db, chatting, [10])
+    gift = add_event(db, chatting, "channel.cheer", offset_seconds=60, amount=500)
+    gift.payload = {"user_login": "viewer"}
+    db.flush()
+
+    login_as(api_client, channel)
+    content = api_client.get("/api/channel").json()["content_revenue"]
+
+    by_cat = {c["category"]: c for c in content}
+    assert by_cat["Software and Game Development"]["estimated_usd"] == 20.0  # 2000*.01
+    assert by_cat["Software and Game Development"]["usd_per_hour"] == 20.0  # over 1h
+    assert by_cat["Just Chatting"]["usd_per_hour"] == 2.5  # $5 over 2h
+    # ranked by total revenue, Software first
+    assert content[0]["category"] == "Software and Game Development"
+
+
+def test_channel_content_revenue_skips_uncategorized(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=60)  # category stays None
+    cheer = add_event(db, stream, "channel.cheer", offset_seconds=60, amount=1000)
+    cheer.payload = {"user_login": "fan"}
+    db.flush()
+
+    login_as(api_client, channel)
+    content = api_client.get("/api/channel").json()["content_revenue"]
+    assert content == []  # revenue with no category is not attributed
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)
@@ -206,6 +244,7 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["finance"]["total_estimated_usd"] == 0.0
     assert overview["finance"]["top_contributors"] == []
     assert overview["past_broadcasts"] == []
+    assert overview["content_revenue"] == []
 
 
 def test_channel_requires_session(api_client) -> None:
