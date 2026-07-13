@@ -258,6 +258,25 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
           ))}
         </p>
       )}
+      {detail.top_words.length > 0 && (
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Palavras mais usadas neste assunto
+          </p>
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            {detail.top_words.map((word) => (
+              <span
+                key={word.word}
+                title={`${word.count} vezes`}
+                className="text-sky-300"
+                style={{ fontSize: `${12 + Math.min(word.count, 10)}px` }}
+              >
+                {word.word}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
       <div>
         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">O que você falou</p>
         {detail.cited_segments.map((segment) => (

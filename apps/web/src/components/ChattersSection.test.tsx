@@ -15,6 +15,7 @@ function makeChatters(count: number): ChatterOut[] {
     followed_during_stream: false,
     labels: [],
     sample_messages: [],
+    top_words: [],
   }))
 }
 

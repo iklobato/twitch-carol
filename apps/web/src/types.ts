@@ -101,6 +101,7 @@ export type SearchHit = {
 }
 
 export type ChatterMessage = { sent_at: string; text: string }
+export type WordCount = { word: string; count: number }
 
 export type ChatterOut = {
   author_login: string
@@ -113,6 +114,7 @@ export type ChatterOut = {
   followed_during_stream: boolean
   labels: string[]
   sample_messages: ChatterMessage[]
+  top_words: WordCount[]
 }
 
 export type TopicDetail = {
@@ -122,6 +124,7 @@ export type TopicDetail = {
   messages_in_window: number
   chat_rate_lift: number | null
   top_chatters: { author_login: string; messages: number }[]
+  top_words: WordCount[]
   sample_messages: { id: number; sent_at: string; author_login: string; text: string }[]
   cited_segments: CitedSegment[]
 }

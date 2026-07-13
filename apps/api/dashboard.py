@@ -1,6 +1,7 @@
 """Dashboard API: lives, report, timeline, peak drill-down, insight feedback,
 full-text search and queue status. All numbers come from core.metrics (SQL)."""
 
+from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
@@ -32,6 +33,7 @@ from core.models import (
     ViewerSample,
 )
 from core.schedule import HISTORY_LIMIT, estimate_next_live
+from core.text import meaningful_words
 
 router = APIRouter(prefix="/api")
 
@@ -533,10 +535,17 @@ def search(
 
 CHATTERS_LIMIT = 20
 CHATTER_SAMPLE_MESSAGES = 3
+CHATTER_TOP_WORDS = 8
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 TOPIC_TOP_CHATTERS = 3
 TOPIC_SAMPLE_MESSAGES = 8
+TOPIC_TOP_WORDS = 12
 FULL_PRESENCE_MARGIN = timedelta(minutes=5)
+
+
+class WordCount(BaseModel):
+    word: str
+    count: int
 
 
 class ChatterMessage(BaseModel):
@@ -555,6 +564,7 @@ class ChatterOut(BaseModel):
     followed_during_stream: bool
     labels: list[str]
     sample_messages: list[ChatterMessage]
+    top_words: list[WordCount]
 
 
 def _follower_logins(db: Session, stream_id: int) -> set[str]:
@@ -622,6 +632,30 @@ def _chatter_samples(
     return samples
 
 
+def _chatter_top_words(
+    db: Session, stream_id: int, logins: list[str]
+) -> dict[str, list[WordCount]]:
+    """Most-used content words per chatter, counted in Python from their
+    messages (the same lexicon/stopword rules as the community word cloud)."""
+    if not logins:
+        return {}
+    counters: dict[str, Counter[str]] = {login: Counter() for login in logins}
+    rows = db.execute(
+        select(ChatMessage.author_login, ChatMessage.text, ChatMessage.emotes)
+        .where(ChatMessage.stream_id == stream_id)
+        .where(ChatMessage.author_login.in_(logins))
+    ).yield_per(2000)
+    for login, text, emotes in rows:
+        counters[login].update(meaningful_words(text, emotes))
+    return {
+        login: [
+            WordCount(word=w, count=c)
+            for w, c in counter.most_common(CHATTER_TOP_WORDS)
+        ]
+        for login, counter in counters.items()
+    }
+
+
 def _chatter_labels(
     rank: int,
     stream: Stream,
@@ -680,9 +714,11 @@ def stream_chatters(
         .limit(CHATTERS_LIMIT)
     ).all()
 
+    top_logins = [row[0] for row in rows]
     peak_counts = _peak_message_counts(db, stream)
     followers = _follower_logins(db, stream.id)
-    samples = _chatter_samples(db, stream.id, [row[0] for row in rows])
+    samples = _chatter_samples(db, stream.id, top_logins)
+    top_words = _chatter_top_words(db, stream.id, top_logins)
 
     chatters = []
     for rank, (login, messages, first_at, last_at, active_minutes) in enumerate(rows):
@@ -698,6 +734,7 @@ def stream_chatters(
                 active_minutes=active_minutes,
                 peak_messages=peak_messages,
                 followed_during_stream=followed,
+                top_words=top_words.get(login, []),
                 labels=_chatter_labels(
                     rank, stream, first_at, last_at, messages, peak_messages, followed
                 ),
@@ -719,6 +756,7 @@ class TopicDetail(BaseModel):
     messages_in_window: int
     chat_rate_lift: float | None
     top_chatters: list[TopicChatter]
+    top_words: list[WordCount]
     sample_messages: list[PeakChatMessage]
     cited_segments: list[CitedSegment]
 
@@ -783,6 +821,17 @@ def topic_detail(
         .order_by(func.count().desc())
         .limit(TOPIC_TOP_CHATTERS)
     ).all()
+
+    word_counter: Counter[str] = Counter()
+    window_rows = db.execute(
+        select(ChatMessage.text, ChatMessage.emotes)
+        .where(ChatMessage.stream_id == stream.id)
+        .where(ChatMessage.sent_at >= window_start)
+        .where(ChatMessage.sent_at < window_end)
+    ).yield_per(2000)
+    for text, emotes in window_rows:
+        word_counter.update(meaningful_words(text, emotes))
+
     sample = db.scalars(
         in_window.order_by(ChatMessage.sent_at).limit(TOPIC_SAMPLE_MESSAGES)
     ).all()
@@ -796,6 +845,10 @@ def topic_detail(
         top_chatters=[
             TopicChatter(author_login=login, messages=count)
             for login, count in top_rows
+        ],
+        top_words=[
+            WordCount(word=w, count=c)
+            for w, c in word_counter.most_common(TOPIC_TOP_WORDS)
         ],
         sample_messages=[
             PeakChatMessage(

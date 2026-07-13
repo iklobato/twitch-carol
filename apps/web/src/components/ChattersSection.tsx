@@ -42,16 +42,38 @@ function ChatterRow({ chatter, maxMessages }: { chatter: ChatterOut; maxMessages
         </span>
       </div>
       {open && (
-        <div className="mt-2 space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
-          <p className="text-xs text-zinc-500">
-            primeira mensagem {formatTime(chatter.first_at)} · última {formatTime(chatter.last_at)}
-          </p>
-          {chatter.sample_messages.map((message, index) => (
-            <p key={index}>
-              <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
-              {message.text}
+        <div className="mt-2 space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+          {chatter.top_words.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Palavras mais usadas
+              </p>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                {chatter.top_words.map((word) => (
+                  <span
+                    key={word.word}
+                    title={`${word.count} vezes`}
+                    className="text-purple-300"
+                    style={{ fontSize: `${12 + Math.min(word.count, 10)}px` }}
+                  >
+                    {word.word}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              primeira mensagem {formatTime(chatter.first_at)} · última{' '}
+              {formatTime(chatter.last_at)}
             </p>
-          ))}
+            {chatter.sample_messages.map((message, index) => (
+              <p key={index}>
+                <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
+                {message.text}
+              </p>
+            ))}
+          </div>
         </div>
       )}
     </div>
