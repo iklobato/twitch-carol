@@ -216,6 +216,14 @@ export type ChannelFinance = {
   top_monetizing_topics: { name: string; estimated_usd: number; streams: number }[]
 }
 
+export type PastBroadcast = {
+  title: string | null
+  published_at: string
+  duration_seconds: number
+  view_count: number
+  url: string
+}
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -226,6 +234,7 @@ export type ChannelOverview = {
   growth: GrowthPoint[]
   recurring_topics: { name: string; streams: number }[]
   finance: ChannelFinance
+  past_broadcasts: PastBroadcast[]
 }
 
 export type QueueItem = {

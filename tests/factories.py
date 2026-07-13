@@ -10,10 +10,12 @@ from core.models import (
     Channel,
     ChatMessage,
     Event,
+    Follower,
     Insight,
     InsightType,
     Job,
     JobStatus,
+    PastBroadcast,
     Peak,
     SegmentKind,
     Stream,
@@ -23,6 +25,47 @@ from core.models import (
 )
 
 _sequence = iter(range(1000, 10_000_000))
+
+
+def add_follower(
+    db: Session,
+    channel: Channel,
+    login: str,
+    followed_minutes_ago: int = 60,
+) -> Follower:
+    unique = next(_sequence)
+    follower = Follower(
+        channel_id=channel.id,
+        twitch_user_id=unique,
+        login=login,
+        followed_at=datetime.now(UTC) - timedelta(minutes=followed_minutes_ago),
+    )
+    db.add(follower)
+    db.flush()
+    return follower
+
+
+def add_past_broadcast(
+    db: Session,
+    channel: Channel,
+    title: str = "Live antiga",
+    published_minutes_ago: int = 1440,
+    duration_seconds: int = 3600,
+    view_count: int = 100,
+) -> PastBroadcast:
+    unique = next(_sequence)
+    broadcast = PastBroadcast(
+        channel_id=channel.id,
+        twitch_video_id=str(unique),
+        title=title,
+        published_at=datetime.now(UTC) - timedelta(minutes=published_minutes_ago),
+        duration_seconds=duration_seconds,
+        view_count=view_count,
+        url=f"https://twitch.tv/videos/{unique}",
+    )
+    db.add(broadcast)
+    db.flush()
+    return broadcast
 
 
 def make_channel(db: Session, login: str | None = None) -> Channel:

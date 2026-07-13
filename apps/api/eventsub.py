@@ -27,7 +27,7 @@ from core.eventsub import (
     timestamp_is_fresh,
     verify_signature,
 )
-from core.models import Channel, Event
+from core.models import Channel, Event, Follower
 from core.queues import get_valkey
 from core.streams import get_active_stream, mark_stream_offline, start_stream
 
@@ -185,10 +185,47 @@ def _no_amount(event: dict) -> int | None:
     return None
 
 
+def _handle_follow(
+    db: Session, channel: Channel, event_type: str, event: dict, occurred_at: datetime
+) -> None:
+    _upsert_follower(db, channel, event, occurred_at)
+    # keep the per-stream follow event too: growth counts follows per stream
+    _record_event(db, channel, event_type, event, occurred_at)
+
+
+def _upsert_follower(
+    db: Session, channel: Channel, event: dict, occurred_at: datetime
+) -> None:
+    user_id = int(event["user_id"])
+    already_following = db.scalar(
+        select(Follower.id).where(
+            Follower.channel_id == channel.id,
+            Follower.twitch_user_id == user_id,
+        )
+    )
+    if already_following is not None:
+        return
+    raw_followed_at = event.get("followed_at")
+    followed_at = (
+        datetime.fromisoformat(raw_followed_at.replace("Z", "+00:00"))
+        if raw_followed_at
+        else occurred_at
+    )
+    db.add(
+        Follower(
+            channel_id=channel.id,
+            twitch_user_id=user_id,
+            login=event["user_login"],
+            followed_at=followed_at,
+        )
+    )
+
+
 NOTIFICATION_HANDLERS: dict[
     str, Callable[[Session, Channel, str, dict, datetime], None]
 ] = {
     "stream.online": _handle_online,
     "stream.offline": _handle_offline,
     "channel.update": _handle_channel_update,
+    "channel.follow": _handle_follow,
 }

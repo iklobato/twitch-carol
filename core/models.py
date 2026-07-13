@@ -89,6 +89,47 @@ class Channel(Base):
     )
 
 
+class Follower(Base):
+    """Channel-level follower state. Seeded from Helix on connect (with real
+    followed_at) and kept fresh by the live channel.follow event."""
+
+    __tablename__ = "followers"
+    __table_args__ = (
+        Index("uq_followers_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+    followed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PastBroadcast(Base):
+    """A past VOD pulled from Helix on connect. Kept apart from Stream because
+    VODs carry total-view counts, not the concurrent-viewer/chat timeline that
+    the analytics run on."""
+
+    __tablename__ = "past_broadcasts"
+    __table_args__ = (
+        Index(
+            "uq_past_broadcasts_channel_video",
+            "channel_id",
+            "twitch_video_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_video_id: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str | None] = mapped_column(String(256))
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int]
+    view_count: Mapped[int]
+    url: Mapped[str] = mapped_column(String(256))
+
+
 class Stream(Base):
     __tablename__ = "streams"
 

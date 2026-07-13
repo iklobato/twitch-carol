@@ -5,6 +5,8 @@ HTTP status only. Pass an httpx.Client to reuse connections or inject a mock
 transport in tests; without one, a short-lived client is created per call.
 """
 
+import logging
+from collections.abc import Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
@@ -13,6 +15,8 @@ import httpx
 from pydantic import BaseModel
 
 from core.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 APP_TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
 
@@ -173,6 +177,113 @@ def app_headers(client: httpx.Client | None = None) -> dict[str, str]:
         "Authorization": f"Bearer {get_app_token(client)}",
         "Client-Id": get_settings().twitch_client_id,
     }
+
+
+class FollowerRecord(BaseModel):
+    user_id: str
+    user_login: str
+    followed_at: datetime
+
+
+class VideoRecord(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    duration_seconds: int
+    view_count: int
+    url: str
+
+
+def _user_headers(access_token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "Client-Id": get_settings().twitch_client_id,
+    }
+
+
+HELIX_PAGE_SIZE = 100
+# Backstop only: pagination stops at the true end via the cursor. This caps a
+# pathological inline backfill; move to a background job before onboarding
+# channels with hundreds of thousands of followers.
+FOLLOWER_PAGE_CAP = 200
+_DURATION_UNITS = {"h": 3600, "m": 60, "s": 1}
+
+
+def _duration_to_seconds(text: str) -> int:
+    """Twitch video durations look like '3h8m33s' / '27m' / '58s'."""
+    total = 0
+    digits = ""
+    for char in text:
+        if char.isdigit():
+            digits += char
+        elif char in _DURATION_UNITS and digits:
+            total += int(digits) * _DURATION_UNITS[char]
+            digits = ""
+    return total
+
+
+def iter_followers(
+    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
+) -> Iterator[FollowerRecord]:
+    """Helix Get Channel Followers, most-recent-first, paginated to the end."""
+    cursor: str | None = None
+    with _http(client) as http:
+        for _ in range(FOLLOWER_PAGE_CAP):
+            params = {
+                "broadcaster_id": str(broadcaster_id),
+                "first": str(HELIX_PAGE_SIZE),
+            }
+            if cursor:
+                params["after"] = cursor
+            response = http.get(
+                f"{HELIX_URL}/channels/followers",
+                params=params,
+                headers=_user_headers(access_token),
+            )
+            if response.status_code != 200:
+                raise TwitchAuthError(
+                    f"Twitch /channels/followers returned {response.status_code}"
+                )
+            body = response.json()
+            for row in body.get("data", []):
+                yield FollowerRecord.model_validate(row)
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                return
+        logger.warning(
+            "follower backfill hit page cap; not all followers captured",
+            extra={"broadcaster_id": broadcaster_id},
+        )
+
+
+def get_videos(
+    user_id: int, access_token: str, client: httpx.Client | None = None
+) -> list[VideoRecord]:
+    """Helix Get Videos (archived broadcasts). One page: Twitch retains VODs for
+    14 days (60 for partners), so the most recent 100 covers what exists."""
+    with _http(client) as http:
+        response = http.get(
+            f"{HELIX_URL}/videos",
+            params={
+                "user_id": str(user_id),
+                "type": "archive",
+                "first": str(HELIX_PAGE_SIZE),
+            },
+            headers=_user_headers(access_token),
+        )
+    if response.status_code != 200:
+        raise TwitchAuthError(f"Twitch /videos returned {response.status_code}")
+    return [
+        VideoRecord(
+            id=row["id"],
+            title=row["title"],
+            created_at=row["created_at"],
+            duration_seconds=_duration_to_seconds(row["duration"]),
+            view_count=int(row["view_count"]),
+            url=row["url"],
+        )
+        for row in response.json().get("data", [])
+    ]
 
 
 def get_stream_info(

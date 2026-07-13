@@ -10,7 +10,9 @@ from tests.conftest import login_as
 from tests.factories import (
     add_chat,
     add_event,
+    add_follower,
     add_insight,
+    add_past_broadcast,
     add_segment,
     add_viewer_samples,
     make_channel,
@@ -29,10 +31,8 @@ def test_channel_overview_loyalty_and_isolation(api_client, db) -> None:
         add_chat(db, stream, 5, author="regular")
     casual_stream = make_stream(db, channel, started_minutes_ago=6 * 24 * 60)
     add_chat(db, casual_stream, 20, author="casual")
-    # a follow event names the regular
-    follow = add_event(db, make_stream(db, channel), "channel.follow")
-    follow.payload = {"user_login": "regular"}
-    db.flush()
+    # the regular is a known follower (seeded like the connect backfill would)
+    add_follower(db, channel, "regular")
     # another channel's chatter must not leak
     add_chat(db, make_stream(db, other), 50, author="alheio")
 
@@ -148,6 +148,39 @@ def test_channel_growth_carries_revenue(api_client, db) -> None:
     assert growth[0]["estimated_usd"] == 10.0
 
 
+def test_channel_followers_come_from_backfill_table(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel)
+    add_chat(db, stream, 3, author="regular")
+    add_follower(db, channel, "regular")
+    add_follower(db, channel, "silent_fan")  # follows but never chatted
+    db.flush()
+
+    login_as(api_client, channel)
+    overview = api_client.get("/api/channel").json()
+
+    assert overview["total_followers_gained"] == 2
+    regular = next(
+        c for c in overview["loyal_chatters"] if c["author_login"] == "regular"
+    )
+    assert regular["followed"] is True
+
+
+def test_channel_past_broadcasts_listed_newest_first(api_client, db) -> None:
+    channel = make_channel(db)
+    add_past_broadcast(db, channel, title="Live velha", published_minutes_ago=5000)
+    add_past_broadcast(
+        db, channel, title="Live recente", published_minutes_ago=100, view_count=42
+    )
+    db.flush()
+
+    login_as(api_client, channel)
+    broadcasts = api_client.get("/api/channel").json()["past_broadcasts"]
+
+    assert [b["title"] for b in broadcasts] == ["Live recente", "Live velha"]
+    assert broadcasts[0]["view_count"] == 42
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)
@@ -157,6 +190,7 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["growth"] == []
     assert overview["finance"]["total_estimated_usd"] == 0.0
     assert overview["finance"]["top_contributors"] == []
+    assert overview["past_broadcasts"] == []
 
 
 def test_channel_requires_session(api_client) -> None:

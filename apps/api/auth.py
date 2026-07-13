@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
 
 from apps.api.deps import SESSION_COOKIE, DbSession
+from core.backfill import backfill_followers, backfill_videos
 from core.channels import upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
@@ -69,6 +70,7 @@ def callback(
 
     channel = upsert_channel(db, user, grant)
     db.commit()
+    _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)
 
     response = RedirectResponse("/")
@@ -82,6 +84,25 @@ def callback(
         secure=_secure_cookies(),
     )
     return response
+
+
+def _backfill_best_effort(db: DbSession, channel: Channel) -> None:
+    """Pull follower + VOD history on connect. Best-effort: a Helix hiccup must
+    not block login, and the data is re-fetched on the next connect."""
+    try:
+        followers = backfill_followers(db, channel)
+        videos = backfill_videos(db, channel)
+        db.commit()
+    except (httpx.HTTPError, TwitchAuthError):
+        db.rollback()
+        logger.exception("backfill failed", extra={"channel_id": channel.id})
+        return
+    logger.info(
+        "backfill done: %d followers, %d videos",
+        followers,
+        videos,
+        extra={"channel_id": channel.id},
+    )
 
 
 def _sync_eventsub_best_effort(channel: Channel) -> None:

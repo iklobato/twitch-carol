@@ -10,6 +10,8 @@ from core.twitch import (
     build_authorize_url,
     exchange_code,
     get_user,
+    get_videos,
+    iter_followers,
 )
 
 pytestmark = pytest.mark.usefixtures("twitch_env")
@@ -82,6 +84,67 @@ def test_get_user_empty_response_raises() -> None:
 
     with pytest.raises(TwitchAuthError, match="no user"):
         get_user("some-access", client=_mock_client(handler))
+
+
+def test_iter_followers_paginates_until_cursor_ends() -> None:
+    pages = [
+        {
+            "data": [
+                {
+                    "user_id": "1",
+                    "user_login": "a",
+                    "followed_at": "2026-01-01T00:00:00Z",
+                }
+            ],
+            "pagination": {"cursor": "next"},
+        },
+        {
+            "data": [
+                {
+                    "user_id": "2",
+                    "user_login": "b",
+                    "followed_at": "2026-02-01T00:00:00Z",
+                }
+            ],
+            "pagination": {},
+        },
+    ]
+    seen_cursors = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = parse_qs(urlparse(str(request.url)).query)
+        seen_cursors.append(params.get("after", [None])[0])
+        return httpx.Response(200, json=pages[len(seen_cursors) - 1])
+
+    followers = list(iter_followers(999, "tok", client=_mock_client(handler)))
+
+    assert [f.user_login for f in followers] == ["a", "b"]
+    assert seen_cursors == [None, "next"]  # second request carried the cursor
+
+
+def test_get_videos_parses_duration_to_seconds() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": "v1",
+                        "title": "Deploy day",
+                        "created_at": "2026-03-01T18:00:00Z",
+                        "duration": "1h2m3s",
+                        "view_count": "150",
+                        "url": "https://twitch.tv/videos/v1",
+                    }
+                ]
+            },
+        )
+
+    videos = get_videos(999, "tok", client=_mock_client(handler))
+
+    assert len(videos) == 1
+    assert videos[0].duration_seconds == 3723  # 1h + 2m + 3s
+    assert videos[0].view_count == 150
 
 
 def test_error_messages_never_contain_tokens() -> None:

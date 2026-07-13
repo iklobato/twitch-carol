@@ -194,6 +194,42 @@ function usd(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
 }
 
+function formatDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  return hours > 0 ? `${hours}h${minutes.toString().padStart(2, '0')}` : `${minutes}min`
+}
+
+function PastBroadcasts({ overview }: { overview: ChannelOverview }) {
+  if (overview.past_broadcasts.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Lives passadas</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        VODs da Twitch importadas ao conectar. Views são totais da gravação, não viewers ao vivo.
+      </p>
+      <div className="space-y-2">
+        {overview.past_broadcasts.map((vod) => (
+          <a
+            key={vod.url}
+            href={vod.url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm hover:border-zinc-600"
+          >
+            <span className="min-w-0 flex-1 truncate">{vod.title ?? 'Sem título'}</span>
+            <span className="shrink-0 text-zinc-500">{formatDate(vod.published_at)}</span>
+            <span className="shrink-0 text-zinc-500">{formatDuration(vod.duration_seconds)}</span>
+            <span className="w-20 shrink-0 text-right text-zinc-400">
+              {vod.view_count.toLocaleString('pt-BR')} views
+            </span>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
   const finance = overview.finance
   if (finance.total_estimated_usd === 0 && finance.top_contributors.length === 0) {
@@ -346,7 +382,7 @@ export default function ChannelView() {
         <StatCard label="Mensagens" value={overview.total_messages.toLocaleString('pt-BR')} />
         <StatCard label="Chatters únicos" value={overview.unique_chatters.toLocaleString('pt-BR')} />
         <StatCard
-          label="Seguidores ganhos"
+          label="Seguidores"
           value={overview.total_followers_gained.toLocaleString('pt-BR')}
         />
         <StatCard
@@ -359,6 +395,7 @@ export default function ChannelView() {
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />
       <RecurringTopics overview={overview} />
+      <PastBroadcasts overview={overview} />
     </div>
   )
 }

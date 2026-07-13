@@ -39,6 +39,8 @@ class FakeTwitch:
         self.app_tokens: set[str] = set()
         self.subscriptions: list[dict] = []
         self.stream_info: dict | None = None  # helix /streams payload for the user
+        self.followers: list[dict] = []  # helix /channels/followers backfill
+        self.videos: list[dict] = []  # helix /videos backfill
         self.client = httpx.Client(transport=httpx.MockTransport(self._handle))
 
     # --- consent / webhook emission helpers -------------------------------
@@ -111,6 +113,10 @@ class FakeTwitch:
         if path == "/helix/streams":
             data = [self.stream_info] if self.stream_info else []
             return httpx.Response(200, json={"data": data})
+        if path == "/helix/channels/followers":
+            return httpx.Response(200, json={"data": self.followers, "pagination": {}})
+        if path == "/helix/videos":
+            return httpx.Response(200, json={"data": self.videos})
         if path == "/helix/eventsub/subscriptions":
             if request.method == "GET":
                 return httpx.Response(200, json={"data": self.subscriptions})

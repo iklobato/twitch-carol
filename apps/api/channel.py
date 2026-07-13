@@ -21,8 +21,10 @@ from core.finance import (
 from core.models import (
     ChatMessage,
     Event,
+    Follower,
     Insight,
     InsightType,
+    PastBroadcast,
     Stream,
     StreamStatus,
     TranscriptSegment,
@@ -35,6 +37,7 @@ LOYAL_LIMIT = 20
 TOPIC_LIMIT = 10
 CONTRIBUTORS_LIMIT = 10
 MONETIZING_TOPIC_LIMIT = 8
+PAST_BROADCAST_LIMIT = 20
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -71,6 +74,14 @@ class RecurringTopic(BaseModel):
     streams: int
 
 
+class PastBroadcastOut(BaseModel):
+    title: str | None
+    published_at: datetime
+    duration_seconds: int
+    view_count: int
+    url: str
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -102,6 +113,7 @@ class ChannelOverview(BaseModel):
     growth: list[GrowthPoint]
     recurring_topics: list[RecurringTopic]
     finance: ChannelFinance
+    past_broadcasts: list[PastBroadcastOut]
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -147,12 +159,27 @@ def _loyal_chatters(
 
 
 def _follower_logins(db: DbSession, channel_id: int) -> set[str]:
-    rows = db.scalars(
-        select(Event.payload["user_login"].astext)
-        .where(Event.channel_id == channel_id)
-        .where(Event.type == FOLLOW_EVENT_TYPE)
-    )
+    rows = db.scalars(select(Follower.login).where(Follower.channel_id == channel_id))
     return {login for login in rows if login}
+
+
+def _past_broadcasts(db: DbSession, channel_id: int) -> list[PastBroadcastOut]:
+    rows = db.scalars(
+        select(PastBroadcast)
+        .where(PastBroadcast.channel_id == channel_id)
+        .order_by(PastBroadcast.published_at.desc())
+        .limit(PAST_BROADCAST_LIMIT)
+    )
+    return [
+        PastBroadcastOut(
+            title=row.title,
+            published_at=row.published_at,
+            duration_seconds=row.duration_seconds,
+            view_count=row.view_count,
+            url=row.url,
+        )
+        for row in rows
+    ]
 
 
 def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
@@ -403,4 +430,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         growth=_growth(db, channel.id),
         recurring_topics=_recurring_topics(db, ready_ids),
         finance=_channel_finance(db, channel.id, ready_ids),
+        past_broadcasts=_past_broadcasts(db, channel.id),
     )
