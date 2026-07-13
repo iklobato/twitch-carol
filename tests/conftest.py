@@ -117,7 +117,9 @@ def api_client(
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_valkey] = lambda: fake_valkey
-    yield TestClient(app)
+    # https base_url so secure session/oauth cookies round-trip (production
+    # sets them secure when PUBLIC_BASE_URL is https)
+    yield TestClient(app, base_url="https://testserver")
     app.dependency_overrides.clear()
 
 
