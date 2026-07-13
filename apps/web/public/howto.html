@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stream Intel — Como funciona e quanto vale pra você</title>
+<style>
+  :root {
+    --bg:#0b0a12; --bg-2:#100e1b; --bg-3:#15121f;
+    --line:rgba(169,112,255,0.16); --line-strong:rgba(169,112,255,0.3);
+    --ink:#f4f1fb; --muted:#a7a2c6; --muted-2:#7a749a;
+    --violet:#a970ff; --violet-hi:#cbaaff; --green:#34d399; --green-hi:#6ee7b7; --red:#fb7185;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --maxw:940px;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.62; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  .aura { position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(55% 40% at 12% -5%, rgba(145,70,255,0.22), transparent 60%), radial-gradient(45% 35% at 100% 0%, rgba(52,211,153,0.1), transparent 55%); }
+  .wrap { position:relative; z-index:1; max-width:var(--maxw); margin:0 auto; padding:0 22px; }
+  a { color:var(--violet-hi); }
+  .eyebrow { font-family:var(--mono); font-size:0.72rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--violet-hi); }
+  .eyebrow.green { color:var(--green-hi); }
+
+  .brand { display:flex; align-items:center; gap:10px; font-weight:800; }
+  .brand .mark { width:24px; height:24px; border-radius:6px; background:linear-gradient(150deg,var(--violet),#6f3fd6); box-shadow:0 0 16px rgba(145,70,255,0.5); display:grid; place-items:center; }
+  .brand .mark::after { content:""; width:8px; height:8px; border-radius:50%; background:#fff; }
+
+  .btn { display:inline-flex; align-items:center; gap:9px; font-weight:700; padding:14px 26px; border-radius:12px; text-decoration:none; color:#150b2b;
+    background:linear-gradient(135deg,var(--violet-hi),var(--violet)); box-shadow:0 8px 30px rgba(145,70,255,0.4); transition:transform .15s ease, box-shadow .2s ease; }
+  .btn:hover { transform:translateY(-2px); box-shadow:0 12px 40px rgba(145,70,255,0.55); }
+  .btn svg { width:18px; height:20px; fill:#150b2b; }
+
+  header.top { padding:56px 0 30px; border-bottom:1px solid var(--line); }
+  h1 { font-size:clamp(2rem,4.8vw,3.1rem); letter-spacing:-0.025em; line-height:1.05; margin:16px 0 0; font-weight:850; text-wrap:balance; }
+  h1 .hl { color:var(--green-hi); }
+  .sub { color:var(--muted); font-size:1.14rem; margin:16px 0 0; max-width:58ch; }
+  .top .cta-row { margin-top:26px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .top .note { font-family:var(--mono); font-size:0.74rem; color:var(--muted-2); }
+
+  section { padding:46px 0; border-bottom:1px solid var(--line); }
+  h2 { font-size:clamp(1.6rem,3.6vw,2.2rem); letter-spacing:-0.02em; margin:10px 0 0; font-weight:820; line-height:1.1; text-wrap:balance; }
+  .lead { color:var(--muted); font-size:1.06rem; margin-top:14px; max-width:64ch; }
+  p { margin:14px 0 0; }
+
+  /* example card */
+  .ex {
+    margin-top:22px; border:1px solid var(--line-strong); border-radius:16px; overflow:hidden;
+    background:linear-gradient(180deg,var(--bg-2),#0c0b15); box-shadow:0 24px 60px -34px rgba(145,70,255,0.5);
+  }
+  .ex .hd { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-bottom:1px solid var(--line); background:rgba(169,112,255,0.06); }
+  .ex .hd .who { font-family:var(--mono); font-size:0.76rem; color:var(--muted); }
+  .ex .hd .badge { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.1em; color:var(--green-hi); border:1px solid rgba(52,211,153,0.3); border-radius:6px; padding:3px 8px; }
+  .ex .bd { padding:18px; }
+  .block { display:grid; grid-template-columns:1fr auto; gap:6px 14px; align-items:center; padding:11px 0; border-bottom:1px dashed var(--line); }
+  .block:last-of-type { border-bottom:0; }
+  .block .lab { font-weight:600; }
+  .block .lab small { display:block; color:var(--muted-2); font-weight:400; font-family:var(--mono); font-size:0.72rem; margin-top:2px; }
+  .block .val { font-family:var(--mono); font-size:0.86rem; text-align:right; font-variant-numeric:tabular-nums; }
+  .val.good { color:var(--green-hi); }
+  .val.bad { color:var(--red); }
+  .val.mut { color:var(--muted-2); }
+  .verdict { margin-top:14px; display:flex; gap:11px; align-items:flex-start; border:1px solid var(--line-strong); border-radius:12px; padding:13px 15px;
+    background:linear-gradient(180deg,rgba(169,112,255,0.12),rgba(169,112,255,0.03)); }
+  .verdict .ai { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.1em; color:var(--violet-hi); border:1px solid var(--line-strong); border-radius:6px; padding:3px 7px; white-space:nowrap; margin-top:2px; }
+  .verdict p { margin:0; font-size:0.95rem; }
+
+  /* steps */
+  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:26px; counter-reset:s; }
+  .step { border:1px solid var(--line); border-radius:14px; padding:20px; background:var(--bg-2); }
+  .step .n { counter-increment:s; font-family:var(--mono); font-weight:700; width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:rgba(169,112,255,0.12); border:1px solid var(--line-strong); color:var(--violet-hi); }
+  .step .n::before { content:counter(s,decimal-leading-zero); }
+  .step h4 { margin:14px 0 0; font-size:1.05rem; }
+  .step p { color:var(--muted); font-size:0.9rem; margin-top:7px; }
+
+  /* feature list */
+  .feats { margin-top:24px; display:grid; gap:12px; }
+  .f { border:1px solid var(--line); border-radius:13px; padding:16px 18px; background:var(--bg-2); }
+  .f h4 { margin:0; font-size:1.06rem; display:flex; align-items:center; gap:9px; }
+  .f .pro { color:var(--muted); margin-top:6px; font-size:0.94rem; }
+  .f .demo { margin-top:9px; font-family:var(--mono); font-size:0.8rem; color:var(--green-hi); border-left:2px solid rgba(52,211,153,0.4); padding-left:10px; }
+
+  /* ROI */
+  .roi { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; }
+  .roi .r { border:1px solid var(--line); border-radius:14px; padding:20px; background:var(--bg-3); }
+  .roi .r .big { font-size:1.7rem; font-weight:800; color:var(--green-hi); font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+  .roi .r .k { font-family:var(--mono); font-size:0.68rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted-2); margin-top:4px; }
+  .roi .r .d { color:var(--muted); font-size:0.88rem; margin-top:8px; }
+  .honest { margin-top:18px; border:1px solid var(--line-strong); border-left:3px solid var(--green); border-radius:12px; padding:15px 17px; background:rgba(52,211,153,0.05); font-size:0.96rem; }
+  .honest b { color:var(--green-hi); }
+
+  .trust { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
+  .trust .t { border:1px solid var(--line); border-radius:13px; padding:16px; background:var(--bg-2); }
+  .trust .t .k { font-weight:700; }
+  .trust .t .k .ic { color:var(--green-hi); margin-right:8px; }
+  .trust .t .d { color:var(--muted); font-size:0.88rem; margin-top:5px; }
+
+  .beta { border:1px solid var(--line-strong); border-radius:18px; padding:26px; margin-top:24px;
+    background:radial-gradient(80% 130% at 20% -20%, rgba(145,70,255,0.2), transparent 60%), var(--bg-2); }
+  .beta ul { margin:12px 0 0; padding-left:20px; color:var(--muted); }
+  .beta li { margin:6px 0; }
+  .beta li b { color:var(--ink); }
+
+  .final { text-align:center; padding:56px 0 30px; }
+  .final h2 { font-size:clamp(1.8rem,4.6vw,2.7rem); }
+  .final p { color:var(--muted); max-width:46ch; margin:14px auto 0; }
+  .final .btn { margin-top:24px; padding:17px 32px; font-size:1.06rem; }
+
+  footer { border-top:1px solid var(--line); padding:24px 0 60px; color:var(--muted-2); font-size:0.82rem; }
+  .fine { font-size:0.76rem; max-width:78ch; margin-top:8px; }
+
+  @media (max-width:640px) {
+    .steps, .roi { grid-template-columns:1fr; }
+    .trust { grid-template-columns:1fr; }
+    .block { grid-template-columns:1fr; }
+    .block .val { text-align:left; }
+  }
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} .btn{transition:none;} }
+</style>
+</head>
+<body>
+<div class="aura"></div>
+
+<header class="top"><div class="wrap">
+  <div class="brand"><span class="mark"></span> Stream Intel</div>
+  <span class="eyebrow" style="display:block;margin-top:20px">Como funciona · e quanto vale pra você</span>
+  <h1>Você já faz o trabalho pesado. Falta saber <span class="hl">qual parte dele paga</span>.</h1>
+  <p class="sub">O Stream Intel escuta o que você fala na live e te mostra qual assunto engaja o chat e gera receita. Aí você repete o que funciona, em vez de torcer pra dar certo.</p>
+  <div class="cta-row">
+    <a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Conectar com a Twitch</a>
+    <span class="note">Grátis no beta · só leitura · 1 clique</span>
+  </div>
+</div></header>
+
+<!-- THE differentiator -->
+<section><div class="wrap">
+  <span class="eyebrow green">O que só o Stream Intel faz</span>
+  <h2>Ele cruza o que você FALA com o que engaja e o que paga.</h2>
+  <p class="lead">Numa live de 3 horas, nem todo minuto rende igual. A gente transcreve a sua fala, marca os picos de chat e casa cada bits/sub que chegou com o momento em que chegou. O resultado é simples: você vê, por assunto, o que puxou gente e o que puxou dinheiro.</p>
+
+  <div class="ex">
+    <div class="hd"><span class="who">Exemplo · live de terça, 3h, 45 viewers no pico</span><span class="badge">ILUSTRATIVO</span></div>
+    <div class="bd">
+      <div class="block"><div class="lab">Reagindo a clipes <small>40 min</small></div><div class="val good">chat 2,8x · US$ 6 em bits</div></div>
+      <div class="block"><div class="lab">Conversando com o chat <small>1h</small></div><div class="val good">chat 1,7x · 2 subs (US$ 5)</div></div>
+      <div class="block"><div class="lab">Jogando em silêncio <div class="val mut" style="display:inline"></div><small>1h20</small></div><div class="val bad">chat abaixo da média · US$ 0</div></div>
+      <div class="verdict"><span class="ai">IA</span><p>Seus melhores momentos vêm de reagir a clipes e conversar com o chat. Foi de onde saíram quase toda a interação e todos os bits. Faça mais desses blocos e corte o gameplay em silêncio.</p></div>
+    </div>
+  </div>
+  <p style="color:var(--muted-2);font-size:0.82rem">Os valores são pequenos de propósito: é o tipo de número real de um canal em crescimento. O ganho não é mágica, é parar de gastar hora com o que não engaja.</p>
+</div></section>
+
+<!-- how it works -->
+<section><div class="wrap">
+  <span class="eyebrow">Como funciona por baixo</span>
+  <h2>Três passos. Um clique pra começar.</h2>
+  <div class="steps">
+    <div class="step"><div class="n"></div><h4>Conecte</h4><p>Um clique com a Twitch, só permissões de leitura. A gente nunca posta nem muda nada no seu canal.</p></div>
+    <div class="step"><div class="n"></div><h4>A gente capta e analisa</h4><p>Chat, fala (transcrita), viewers e cada bit/sub/hype viram números automaticamente, enquanto você transmite.</p></div>
+    <div class="step"><div class="n"></div><h4>Você decide com clareza</h4><p>Abre o painel "Meu canal" e vê, em minutos, o que repetir e o que cortar pra faturar mais.</p></div>
+  </div>
+  <p style="color:var(--muted)">Todo número vem de SQL sobre o dado bruto. A IA só escreve as recomendações, e é obrigada a citar o número que a embasa. Nada é inventado.</p>
+</div></section>
+
+<!-- features with realistic examples -->
+<section><div class="wrap">
+  <span class="eyebrow">Tudo que você vê</span>
+  <h2>Cada recurso, com um exemplo real de um canal pequeno.</h2>
+  <div class="feats">
+    <div class="f"><h4>💰 Monetização</h4><div class="pro">De onde vem a sua grana, quem contribui e qual assunto rende.</div><div class="demo">"US$ 58 no mês. 1 pessoa (o seu top apoiador) foi 40% disso."</div></div>
+    <div class="f"><h4>📊 Conteúdo que converte</h4><div class="pro">Quanto cada tipo de conteúdo paga por hora transmitida.</div><div class="demo">"Reagir a clipes: US$ 9/h. Gameplay solo: US$ 1/h. Faça mais do primeiro."</div></div>
+    <div class="f"><h4>⚡ Dados no dia 1</h4><div class="pro">Conectou, já tem dado real: seguidores com histórico e lives passadas.</div><div class="demo">"Seus 41 seguidores aparecem na hora, com a data em que cada um seguiu."</div></div>
+    <div class="f"><h4>🚀 Engajamento que puxa grana</h4><div class="pro">Hype trains, recompensas de pontos e o efeito dos anúncios.</div><div class="demo">"Seu anúncio no minuto 40 derrubou 18% dos viewers. Rode depois de um pico."</div></div>
+    <div class="f"><h4>👥 Comunidade</h4><div class="pro">Quem sustenta o canal: fiéis, VIPs, metas e quem realmente fala.</div><div class="demo">"Só 5% dos seus viewers escrevem no chat. Sua meta de seguidores está em 68%."</div></div>
+    <div class="f"><h4>💎 Assinantes e bits</h4><div class="pro">Mix de tiers, churn e seus maiores doadores (quando você for afiliado).</div><div class="demo">"12 subs ativos, 90% tier 1. 1 cancelou este mês."</div></div>
+    <div class="f"><h4>🤖 Recomendações por IA</h4><div class="pro">O próximo passo, sempre citando o SEU número. Zero achismo.</div><div class="demo">"Seu top apoiador é 40% da receita: crie um perk exclusivo pra ele e outros como ele."</div></div>
+    <div class="f"><h4>🎬 Relatório de cada live</h4><div class="pro">Picos explicados, melhores momentos pra clipar e melhores horários.</div><div class="demo">"Seu chat dobrou quando você reagiu ao clipe às 21h10. Bom corte pra Shorts."</div></div>
+  </div>
+</div></section>
+
+<!-- value / ROI -->
+<section><div class="wrap">
+  <span class="eyebrow green">Quanto isso vale pra você</span>
+  <h2>Não é te fazer rico. É parar o desperdício.</h2>
+  <p class="lead">A mesma audiência, o mesmo tempo de live, rendendo mais, porque você passa a fazer mais do que já funciona e menos do que esvazia.</p>
+
+  <div class="roi">
+    <div class="r"><div class="big">~12h</div><div class="k">por mês</div><div class="d">O tempo que um streamer de 12 lives costuma gastar em blocos que quase não engajam nem pagam. O painel te mostra quais são.</div></div>
+    <div class="r"><div class="big">5 min</div><div class="k">pra decidir</div><div class="d">Em vez de sentir "acho que funcionou", você abre o painel e sabe. Cada decisão de conteúdo vira baseada em dado.</div></div>
+    <div class="r"><div class="big">1 clique</div><div class="k">pra começar</div><div class="d">Sem instalar nada, sem planilha. Conecta a Twitch e em minutos já enxerga seus números.</div></div>
+  </div>
+
+  <div class="honest">
+    <b>A conta honesta:</b> se numa live de 3h uma hora rende quase nada e você troca por mais do que converte, a mesma live passa a render mais sem você transmitir um minuto a mais. Multiplique por 12 lives no mês. Não prometemos número mágico: os valores em dólar são estimativas e a receita depende de você monetizar (afiliação). O que garantimos é você parar de decidir no escuro.
+  </div>
+</div></section>
+
+<!-- trust -->
+<section><div class="wrap">
+  <span class="eyebrow">Por que confiar</span>
+  <h2>Honesto com seus dados e com seu dinheiro.</h2>
+  <div class="trust">
+    <div class="t"><div class="k"><span class="ic">◆</span>Só leitura</div><div class="d">A gente nunca posta, edita ou muda nada no seu canal. Nunca.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Criptografado</div><div class="d">Seus tokens da Twitch ficam guardados com criptografia em repouso.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Números do banco</div><div class="d">As métricas vêm de SQL, nunca de um texto de IA "chutando" valores.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Estimativas rotuladas</div><div class="d">Todo valor em dólar é marcado como estimativa: a Twitch não abre o split exato.</div></div>
+  </div>
+</div></section>
+
+<!-- beta -->
+<section><div class="wrap">
+  <span class="eyebrow green">Você foi convidado</span>
+  <h2>Entre como beta tester, antes do lançamento.</h2>
+  <div class="beta">
+    <p style="margin-top:0;color:var(--muted)">Você está numa lista pequena de streamers com acesso antecipado. Na prática:</p>
+    <ul>
+      <li><b>Acesso gratuito</b> durante todo o beta.</li>
+      <li><b>Sua opinião molda o produto:</b> o que você pedir, a gente constrói.</li>
+      <li><b>Você entra na frente,</b> antes de abrir pra todo mundo.</li>
+    </ul>
+  </div>
+</div></section>
+
+<div class="final"><div class="wrap">
+  <span class="eyebrow">Pronto pra parar de adivinhar?</span>
+  <h2>Descubra qual assunto seu paga mais.</h2>
+  <p>Conecte sua conta da Twitch e veja, em minutos, o que repetir na próxima live.</p>
+  <div><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Conectar com a Twitch</a></div>
+</div></div>
+
+<footer><div class="wrap">
+  <div class="brand"><span class="mark"></span> Stream Intel · streamintel.cc</div>
+  <p class="fine">Todos os números de exemplo desta página são ilustrativos e representam um canal pequeno em crescimento, não uma promessa de resultado. Valores em dólar são estimativas da sua parte e rotulados como tal. Dados de inscritos e leaderboard de bits dependem de afiliação/parceria na Twitch. Stream Intel não é afiliado à Twitch.</p>
+</div></footer>
+</body>
+</html>
