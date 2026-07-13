@@ -16,7 +16,7 @@ import redis
 
 from core.config import get_settings
 from core.models import Channel
-from core.twitch import HELIX_URL, app_headers
+from core.twitch import HELIX_URL, _http, app_headers
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +134,6 @@ def sync_channel_subscriptions(
     settings = get_settings()
     callback = f"{settings.public_base_url}/eventsub/callback"
     broadcaster_id = str(channel.twitch_user_id)
-    own_client = client if client is not None else httpx.Client(timeout=10.0)
-
-    existing = _existing_subscription_types(own_client, broadcaster_id)
     summary: dict[str, list[str]] = {
         "created": [],
         "existing": [],
@@ -144,41 +141,41 @@ def sync_channel_subscriptions(
         "failed": [],
     }
 
-    for spec in SUBSCRIPTION_SPECS:
-        if (
-            spec.required_scope is not None
-            and spec.required_scope not in channel.scopes
-        ):
-            summary["skipped"].append(spec.type)
-            continue
-        if spec.type in existing:
-            summary["existing"].append(spec.type)
-            continue
-        response = own_client.post(
-            f"{HELIX_URL}/eventsub/subscriptions",
-            headers=app_headers(own_client),
-            json={
-                "type": spec.type,
-                "version": spec.version,
-                "condition": spec.condition(broadcaster_id),
-                "transport": {
-                    "method": "webhook",
-                    "callback": callback,
-                    "secret": settings.twitch_eventsub_secret,
+    # _http is the single Twitch-client seam (tests swap it for a fake)
+    with _http(client) as http:
+        existing = _existing_subscription_types(http, broadcaster_id)
+        for spec in SUBSCRIPTION_SPECS:
+            if (
+                spec.required_scope is not None
+                and spec.required_scope not in channel.scopes
+            ):
+                summary["skipped"].append(spec.type)
+                continue
+            if spec.type in existing:
+                summary["existing"].append(spec.type)
+                continue
+            response = http.post(
+                f"{HELIX_URL}/eventsub/subscriptions",
+                headers=app_headers(http),
+                json={
+                    "type": spec.type,
+                    "version": spec.version,
+                    "condition": spec.condition(broadcaster_id),
+                    "transport": {
+                        "method": "webhook",
+                        "callback": callback,
+                        "secret": settings.twitch_eventsub_secret,
+                    },
                 },
-            },
-        )
-        if response.status_code == 202:
-            summary["created"].append(spec.type)
-            continue
-        summary["failed"].append(f"{spec.type}:{response.status_code}")
-        logger.warning(
-            "eventsub subscription failed",
-            extra={"channel_id": channel.id, "event_type": spec.type},
-        )
-
-    if client is None:
-        own_client.close()
+            )
+            if response.status_code == 202:
+                summary["created"].append(spec.type)
+                continue
+            summary["failed"].append(f"{spec.type}:{response.status_code}")
+            logger.warning(
+                "eventsub subscription failed",
+                extra={"channel_id": channel.id, "event_type": spec.type},
+            )
     return summary
 
 
