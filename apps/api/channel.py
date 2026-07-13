@@ -22,6 +22,7 @@ from core.models import (
     ChatMessage,
     Event,
     Follower,
+    Goal,
     Insight,
     InsightType,
     PastBroadcast,
@@ -29,6 +30,7 @@ from core.models import (
     StreamStatus,
     TranscriptSegment,
     ViewerSample,
+    Vip,
 )
 
 router = APIRouter(prefix="/api/channel")
@@ -120,6 +122,20 @@ class Engagement(BaseModel):
     ads: AdImpact
 
 
+class GoalOut(BaseModel):
+    goal_type: str
+    description: str | None
+    current_amount: int
+    target_amount: int
+    pct: float
+
+
+class Community(BaseModel):
+    engaged_viewer_pct: float | None
+    vips: list[str]
+    goals: list[GoalOut]
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -154,6 +170,7 @@ class ChannelOverview(BaseModel):
     past_broadcasts: list[PastBroadcastOut]
     content_revenue: list[ContentBucket]
     engagement: Engagement
+    community: Community
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -288,6 +305,67 @@ def _content_revenue(
     ]
     buckets.sort(key=lambda bucket: bucket.estimated_usd, reverse=True)
     return buckets[:CONTENT_LIMIT]
+
+
+def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Community:
+    """Goals, VIPs, and how much of the audience actually chats (a low chat
+    rate means paying viewers are lurking, not engaged)."""
+    vips = list(
+        db.scalars(
+            select(Vip.login).where(Vip.channel_id == channel_id).order_by(Vip.login)
+        )
+    )
+    goals = [
+        GoalOut(
+            goal_type=goal.goal_type,
+            description=goal.description,
+            current_amount=goal.current_amount,
+            target_amount=goal.target_amount,
+            pct=(
+                round(goal.current_amount / goal.target_amount * 100, 1)
+                if goal.target_amount > 0
+                else 0.0
+            ),
+        )
+        for goal in db.scalars(
+            select(Goal).where(Goal.channel_id == channel_id).order_by(Goal.goal_type)
+        )
+    ]
+    return Community(
+        engaged_viewer_pct=_engaged_viewer_pct(db, ready_ids),
+        vips=vips,
+        goals=goals,
+    )
+
+
+def _engaged_viewer_pct(db: DbSession, ready_ids: list[int]) -> float | None:
+    """Mean over streams of (distinct chatters / peak viewers) as a percent."""
+    if not ready_ids:
+        return None
+    chatters = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(
+                ChatMessage.stream_id, func.count(func.distinct(ChatMessage.author_id))
+            )
+            .where(ChatMessage.stream_id.in_(ready_ids))
+            .group_by(ChatMessage.stream_id)
+        )
+    }
+    peaks = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(ViewerSample.stream_id, func.max(ViewerSample.viewer_count))
+            .where(ViewerSample.stream_id.in_(ready_ids))
+            .group_by(ViewerSample.stream_id)
+        )
+    }
+    ratios = [
+        chatters.get(sid, 0) / peaks[sid] for sid in ready_ids if peaks.get(sid, 0) > 0
+    ]
+    if not ratios:
+        return None
+    return round(sum(ratios) / len(ratios) * 100, 1)
 
 
 def _engagement(db: DbSession, ready_ids: list[int]) -> Engagement:
@@ -614,4 +692,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         past_broadcasts=_past_broadcasts(db, channel.id),
         content_revenue=_content_revenue(db, channel.id, ready_ids),
         engagement=_engagement(db, ready_ids),
+        community=_community(db, channel.id, ready_ids),
     )

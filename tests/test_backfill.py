@@ -6,9 +6,14 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from core.backfill import backfill_followers, backfill_videos
+from core.backfill import (
+    backfill_followers,
+    backfill_goals,
+    backfill_videos,
+    backfill_vips,
+)
 from core.crypto import encrypt_secret
-from core.models import Channel, Follower, PastBroadcast
+from core.models import Channel, Follower, Goal, PastBroadcast, Vip
 from tests.factories import make_channel
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
@@ -103,3 +108,59 @@ def test_backfill_videos_inserts_then_refreshes_views(db) -> None:
         select(PastBroadcast.view_count).where(PastBroadcast.channel_id == channel.id)
     )
     assert refreshed == 99
+
+
+def test_backfill_vips_inserts_and_dedups(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    records = [
+        {"user_id": "1", "user_login": "vip_ana"},
+        {"user_id": "2", "user_login": "vip_bruno"},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": records, "pagination": {}})
+
+    added = backfill_vips(db, channel, client=_mock_client(handler))
+    db.flush()
+    assert added == 2
+    logins = set(db.scalars(select(Vip.login).where(Vip.channel_id == channel.id)))
+    assert logins == {"vip_ana", "vip_bruno"}
+    assert backfill_vips(db, channel, client=_mock_client(handler)) == 0
+
+
+def test_backfill_goals_replaces_snapshot(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+
+    def handler_with(current: int):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "g1",
+                            "type": "follower",
+                            "description": "1k seguidores",
+                            "current_amount": current,
+                            "target_amount": 1000,
+                        }
+                    ]
+                },
+            )
+
+        return handler
+
+    backfill_goals(db, channel, client=_mock_client(handler_with(500)))
+    db.flush()
+    goal = db.scalar(select(Goal).where(Goal.channel_id == channel.id))
+    assert goal.current_amount == 500
+
+    # a later connect refreshes progress in place
+    backfill_goals(db, channel, client=_mock_client(handler_with(750)))
+    db.flush()
+    refreshed = db.scalar(
+        select(Goal.current_amount).where(Goal.channel_id == channel.id)
+    )
+    assert refreshed == 750

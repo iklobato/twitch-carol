@@ -238,6 +238,20 @@ export type Engagement = {
   ads: { breaks: number; total_seconds: number; avg_viewer_change_pct: number | null }
 }
 
+export type GoalOut = {
+  goal_type: string
+  description: string | null
+  current_amount: number
+  target_amount: number
+  pct: number
+}
+
+export type Community = {
+  engaged_viewer_pct: number | null
+  vips: string[]
+  goals: GoalOut[]
+}
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -251,6 +265,7 @@ export type ChannelOverview = {
   past_broadcasts: PastBroadcast[]
   content_revenue: ContentBucket[]
   engagement: Engagement
+  community: Community
 }
 
 export type QueueItem = {

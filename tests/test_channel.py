@@ -11,10 +11,12 @@ from tests.factories import (
     add_chat,
     add_event,
     add_follower,
+    add_goal,
     add_insight,
     add_past_broadcast,
     add_segment,
     add_viewer_samples,
+    add_vip,
     make_channel,
     make_stream,
 )
@@ -274,6 +276,24 @@ def test_channel_engagement_empty_when_no_events(api_client, db) -> None:
     assert eng["ads"]["breaks"] == 0
 
 
+def test_channel_community_goals_vips_engagement(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel)
+    add_viewer_samples(db, stream, [100])  # peak 100
+    add_chat(db, stream, 4, author="a")
+    add_chat(db, stream, 2, author="b")  # 2 distinct chatters over peak 100 = 2%
+    add_vip(db, channel, "vip_carol")
+    add_goal(db, channel, current_amount=750, target_amount=1000)
+    db.flush()
+
+    login_as(api_client, channel)
+    community = api_client.get("/api/channel").json()["community"]
+
+    assert community["vips"] == ["vip_carol"]
+    assert community["goals"][0]["pct"] == 75.0
+    assert community["engaged_viewer_pct"] == 2.0
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)
@@ -285,6 +305,8 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["finance"]["top_contributors"] == []
     assert overview["past_broadcasts"] == []
     assert overview["content_revenue"] == []
+    assert overview["community"]["vips"] == []
+    assert overview["community"]["goals"] == []
 
 
 def test_channel_requires_session(api_client) -> None:

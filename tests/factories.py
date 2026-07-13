@@ -11,6 +11,7 @@ from core.models import (
     ChatMessage,
     Event,
     Follower,
+    Goal,
     Insight,
     InsightType,
     Job,
@@ -22,6 +23,7 @@ from core.models import (
     StreamStatus,
     TranscriptSegment,
     ViewerSample,
+    Vip,
 )
 
 _sequence = iter(range(1000, 10_000_000))
@@ -43,6 +45,36 @@ def add_follower(
     db.add(follower)
     db.flush()
     return follower
+
+
+def add_vip(db: Session, channel: Channel, login: str) -> Vip:
+    unique = next(_sequence)
+    vip = Vip(channel_id=channel.id, twitch_user_id=unique, login=login)
+    db.add(vip)
+    db.flush()
+    return vip
+
+
+def add_goal(
+    db: Session,
+    channel: Channel,
+    goal_type: str = "follower",
+    current_amount: int = 500,
+    target_amount: int = 1000,
+    description: str | None = "Meta de seguidores",
+) -> Goal:
+    unique = next(_sequence)
+    goal = Goal(
+        channel_id=channel.id,
+        twitch_goal_id=str(unique),
+        goal_type=goal_type,
+        description=description,
+        current_amount=current_amount,
+        target_amount=target_amount,
+    )
+    db.add(goal)
+    db.flush()
+    return goal
 
 
 def add_past_broadcast(

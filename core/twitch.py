@@ -32,11 +32,13 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 OAUTH_SCOPES = [
     "bits:read",
     "channel:read:ads",
+    "channel:read:goals",
     "channel:read:hype_train",
     "channel:read:polls",
     "channel:read:predictions",
     "channel:read:redemptions",
     "channel:read:subscriptions",
+    "channel:read:vips",
     "moderator:read:followers",
 ]
 
@@ -284,6 +286,65 @@ def get_videos(
         )
         for row in response.json().get("data", [])
     ]
+
+
+class VipRecord(BaseModel):
+    user_id: str
+    user_login: str
+
+
+class GoalRecord(BaseModel):
+    id: str
+    type: str
+    description: str | None = None
+    current_amount: int
+    target_amount: int
+
+
+def get_vips(
+    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
+) -> list[VipRecord]:
+    """Helix Get VIPs (paginated to the end)."""
+    vips: list[VipRecord] = []
+    cursor: str | None = None
+    with _http(client) as http:
+        for _ in range(FOLLOWER_PAGE_CAP):
+            params = {
+                "broadcaster_id": str(broadcaster_id),
+                "first": str(HELIX_PAGE_SIZE),
+            }
+            if cursor:
+                params["after"] = cursor
+            response = http.get(
+                f"{HELIX_URL}/channels/vips",
+                params=params,
+                headers=_user_headers(access_token),
+            )
+            if response.status_code != 200:
+                raise TwitchAuthError(
+                    f"Twitch /channels/vips returned {response.status_code}"
+                )
+            body = response.json()
+            vips.extend(VipRecord.model_validate(row) for row in body.get("data", []))
+            cursor = body.get("pagination", {}).get("cursor")
+            if not cursor:
+                break
+    return vips
+
+
+def get_goals(
+    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
+) -> list[GoalRecord]:
+    """Helix Get Creator Goals (current goals snapshot)."""
+    with _http(client) as http:
+        response = http.get(
+            f"{HELIX_URL}/goals",
+            params={"broadcaster_id": str(broadcaster_id)},
+            headers=_user_headers(access_token),
+        )
+    if response.status_code != 200:
+        raise TwitchAuthError(f"Twitch /goals returned {response.status_code}")
+    return [GoalRecord.model_validate(row) for row in response.json().get("data", [])]
 
 
 def get_stream_info(

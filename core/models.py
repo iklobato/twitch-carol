@@ -130,6 +130,37 @@ class PastBroadcast(Base):
     url: Mapped[str] = mapped_column(String(256))
 
 
+class Vip(Base):
+    """Channel VIPs, seeded from Helix on connect."""
+
+    __tablename__ = "vips"
+    __table_args__ = (
+        Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+
+
+class Goal(Base):
+    """Current creator goal snapshot (follower/sub/etc), seeded on connect."""
+
+    __tablename__ = "goals"
+    __table_args__ = (
+        Index("uq_goals_channel_twitch", "channel_id", "twitch_goal_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_goal_id: Mapped[str] = mapped_column(String(64))
+    goal_type: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(String(256))
+    current_amount: Mapped[int]
+    target_amount: Mapped[int]
+
+
 class Stream(Base):
     __tablename__ = "streams"
 

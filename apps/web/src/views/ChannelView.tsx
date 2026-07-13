@@ -237,6 +237,81 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+const GOAL_LABELS: Record<string, string> = {
+  follower: 'Seguidores',
+  subscription: 'Inscritos',
+  subscription_count: 'Inscritos',
+  new_subscription: 'Novos inscritos',
+}
+
+function CommunityHealth({ overview }: { overview: ChannelOverview }) {
+  const { engaged_viewer_pct, vips, goals } = overview.community
+  if (engaged_viewer_pct === null && vips.length === 0 && goals.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-lg font-bold">Comunidade</h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        {goals.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 md:col-span-2">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Metas
+            </p>
+            <div className="space-y-3 text-sm">
+              {goals.map((goal) => (
+                <div key={goal.goal_type + goal.description}>
+                  <div className="mb-1 flex justify-between">
+                    <span>{goal.description ?? GOAL_LABELS[goal.goal_type] ?? goal.goal_type}</span>
+                    <span className="text-zinc-400">
+                      {goal.current_amount.toLocaleString('pt-BR')}/
+                      {goal.target_amount.toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded bg-zinc-800">
+                    <div
+                      className="h-full rounded bg-purple-500"
+                      style={{ width: `${Math.min(goal.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Engajamento do chat
+          </p>
+          {engaged_viewer_pct !== null ? (
+            <>
+              <p className="text-2xl font-bold text-emerald-400">{engaged_viewer_pct}%</p>
+              <p className="text-xs text-zinc-500">dos viewers escrevem no chat (o resto observa)</p>
+            </>
+          ) : (
+            <p className="text-sm text-zinc-600">Sem dados de viewers ainda.</p>
+          )}
+        </div>
+      </div>
+      {vips.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            VIPs
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {vips.map((vip) => (
+              <span
+                key={vip}
+                className="rounded-full border border-pink-800 bg-pink-950/40 px-3 py-1 text-sm text-pink-200"
+              >
+                {vip}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EngagementSection({ overview }: { overview: ChannelOverview }) {
   const { hype_train, top_rewards, ads } = overview.engagement
   if (hype_train.count === 0 && top_rewards.length === 0 && ads.breaks === 0) return null
@@ -519,6 +594,7 @@ export default function ChannelView() {
       <ChannelMonetization overview={overview} />
       <ContentRevenue overview={overview} />
       <EngagementSection overview={overview} />
+      <CommunityHealth overview={overview} />
       <LoyalChatters overview={overview} />
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />
