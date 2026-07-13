@@ -22,13 +22,28 @@ Chart.register(
   Legend,
 )
 
-export default function TimelineChart({ timeline }: { timeline: Timeline }) {
+export default function TimelineChart({
+  timeline,
+  onPeakClick,
+}: {
+  timeline: Timeline
+  onPeakClick?: (peakId: number) => void
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<Chart | null>(null)
 
   useEffect(() => {
     if (!canvasRef.current) return
     const labels = timeline.chat.map((point) => formatTime(point.t))
+    // map each x label inside a peak window to that peak's id, for click-to-jump
+    const peakByLabel = new Map<string, number>()
+    for (const peak of timeline.peaks) {
+      for (const label of labels) {
+        if (label >= formatTime(peak.window_start) && label < formatTime(peak.window_end)) {
+          peakByLabel.set(label, peak.id)
+        }
+      }
+    }
     const viewersByLabel = new Map(
       timeline.viewers.map((point) => [formatTime(point.t), point.value]),
     )
@@ -97,6 +112,19 @@ export default function TimelineChart({ timeline }: { timeline: Timeline }) {
             },
           },
         },
+        onClick: (_event, elements) => {
+          if (!onPeakClick || elements.length === 0) return
+          const label = labels[elements[0].index]
+          const peakId = peakByLabel.get(label)
+          if (peakId !== undefined) onPeakClick(peakId)
+        },
+        onHover: (event, elements) => {
+          const target = event.native?.target as HTMLElement | undefined
+          if (target) {
+            const label = elements.length > 0 ? labels[elements[0].index] : undefined
+            target.style.cursor = label && peakByLabel.has(label) ? 'pointer' : 'default'
+          }
+        },
         scales: {
           x: { ticks: { color: '#71717a', maxTicksLimit: 12 }, grid: { color: '#27272a' } },
           y: {
@@ -114,7 +142,7 @@ export default function TimelineChart({ timeline }: { timeline: Timeline }) {
       },
     })
     return () => chartRef.current?.destroy()
-  }, [timeline])
+  }, [timeline, onPeakClick])
 
   return <canvas ref={canvasRef} className="max-h-72 w-full" />
 }

@@ -220,6 +220,28 @@ function WordCloud({ community }: { community: CommunityOut }) {
   )
 }
 
+function EmoteChip({ emote }: { emote: CommunityOut['emotes'][number] }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <span
+      title={`${emote.name} · ${emote.count}x`}
+      className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs"
+    >
+      {failed ? (
+        <span>{emote.name}</span>
+      ) : (
+        <img
+          src={`https://static-cdn.jtvnw.net/emoticons/v2/${emote.emote_id}/default/dark/1.0`}
+          alt={emote.name}
+          className="h-5 w-5"
+          onError={() => setFailed(true)}
+        />
+      )}
+      <span className="text-zinc-500">×{emote.count}</span>
+    </span>
+  )
+}
+
 function EmoteChips({ community }: { community: CommunityOut }) {
   if (community.emotes.length === 0) return null
   return (
@@ -229,12 +251,7 @@ function EmoteChips({ community }: { community: CommunityOut }) {
       </p>
       <div className="flex flex-wrap gap-2">
         {community.emotes.map((emote) => (
-          <span
-            key={emote.name}
-            className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs"
-          >
-            {emote.name} <span className="text-zinc-500">×{emote.count}</span>
-          </span>
+          <EmoteChip key={`${emote.emote_id}-${emote.name}`} emote={emote} />
         ))}
       </div>
     </div>

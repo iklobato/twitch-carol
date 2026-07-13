@@ -142,20 +142,25 @@ def strip_emotes(text: str, emotes: dict | None) -> str:
     return "".join(result)
 
 
-def emote_names(text: str, emotes: dict | None) -> list[str]:
-    """Emote occurrences by name, recovered from the IRC ranges (we store
-    emote ids + character ranges; the name is the text slice)."""
+def emote_occurrences(text: str, emotes: dict | None) -> list[tuple[str, str]]:
+    """(emote_id, name) per occurrence, recovered from the IRC ranges. The id
+    builds the Twitch CDN url; the name is the text slice the id covered."""
     if not emotes:
         return []
-    names = []
-    for ranges in emotes.values():
+    found = []
+    for emote_id, ranges in emotes.items():
         for span in ranges:
             start, _, end = span.partition("-")
             if start.isdigit() and end.isdigit():
                 name = text[int(start) : int(end) + 1].strip()
                 if name:
-                    names.append(name)
-    return names
+                    found.append((str(emote_id), name))
+    return found
+
+
+def emote_names(text: str, emotes: dict | None) -> list[str]:
+    """Emote occurrences by name only."""
+    return [name for _, name in emote_occurrences(text, emotes)]
 
 
 def meaningful_words(text: str, emotes: dict | None) -> list[str]:

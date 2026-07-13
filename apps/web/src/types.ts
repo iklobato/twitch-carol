@@ -133,7 +133,7 @@ export type TopicDetail = {
 export type CommunityOut = {
   share: { login: string | null; messages: number }[]
   words: { word: string; count: number }[]
-  emotes: { name: string; count: number }[]
+  emotes: { emote_id: string; name: string; count: number }[]
   sentiment_overall: number | null
   sentiment_timeline: { t: string; score: number; messages: number }[]
   sentiment_by_chatter: { login: string; score: number }[]

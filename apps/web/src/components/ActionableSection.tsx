@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { apiGet, formatTime } from '../api'
+import { formatTime } from '../api'
 import type { ActionableOut } from '../types'
 
 function Retention({ actionable }: { actionable: ActionableOut }) {
@@ -105,15 +104,7 @@ function UnansweredQuestions({ actionable }: { actionable: ActionableOut }) {
   )
 }
 
-export default function ActionableSection({ streamId }: { streamId: number }) {
-  const [actionable, setActionable] = useState<ActionableOut | null>(null)
-
-  useEffect(() => {
-    apiGet<ActionableOut>(`/api/streams/${streamId}/actionable`)
-      .then(setActionable)
-      .catch(() => setActionable(null))
-  }, [streamId])
-
+export default function ActionableSection({ actionable }: { actionable: ActionableOut | null }) {
   if (actionable === null) return null
   const hasContent =
     actionable.retention !== null ||

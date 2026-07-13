@@ -13,7 +13,7 @@ from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
 from core.models import ChatMessage, Stream
 from core.text import (
-    emote_names,
+    emote_occurrences,
     meaningful_words,
     message_sentiment,
     strip_emotes,
@@ -42,6 +42,7 @@ class WordCount(BaseModel):
 
 
 class EmoteCount(BaseModel):
+    emote_id: str
     name: str
     count: int
 
@@ -109,7 +110,7 @@ def stream_community(
 
     per_login: Counter[str] = Counter()
     words: Counter[str] = Counter()
-    emotes: Counter[str] = Counter()
+    emotes: Counter[tuple[str, str]] = Counter()
     minute_counts: dict[tuple[str, int], int] = defaultdict(int)
     bucket_sentiment: dict[int, list[float]] = defaultdict(list)
     login_sentiment: dict[str, list[float]] = defaultdict(list)
@@ -131,8 +132,8 @@ def stream_community(
         minute_counts[(login, minute)] += 1
         sentiment_bucket = max(int(offset_seconds // SENTIMENT_BUCKET_SECONDS), 0)
 
-        for name in emote_names(text, message_emotes):
-            emotes[name] += 1
+        for emote_id, name in emote_occurrences(text, message_emotes):
+            emotes[(emote_id, name)] += 1
         tokens = tokenize(strip_emotes(text, message_emotes))
         words.update(meaningful_words(text, message_emotes))
         score = message_sentiment(tokens)
@@ -151,7 +152,10 @@ def stream_community(
     return CommunityOut(
         share=share,
         words=[WordCount(word=w, count=c) for w, c in words.most_common(TOP_WORDS)],
-        emotes=[EmoteCount(name=n, count=c) for n, c in emotes.most_common(TOP_EMOTES)],
+        emotes=[
+            EmoteCount(emote_id=key[0], name=key[1], count=c)
+            for key, c in emotes.most_common(TOP_EMOTES)
+        ],
         sentiment_overall=(
             round(sum(all_scores) / len(all_scores), 2) if all_scores else None
         ),
