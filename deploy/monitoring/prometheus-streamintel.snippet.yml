@@ -1,0 +1,21 @@
+# Append these jobs to the monitoring box /opt/monitoring/prometheus.yml.
+# Exporters bind to the private VPC IP of the stream-intel droplet.
+  - job_name: streamintel-node
+    static_configs:
+      - targets: ["10.108.0.3:9100"]
+  - job_name: streamintel-cadvisor
+    static_configs:
+      - targets: ["10.108.0.3:8080"]
+  - job_name: streamintel-valkey
+    static_configs:
+      - targets: ["10.108.0.3:9121"]
+  - job_name: streamintel-app
+    scheme: https
+    metrics_path: /metrics
+    authorization:
+      credentials: "<METRICS_TOKEN>"   # matches app .env METRICS_TOKEN
+    static_configs:
+      - targets: ["streamintel.cc"]
+  # add to the existing blackbox job's targets:
+  #   - https://streamintel.cc/
+  #   - https://streamintel.cc/healthz

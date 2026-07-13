@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: StreamIntel DB
+    uid: streamintel-pg
+    type: postgres
+    url: private-db-postgresql-nyc3-86715-do-user-15037626-0.g.db.ondigitalocean.com:25060
+    user: grafana_ro
+    database: streamintel
+    jsonData:
+      database: streamintel
+      sslmode: require
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: ${GRAFANA_RO_PASSWORD}

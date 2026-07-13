@@ -1,0 +1,50 @@
+# streamintel monitoring agent (host + container + valkey exporters).
+# Standalone from the app stack so app redeploys don't disturb it.
+# All metrics ports bind to the private VPC IP (10.108.0.3) only, never the
+# public interface (the droplet has no cloud firewall).
+services:
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "10.108.0.3:9100:9100"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    restart: unless-stopped
+    privileged: true
+    # cgroup v2 (Ubuntu 22.04): without the host cgroup namespace cadvisor only
+    # sees its own tree, so per-container metrics come back empty.
+    cgroup: host
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "10.108.0.3:8080:8080"
+
+  valkey-exporter:
+    image: oliver006/redis_exporter:v1.62.0
+    restart: unless-stopped
+    command:
+      - --redis.addr=redis://valkey:6379
+      # pipeline backlog: stream length + consumer-group lag per job queue
+      - --check-streams=jobs:transcribe,jobs:analyze
+    networks:
+      - app
+    ports:
+      - "10.108.0.3:9121:9121"
+
+networks:
+  app:
+    external: true
+    name: deploy_default

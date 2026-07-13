@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     twitch_client_id: str = ""
     twitch_client_secret: str = ""
     twitch_eventsub_secret: str = ""
+    # Bearer token the monitoring box uses to scrape /metrics; empty = closed.
+    metrics_token: str = ""
     # Dev default is the Caddy entrypoint from docker compose.
     public_base_url: str = "http://localhost:8080"
     # Host-mapped compose ports (5433/6380: 5432/6379 are taken by another
