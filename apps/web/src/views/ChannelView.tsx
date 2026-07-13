@@ -190,33 +190,123 @@ function RecurringTopics({ overview }: { overview: ChannelOverview }) {
   )
 }
 
-function TopContributors({ overview }: { overview: ChannelOverview }) {
-  if (overview.top_contributors.length === 0) return null
+function usd(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
+}
+
+function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
+  const finance = overview.finance
+  if (finance.total_estimated_usd === 0 && finance.top_contributors.length === 0) {
+    return (
+      <div className="mb-6">
+        <h3 className="mb-1 text-lg font-bold">Monetização</h3>
+        <p className="text-sm text-zinc-500">
+          Ainda sem bits ou assinaturas capturados. Aparece aqui quando seu canal começar a
+          monetizar (requer parceria/afiliação na Twitch).
+        </p>
+      </div>
+    )
+  }
+  const maxTopic = Math.max(...finance.top_monetizing_topics.map((t) => t.estimated_usd), 0.01)
+  const maxRevenue = Math.max(...overview.growth.map((g) => g.estimated_usd), 0.01)
+  const paidStreams = overview.growth.filter((g) => g.estimated_usd > 0)
+
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Quem mais contribuiu (todas as lives)</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        Estimativa da sua parte em bits e assinaturas ao longo do tempo.
-      </p>
-      <div className="space-y-2">
-        {overview.top_contributors.map((contributor, index) => (
-          <div
-            key={contributor.login}
-            className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm"
-          >
-            <span>
-              <span className="mr-2 text-zinc-600">{index + 1}º</span>
-              <span className="font-semibold text-purple-300">{contributor.login}</span>
-              <span className="ml-2 text-xs text-zinc-500">
-                em {contributor.streams} live{contributor.streams > 1 ? 's' : ''}
-              </span>
-            </span>
-            <span className="font-semibold text-emerald-400">
-              {contributor.estimated_usd.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
-            </span>
-          </div>
-        ))}
+      <h3 className="mb-3 text-lg font-bold">Monetização (todas as lives)</h3>
+      <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-lg border border-emerald-900/60 bg-zinc-900 p-3">
+          <p className="text-xs text-zinc-500">Arrecadado (estimado)</p>
+          <p className="text-xl font-bold text-emerald-400">{usd(finance.total_estimated_usd)}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+          <p className="text-xs text-zinc-500">Bits</p>
+          <p className="text-xl font-bold">{finance.total_bits.toLocaleString('pt-BR')}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+          <p className="text-xs text-zinc-500">Assinaturas</p>
+          <p className="text-xl font-bold">{finance.total_subs.toLocaleString('pt-BR')}</p>
+        </div>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+          <p className="text-xs text-zinc-500">Subs presenteados</p>
+          <p className="text-xl font-bold">{finance.total_gifts.toLocaleString('pt-BR')}</p>
+        </div>
       </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {finance.top_contributors.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Quem mais contribuiu
+            </p>
+            <div className="space-y-1.5 text-sm">
+              {finance.top_contributors.map((contributor, index) => (
+                <div key={contributor.login} className="flex items-center justify-between">
+                  <span>
+                    <span className="mr-2 text-zinc-600">{index + 1}º</span>
+                    <span className="text-purple-300">{contributor.login}</span>
+                    <span className="ml-2 text-xs text-zinc-500">
+                      em {contributor.streams} live{contributor.streams > 1 ? 's' : ''}
+                    </span>
+                  </span>
+                  <span className="font-semibold text-emerald-400">{usd(contributor.estimated_usd)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {finance.top_monetizing_topics.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Assuntos que mais monetizam
+            </p>
+            <div className="space-y-2 text-sm">
+              {finance.top_monetizing_topics.map((topic) => (
+                <div key={topic.name} className="flex items-center gap-3">
+                  <span className="w-36 shrink-0 truncate">{topic.name}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-800">
+                    <div
+                      className="h-full rounded bg-emerald-500"
+                      style={{ width: `${(topic.estimated_usd / maxTopic) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-16 shrink-0 text-right text-emerald-400">{usd(topic.estimated_usd)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {paidStreams.length > 0 && (
+        <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Receita por live
+          </p>
+          <div className="space-y-2 text-sm">
+            {paidStreams.map((point) => (
+              <a
+                key={point.stream_id}
+                href={`#/stream/${point.stream_id}`}
+                className="flex items-center gap-3 hover:text-purple-300"
+              >
+                <span className="w-48 shrink-0 truncate">{point.title ?? `Live #${point.stream_id}`}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-800">
+                  <div
+                    className="h-full rounded bg-emerald-500"
+                    style={{ width: `${(point.estimated_usd / maxRevenue) * 100}%` }}
+                  />
+                </div>
+                <span className="w-16 shrink-0 text-right text-emerald-400">{usd(point.estimated_usd)}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-zinc-600">
+        Valores em dólar são estimativas da sua parte (Twitch não divulga o split exato).
+      </p>
     </div>
   )
 }
@@ -261,14 +351,11 @@ export default function ChannelView() {
         />
         <StatCard
           label="Arrecadado (estimado)"
-          value={overview.total_estimated_usd.toLocaleString('pt-BR', {
-            style: 'currency',
-            currency: 'USD',
-          })}
+          value={usd(overview.finance.total_estimated_usd)}
         />
       </div>
+      <ChannelMonetization overview={overview} />
       <LoyalChatters overview={overview} />
-      <TopContributors overview={overview} />
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />
       <RecurringTopics overview={overview} />

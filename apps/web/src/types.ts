@@ -204,6 +204,16 @@ export type GrowthPoint = {
   avg_viewers: number
   followers_gained: number
   messages: number
+  estimated_usd: number
+}
+
+export type ChannelFinance = {
+  total_estimated_usd: number
+  total_bits: number
+  total_subs: number
+  total_gifts: number
+  top_contributors: { login: string; estimated_usd: number; streams: number }[]
+  top_monetizing_topics: { name: string; estimated_usd: number; streams: number }[]
 }
 
 export type ChannelOverview = {
@@ -211,12 +221,11 @@ export type ChannelOverview = {
   total_messages: number
   unique_chatters: number
   total_followers_gained: number
-  total_estimated_usd: number
   loyal_chatters: LoyalChatter[]
   best_weekdays: WeekdaySlot[]
   growth: GrowthPoint[]
   recurring_topics: { name: string; streams: number }[]
-  top_contributors: { login: string; estimated_usd: number; streams: number }[]
+  finance: ChannelFinance
 }
 
 export type QueueItem = {

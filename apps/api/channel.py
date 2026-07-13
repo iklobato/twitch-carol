@@ -2,14 +2,22 @@
 best time to go live, growth, and recurring topics. All numbers from SQL."""
 
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import Float, func, select
 
 from apps.api.deps import CurrentChannel, DbSession
-from core.finance import MONEY_EVENT_TYPES, event_contributor, event_usd
+from core.finance import (
+    CHEER,
+    GIFT,
+    MONEY_EVENT_TYPES,
+    RESUB,
+    SUBSCRIBE,
+    event_contributor,
+    event_usd,
+)
 from core.models import (
     ChatMessage,
     Event,
@@ -17,6 +25,7 @@ from core.models import (
     InsightType,
     Stream,
     StreamStatus,
+    TranscriptSegment,
     ViewerSample,
 )
 
@@ -25,6 +34,8 @@ router = APIRouter(prefix="/api/channel")
 LOYAL_LIMIT = 20
 TOPIC_LIMIT = 10
 CONTRIBUTORS_LIMIT = 10
+MONETIZING_TOPIC_LIMIT = 8
+TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
@@ -52,6 +63,7 @@ class GrowthPoint(BaseModel):
     avg_viewers: float
     followers_gained: int
     messages: int
+    estimated_usd: float
 
 
 class RecurringTopic(BaseModel):
@@ -65,17 +77,31 @@ class TopContributor(BaseModel):
     streams: int
 
 
+class MonetizingTopic(BaseModel):
+    name: str
+    estimated_usd: float
+    streams: int
+
+
+class ChannelFinance(BaseModel):
+    total_estimated_usd: float
+    total_bits: int
+    total_subs: int
+    total_gifts: int
+    top_contributors: list[TopContributor]
+    top_monetizing_topics: list[MonetizingTopic]
+
+
 class ChannelOverview(BaseModel):
     total_streams: int
     total_messages: int
     unique_chatters: int
     total_followers_gained: int
-    total_estimated_usd: float
     loyal_chatters: list[LoyalChatter]
     best_weekdays: list[WeekdaySlot]
     growth: list[GrowthPoint]
     recurring_topics: list[RecurringTopic]
-    top_contributors: list[TopContributor]
+    finance: ChannelFinance
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -213,6 +239,13 @@ def _growth(db: DbSession, channel_id: int) -> list[GrowthPoint]:
             .group_by(Event.stream_id)
         )
     }
+    revenue: dict[int, float] = defaultdict(float)
+    for event in db.scalars(
+        select(Event)
+        .where(Event.stream_id.in_(stream_ids))
+        .where(Event.type.in_(MONEY_EVENT_TYPES))
+    ):
+        revenue[event.stream_id] += event_usd(event)
     return [
         GrowthPoint(
             stream_id=s.id,
@@ -222,23 +255,61 @@ def _growth(db: DbSession, channel_id: int) -> list[GrowthPoint]:
             avg_viewers=round(float(avgs.get(s.id, 0) or 0), 1),
             followers_gained=int(follows.get(s.id, 0)),
             messages=int(msgs.get(s.id, 0)),
+            estimated_usd=round(revenue.get(s.id, 0.0), 2),
         )
         for s in streams
     ]
 
 
-def _top_contributors(
-    db: DbSession, channel_id: int
-) -> tuple[list[TopContributor], float]:
-    """All-time spenders across the channel's streams, from money events."""
+def _topic_windows_by_stream(
+    db: DbSession, stream_ids: list[int]
+) -> dict[int, list[tuple[str, datetime, datetime]]]:
+    """For each stream, its topics' (name, window_start, window_end), where the
+    window comes from the topic's cited transcript segments."""
+    from apps.api.dashboard import _cited_ids
+
+    topics = db.scalars(
+        select(Insight)
+        .where(Insight.stream_id.in_(stream_ids))
+        .where(Insight.type == InsightType.TOPIC)
+    ).all()
+    segment_ids = {i for t in topics for i in _cited_ids(t, "segment_ids")}
+    bounds: dict[int, tuple[datetime, datetime]] = {
+        row[0]: (row[1], row[2])
+        for row in db.execute(
+            select(
+                TranscriptSegment.id,
+                TranscriptSegment.started_at,
+                TranscriptSegment.ended_at,
+            ).where(TranscriptSegment.id.in_(segment_ids))
+        )
+    }
+    windows: dict[int, list[tuple[str, datetime, datetime]]] = defaultdict(list)
+    for topic in topics:
+        segs = [bounds[i] for i in _cited_ids(topic, "segment_ids") if i in bounds]
+        if not segs:
+            continue
+        start = min(s[0] for s in segs) - TOPIC_WINDOW_PADDING
+        end = max(s[1] for s in segs) + TOPIC_WINDOW_PADDING
+        windows[topic.stream_id].append((topic.content.split("\n")[0], start, end))
+    return windows
+
+
+def _channel_finance(
+    db: DbSession, channel_id: int, ready_ids: list[int]
+) -> ChannelFinance:
     events = db.scalars(
         select(Event)
         .where(Event.channel_id == channel_id)
         .where(Event.type.in_(MONEY_EVENT_TYPES))
     ).all()
+
+    total = 0.0
+    total_bits = 0
+    total_subs = 0
+    total_gifts = 0
     per_login: dict[str, float] = defaultdict(float)
     per_login_streams: dict[str, set[int]] = defaultdict(set)
-    total = 0.0
     for event in events:
         value = event_usd(event)
         total += value
@@ -246,6 +317,13 @@ def _top_contributors(
         if login:
             per_login[login] += value
             per_login_streams[login].add(event.stream_id)
+        if event.type == CHEER:
+            total_bits += event.amount or 0
+        elif event.type in (SUBSCRIBE, RESUB):
+            total_subs += 1
+        elif event.type == GIFT:
+            total_gifts += event.amount or 0
+
     ranked = sorted(per_login.items(), key=lambda item: item[1], reverse=True)[
         :CONTRIBUTORS_LIMIT
     ]
@@ -257,7 +335,34 @@ def _top_contributors(
         )
         for login, usd in ranked
     ]
-    return contributors, round(total, 2)
+
+    topic_usd: dict[str, float] = defaultdict(float)
+    topic_streams: dict[str, set[int]] = defaultdict(set)
+    windows = _topic_windows_by_stream(db, ready_ids) if ready_ids else {}
+    for event in events:
+        for name, start, end in windows.get(event.stream_id, []):
+            if start <= event.occurred_at < end:
+                topic_usd[name] += event_usd(event)
+                topic_streams[name].add(event.stream_id)
+    monetizing = sorted(topic_usd.items(), key=lambda item: item[1], reverse=True)[
+        :MONETIZING_TOPIC_LIMIT
+    ]
+    top_topics = [
+        MonetizingTopic(
+            name=name, estimated_usd=round(usd, 2), streams=len(topic_streams[name])
+        )
+        for name, usd in monetizing
+        if usd > 0
+    ]
+
+    return ChannelFinance(
+        total_estimated_usd=round(total, 2),
+        total_bits=total_bits,
+        total_subs=total_subs,
+        total_gifts=total_gifts,
+        top_contributors=contributors,
+        top_monetizing_topics=top_topics,
+    )
 
 
 def _recurring_topics(db: DbSession, stream_ids: list[int]) -> list[RecurringTopic]:
@@ -287,17 +392,15 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
             ChatMessage.channel_id == channel.id
         )
     ).one()
-    contributors, total_usd = _top_contributors(db, channel.id)
 
     return ChannelOverview(
         total_streams=len(ready_ids),
         total_messages=int(total_messages),
         unique_chatters=int(unique_chatters),
         total_followers_gained=len(follower_logins),
-        total_estimated_usd=total_usd,
         loyal_chatters=_loyal_chatters(db, channel.id, follower_logins),
         best_weekdays=_best_weekdays(db, channel.id),
         growth=_growth(db, channel.id),
         recurring_topics=_recurring_topics(db, ready_ids),
-        top_contributors=contributors,
+        finance=_channel_finance(db, channel.id, ready_ids),
     )

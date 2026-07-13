@@ -11,6 +11,7 @@ from tests.factories import (
     add_chat,
     add_event,
     add_insight,
+    add_segment,
     add_viewer_samples,
     make_channel,
     make_stream,
@@ -105,6 +106,48 @@ def test_channel_growth_and_recurring_topics(api_client, db) -> None:
     assert topics["Caddy"] == 1
 
 
+def test_channel_finance_aggregates_across_streams(api_client, db) -> None:
+    channel = make_channel(db)
+    # a recurring spender across two streams, plus a topic that earns
+    for offset_days, bits in ((14, 500), (7, 300)):
+        stream = make_stream(
+            db, channel, started_minutes_ago=offset_days * 24 * 60, duration_minutes=30
+        )
+        cheer = add_event(db, stream, "channel.cheer", offset_seconds=310, amount=bits)
+        cheer.payload = {"user_login": "baleia", "bits": bits}
+        segment = add_segment(db, stream, 300, "falando de deploy", duration_seconds=60)
+        add_insight(
+            db,
+            stream,
+            InsightType.TOPIC,
+            "Deploy\nx",
+            {"segment_ids": [segment.id], "message_ids": [], "rank": 1},
+        )
+    db.flush()
+
+    login_as(api_client, channel)
+    finance = api_client.get("/api/channel").json()["finance"]
+
+    assert finance["total_bits"] == 800
+    assert finance["total_estimated_usd"] == 8.0  # 800 bits * 0.01
+    assert finance["top_contributors"][0]["login"] == "baleia"
+    assert finance["top_contributors"][0]["streams"] == 2
+    assert finance["top_monetizing_topics"][0]["name"] == "Deploy"
+    assert finance["top_monetizing_topics"][0]["streams"] == 2
+
+
+def test_channel_growth_carries_revenue(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, started_minutes_ago=100, title="Live paga")
+    add_viewer_samples(db, stream, [10])
+    cheer = add_event(db, stream, "channel.cheer", offset_seconds=60, amount=1000)
+    cheer.payload = {"user_login": "fan"}
+    db.flush()
+    login_as(api_client, channel)
+    growth = api_client.get("/api/channel").json()["growth"]
+    assert growth[0]["estimated_usd"] == 10.0
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)
@@ -112,6 +155,8 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["total_streams"] == 0
     assert overview["loyal_chatters"] == []
     assert overview["growth"] == []
+    assert overview["finance"]["total_estimated_usd"] == 0.0
+    assert overview["finance"]["top_contributors"] == []
 
 
 def test_channel_requires_session(api_client) -> None:
