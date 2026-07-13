@@ -333,7 +333,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"streamintel-node\",mountpoint=\"/host\"} / node_filesystem_size_bytes{job=\"streamintel-node\",mountpoint=\"/host\"})",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{job=\"streamintel-node\",mountpoint=\"/\",fstype=\"ext4\"} / node_filesystem_size_bytes{job=\"streamintel-node\",mountpoint=\"/\",fstype=\"ext4\"})",
           "legendFormat": "disk"
         }
       ],
@@ -363,7 +363,7 @@
     {
       "id": 11,
       "type": "row",
-      "title": "Containers (cadvisor)",
+      "title": "Pipeline (Valkey)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -375,114 +375,6 @@
     {
       "id": 12,
       "type": "timeseries",
-      "title": "CPU por container",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by(name)(rate(container_cpu_usage_seconds_total{job=\"streamintel-cadvisor\",name=~\"deploy-.*\"}[5m]))",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 13,
-      "type": "timeseries",
-      "title": "Memoria por container",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by(name)(container_memory_working_set_bytes{job=\"streamintel-cadvisor\",name=~\"deploy-.*\"})",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 14,
-      "type": "timeseries",
-      "title": "Restarts (1h) por container",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 31
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "changes(container_start_time_seconds{job=\"streamintel-cadvisor\",name=~\"deploy-.*\"}[1h])",
-          "legendFormat": "{{name}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 15,
-      "type": "row",
-      "title": "Pipeline (Valkey)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 37
-      }
-    },
-    {
-      "id": 16,
-      "type": "timeseries",
       "title": "Backlog por fila (stream length)",
       "datasource": {
         "type": "prometheus",
@@ -492,7 +384,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 38
+        "y": 23
       },
       "targets": [
         {
@@ -513,7 +405,7 @@
       }
     },
     {
-      "id": 17,
+      "id": 13,
       "type": "timeseries",
       "title": "Valkey memoria usada",
       "datasource": {
@@ -524,7 +416,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 38
+        "y": 23
       },
       "targets": [
         {

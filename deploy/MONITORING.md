@@ -11,10 +11,28 @@ Both droplets share the private VPC `10.108.0.x`.
 |-------|--------|-------|
 | Uptime / TLS | blackbox probes `streamintel.cc` + `/healthz` | monitoring `prometheus.yml` |
 | Host CPU/mem/disk | `node-exporter` on stream-intel | `deploy/monitoring-agent.yml` |
-| Per-container CPU/mem/restarts | `cadvisor` on stream-intel | `deploy/monitoring-agent.yml` |
 | Pipeline backlog (`jobs:transcribe/analyze`) | `redis_exporter` `--check-streams` | `deploy/monitoring-agent.yml` |
 | API req rate / latency / 5xx | app `/metrics` (token) | `apps/api/metrics.py` |
 | Postgres (managed cluster) | DO native metrics `:9273` | already scraped (shared cluster) |
+
+### Known limitation: per-container CPU/mem by name
+
+cadvisor runs on the box but cannot resolve container names on this host: the
+Docker daemon uses the containerd `overlayfs` image store, which cadvisor
+v0.49.1 cannot map to names (it sees the container cgroups only by hash id).
+So there are no `name="deploy-*"` per-container panels. Worker liveness is
+instead covered by the Valkey backlog alert (a dead/stuck consuming worker
+stops draining its stream). The capture worker (a producer, no queue) is not
+directly covered; a per-worker heartbeat metric would close that gap.
+
+To get named per-container metrics, switch the box to the `overlay2` storage
+driver (daemon.json + `systemctl restart docker`, brief container restart).
+
+## Alerts (6 rules, Grafana-provisioned)
+
+site-down, host-down (node-exporter gone), disk >85%, queue backlog,
+API 5xx, TLS <14 days. Removing a rule from the file does not delete it in
+Grafana; use the `deleteRules:` block (see `streamintel-alerts.yml`).
 
 ## Exporters on the stream-intel box
 

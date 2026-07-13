@@ -18,6 +18,11 @@ services:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     restart: unless-stopped
     privileged: true
+    # cgroup v2 (Ubuntu 22.04): without the host cgroup namespace cadvisor only
+    # sees its own tree, so per-container metrics come back empty.
+    cgroup: host
+    devices:
+      - /dev/kmsg
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro

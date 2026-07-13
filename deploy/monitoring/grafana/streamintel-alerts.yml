@@ -1,4 +1,10 @@
 apiVersion: 1
+# Removing a rule from a file does not delete it; Grafana needs an explicit
+# deleteRules entry. si-worker-down was replaced by si-queue-backlog (cadvisor
+# cannot name containers under this host's containerd image store).
+deleteRules:
+  - orgId: 1
+    uid: si-worker-down
 groups:
   - orgId: 1
     name: streamintel
@@ -56,7 +62,7 @@ groups:
             relativeTimeRange: { from: 300, to: 0 }
             datasourceUid: prometheus
             model:
-              expr: '100 * (1 - node_filesystem_avail_bytes{job="streamintel-node",mountpoint="/host"} / node_filesystem_size_bytes{job="streamintel-node",mountpoint="/host"})'
+              expr: '100 * (1 - node_filesystem_avail_bytes{job="streamintel-node",mountpoint="/",fstype="ext4"} / node_filesystem_size_bytes{job="streamintel-node",mountpoint="/",fstype="ext4"})'
               instant: true
               refId: A
           - refId: C
@@ -68,36 +74,16 @@ groups:
               expression: A
               conditions: [{ evaluator: { params: [85], type: gt } }]
 
-      - uid: si-worker-down
-        title: Worker de pipeline parado (menos de 3 rodando)
-        condition: C
-        for: 5m
-        labels: { severity: critical }
-        annotations: { summary: "Um dos workers capture/transcribe/analyze sumiu; pipeline pode travar." }
-        data:
-          - refId: A
-            relativeTimeRange: { from: 300, to: 0 }
-            datasourceUid: prometheus
-            model:
-              expr: 'count(container_memory_working_set_bytes{job="streamintel-cadvisor",name=~"deploy-worker-.*"})'
-              instant: true
-              refId: A
-          - refId: C
-            relativeTimeRange: { from: 0, to: 0 }
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions: [{ evaluator: { params: [3], type: lt } }]
-
-      # ponytail: 100 e um chute inicial (backlog atual ~7); ajustar com dados reais de volume.
+      # Consuming-worker liveness (transcribe/analyze): a dead/stuck worker stops
+      # draining its stream, so the backlog climbs. ponytail: 100 is a starting
+      # guess (backlog now ~7); tune with real volume. Note: the capture worker
+      # produces (no queue) so it is not covered here - see MONITORING.md.
       - uid: si-queue-backlog
-        title: Backlog de jobs alto (worker preso?)
+        title: Backlog de jobs alto (worker preso ou morto?)
         condition: C
         for: 15m
         labels: { severity: warning }
-        annotations: { summary: "Fila jobs:transcribe/analyze acumulando; worker pode estar preso ou lento." }
+        annotations: { summary: "Fila jobs:transcribe/analyze acumulando; worker de consumo preso, lento ou morto." }
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }
