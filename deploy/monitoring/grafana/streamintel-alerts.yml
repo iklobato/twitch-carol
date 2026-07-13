@@ -1,10 +1,4 @@
 apiVersion: 1
-# Removing a rule from a file does not delete it; Grafana needs an explicit
-# deleteRules entry. si-worker-down was replaced by si-queue-backlog (cadvisor
-# cannot name containers under this host's containerd image store).
-deleteRules:
-  - orgId: 1
-    uid: si-worker-down
 groups:
   - orgId: 1
     name: streamintel
@@ -140,3 +134,27 @@ groups:
               type: threshold
               expression: A
               conditions: [{ evaluator: { params: [14], type: lt } }]
+
+      # Worker liveness via heartbeat keys. redis_key_value exists only while a
+      # worker refreshes its TTL'd key, so <3 present means one died/hung. Covers
+      # all 3 workers (capture too). Activate only AFTER the worker code with
+      # core/heartbeat.py is deployed, else it fires with 0 heartbeats.
+      - uid: si-worker-down
+        title: Worker de pipeline parado (heartbeat ausente)
+        condition: C
+        for: 3m
+        labels: { severity: critical }
+        annotations: { summary: "Um dos workers capture/transcribe/analyze parou de emitir heartbeat." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'count(redis_key_value{job="streamintel-valkey", key=~"worker:heartbeat:.*"})', instant: true, refId: A }
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [3], type: lt } }]

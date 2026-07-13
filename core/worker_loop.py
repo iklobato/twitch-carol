@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.db import session_factory
+from core.heartbeat import start_heartbeat
 from core.models import Channel, Job, JobStatus, Stream, StreamStatus
 from core.queues import enqueue_job, get_valkey
 from core.schedule import HISTORY_LIMIT, estimate_next_live
@@ -136,6 +137,7 @@ def _register_failure(db: Session, spec: WorkerSpec, job: Job, err: Exception) -
 
 
 def run_worker(spec: WorkerSpec, handler: JobHandler) -> None:
+    start_heartbeat(spec.job_type)
     factory = session_factory()
     while True:
         with factory() as db:

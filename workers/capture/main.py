@@ -10,6 +10,7 @@ import logging
 from sqlalchemy import select
 
 from core.db import session_factory
+from core.heartbeat import start_heartbeat
 from core.logging_setup import setup_logging
 from core.models import Channel, Stream, StreamStatus
 from workers.capture.session import CaptureSession
@@ -59,6 +60,7 @@ async def run_forever() -> None:
 def main() -> None:
     setup_logging()
     logger.info("capture worker starting")
+    start_heartbeat("capture")
     asyncio.run(run_forever())
 
 

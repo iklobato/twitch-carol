@@ -39,6 +39,8 @@ services:
       - --redis.addr=redis://valkey:6379
       # pipeline backlog: stream length + consumer-group lag per job queue
       - --check-streams=jobs:transcribe,jobs:analyze
+      # worker liveness: heartbeat keys (TTL) written by each worker
+      - --check-keys=worker:heartbeat:capture,worker:heartbeat:transcribe,worker:heartbeat:analyze
     networks:
       - app
     ports:
