@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
 import ActionableSection from '../components/ActionableSection'
 import ChattersSection from '../components/ChattersSection'
+import FinanceSection from '../components/FinanceSection'
 import CommunitySection from '../components/CommunitySection'
 import PipelineStepper from '../components/PipelineStepper'
 import TimelineChart from '../components/TimelineChart'
@@ -556,6 +557,8 @@ export default function StreamReport({ streamId }: { streamId: number }) {
 
       <ActionableSection actionable={actionable} />
 
+      <FinanceSection streamId={report.id} />
+
       {recommendations.length > 0 && (
         <div className="mb-6">
           <h3 className="mb-3 text-lg font-bold">Recomendações</h3>
@@ -598,7 +601,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
         </div>
       )}
 
-      <CommunitySection streamId={report.id} />
+      <CommunitySection streamId={report.id} events={timeline?.events ?? []} />
       <ChattersSection streamId={report.id} />
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (

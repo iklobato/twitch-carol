@@ -236,6 +236,43 @@ def fill_rich_stream(db, channel, stream) -> None:
             payload={"user_login": "novo_fa_mock"},
         )
     )
+    # money events during the raid window -> demonstrates the finance section
+    for offset, etype, amount, payload in [
+        (
+            burst_start + 10,
+            "channel.cheer",
+            1000,
+            {"user_login": "mockviewer_11", "bits": 1000},
+        ),
+        (
+            burst_start + 25,
+            "channel.cheer",
+            300,
+            {"user_login": "fiel_carlos", "bits": 300},
+        ),
+        (
+            burst_start + 50,
+            "channel.subscribe",
+            2000,
+            {"user_login": "fiel_ana", "tier": "2000"},
+        ),
+        (
+            burst_start + 70,
+            "channel.subscription.gift",
+            5,
+            {"user_login": "mockviewer_11", "tier": "1000"},
+        ),
+    ]:
+        db.add(
+            Event(
+                stream_id=stream.id,
+                channel_id=channel.id,
+                occurred_at=start + timedelta(seconds=offset),
+                type=etype,
+                payload=payload,
+                amount=amount,
+            )
+        )
 
 
 def seed_history(db, channel) -> None:
@@ -276,6 +313,17 @@ def seed_history(db, channel) -> None:
                 occurred_at=stream.started_at + timedelta(minutes=10),
                 type="channel.follow",
                 payload={"user_login": f"seguidor_{index}"},
+            )
+        )
+        # a regular cheers each stream, growing all-time contributions
+        db.add(
+            Event(
+                stream_id=stream.id,
+                channel_id=channel.id,
+                occurred_at=stream.started_at + timedelta(minutes=15),
+                type="channel.cheer",
+                payload={"user_login": "fiel_carlos", "bits": 200 + index * 100},
+                amount=200 + index * 100,
             )
         )
         db.add(

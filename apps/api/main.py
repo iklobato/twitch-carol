@@ -8,6 +8,7 @@ from apps.api.community import router as community_router
 from apps.api.dashboard import router as dashboard_router
 from apps.api.deps import CurrentChannel
 from apps.api.eventsub import router as eventsub_router
+from apps.api.finance import router as finance_router
 from core.logging_setup import setup_logging
 
 setup_logging()
@@ -19,6 +20,7 @@ app.include_router(dashboard_router)
 app.include_router(community_router)
 app.include_router(channel_router)
 app.include_router(actionable_router)
+app.include_router(finance_router)
 
 
 class MeResponse(BaseModel):

@@ -1,8 +1,6 @@
 import {
-  ArcElement,
   CategoryScale,
   Chart,
-  DoughnutController,
   Filler,
   Legend,
   LinearScale,
@@ -12,12 +10,10 @@ import {
   Tooltip,
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
-import { apiGet, formatTime } from '../api'
-import type { CommunityOut } from '../types'
+import { EVENT_LABELS, apiGet, formatTime } from '../api'
+import type { CommunityOut, EventMarker } from '../types'
 
 Chart.register(
-  DoughnutController,
-  ArcElement,
   LineController,
   LineElement,
   PointElement,
@@ -27,44 +23,6 @@ Chart.register(
   Tooltip,
   Legend,
 )
-
-const DONUT_COLORS = ['#a855f7', '#38bdf8', '#f97316', '#34d399', '#facc15', '#52525b']
-
-function ShareDonut({ community }: { community: CommunityOut }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const chartRef = useRef<Chart | null>(null)
-
-  useEffect(() => {
-    if (!canvasRef.current) return
-    chartRef.current?.destroy()
-    chartRef.current = new Chart(canvasRef.current, {
-      type: 'doughnut',
-      data: {
-        labels: community.share.map((slice) => slice.login ?? 'outros'),
-        datasets: [
-          {
-            data: community.share.map((slice) => slice.messages),
-            backgroundColor: DONUT_COLORS,
-            borderColor: '#18181b',
-          },
-        ],
-      },
-      options: {
-        plugins: { legend: { position: 'right', labels: { color: '#d4d4d8', boxWidth: 12 } } },
-      },
-    })
-    return () => chartRef.current?.destroy()
-  }, [community])
-
-  return (
-    <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Fatia do chat
-      </p>
-      <canvas ref={canvasRef} className="max-h-44" />
-    </div>
-  )
-}
 
 function sentimentLabel(score: number): { text: string; color: string } {
   if (score > 0.15) return { text: 'positivo', color: 'text-emerald-400' }
@@ -94,7 +52,13 @@ function SentimentGauge({ score }: { score: number }) {
   )
 }
 
-function SentimentChart({ community }: { community: CommunityOut }) {
+function SentimentChart({
+  community,
+  events,
+}: {
+  community: CommunityOut
+  events: EventMarker[]
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const chartRef = useRef<Chart | null>(null)
 
@@ -102,6 +66,25 @@ function SentimentChart({ community }: { community: CommunityOut }) {
     if (!canvasRef.current || community.sentiment_timeline.length === 0) return
     chartRef.current?.destroy()
     const points = community.sentiment_timeline
+    // snap each event to its nearest 30s sentiment bucket, keep the labels
+    const times = points.map((point) => new Date(point.t).getTime())
+    const eventsByIndex = new Map<number, string[]>()
+    for (const event of events) {
+      const t = new Date(event.t).getTime()
+      let nearest = 0
+      let bestGap = Infinity
+      times.forEach((pointTime, index) => {
+        const gap = Math.abs(pointTime - t)
+        if (gap < bestGap) {
+          bestGap = gap
+          nearest = index
+        }
+      })
+      const name = EVENT_LABELS[event.type] ?? event.type
+      const text = event.amount != null ? `${name} (${event.amount})` : name
+      eventsByIndex.set(nearest, [...(eventsByIndex.get(nearest) ?? []), text])
+    }
+
     chartRef.current = new Chart(canvasRef.current, {
       type: 'line',
       data: {
@@ -112,8 +95,7 @@ function SentimentChart({ community }: { community: CommunityOut }) {
             data: points.map((point) => point.score),
             borderColor: '#a855f7',
             segment: {
-              borderColor: (ctx) =>
-                (ctx.p1.parsed.y ?? 0) >= 0 ? '#34d399' : '#f87171',
+              borderColor: (ctx) => ((ctx.p1.parsed.y ?? 0) >= 0 ? '#34d399' : '#f87171'),
             },
             backgroundColor: 'rgba(168, 85, 247, 0.12)',
             fill: 'origin',
@@ -122,6 +104,15 @@ function SentimentChart({ community }: { community: CommunityOut }) {
               point.score >= 0 ? '#34d399' : '#f87171',
             ),
             tension: 0.3,
+          },
+          {
+            label: 'Eventos',
+            data: points.map((_, index) => (eventsByIndex.has(index) ? 0 : null)) as number[],
+            showLine: false,
+            pointStyle: 'triangle',
+            pointRadius: 8,
+            borderColor: '#facc15',
+            backgroundColor: '#facc15',
           },
         ],
       },
@@ -135,6 +126,7 @@ function SentimentChart({ community }: { community: CommunityOut }) {
                 const point = points[item.dataIndex]
                 return `${point.score >= 0 ? '+' : ''}${point.score} · ${point.messages} msgs`
               },
+              afterBody: (items) => eventsByIndex.get(items[0]?.dataIndex ?? -1) ?? [],
             },
           },
         },
@@ -150,13 +142,19 @@ function SentimentChart({ community }: { community: CommunityOut }) {
       },
     })
     return () => chartRef.current?.destroy()
-  }, [community])
+  }, [community, events])
 
   if (community.sentiment_timeline.length === 0) return null
   return <canvas ref={canvasRef} className="max-h-40 w-full" />
 }
 
-function SentimentBlock({ community }: { community: CommunityOut }) {
+function SentimentBlock({
+  community,
+  events,
+}: {
+  community: CommunityOut
+  events: EventMarker[]
+}) {
   if (community.sentiment_overall === null) return null
   const overall = sentimentLabel(community.sentiment_overall)
   return (
@@ -169,11 +167,12 @@ function SentimentBlock({ community }: { community: CommunityOut }) {
             {community.sentiment_overall > 0 ? '+' : ''}
             {community.sentiment_overall} ({overall.text})
           </b>
+          <span className="ml-2 text-zinc-600">▲ = evento</span>
         </span>
       </p>
       <SentimentGauge score={community.sentiment_overall} />
       <div className="mt-3">
-        <SentimentChart community={community} />
+        <SentimentChart community={community} events={events} />
       </div>
       {community.sentiment_by_chatter.length > 0 && (
         <p className="mt-2 text-xs text-zinc-500">
@@ -297,7 +296,13 @@ function PresenceHeatmap({ community }: { community: CommunityOut }) {
   )
 }
 
-export default function CommunitySection({ streamId }: { streamId: number }) {
+export default function CommunitySection({
+  streamId,
+  events,
+}: {
+  streamId: number
+  events: EventMarker[]
+}) {
   const [community, setCommunity] = useState<CommunityOut | null>(null)
 
   useEffect(() => {
@@ -312,11 +317,8 @@ export default function CommunitySection({ streamId }: { streamId: number }) {
     <div className="mb-6">
       <h3 className="mb-3 text-lg font-bold">Comunidade</h3>
       <div className="space-y-5 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-        <div className="grid gap-6 md:grid-cols-2">
-          <ShareDonut community={community} />
-          <EmoteChips community={community} />
-        </div>
-        <SentimentBlock community={community} />
+        <SentimentBlock community={community} events={events} />
+        <EmoteChips community={community} />
         <WordCloud community={community} />
         <PresenceHeatmap community={community} />
       </div>

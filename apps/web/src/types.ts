@@ -171,6 +171,16 @@ export type ActionableOut = {
   unanswered_questions: { sent_at: string; author_login: string; text: string }[]
 }
 
+export type FinanceOut = {
+  estimated_usd: number
+  total_bits: number
+  total_subs: number
+  total_gifts: number
+  money_events: number
+  top_contributors: { login: string; estimated_usd: number; bits: number; subs: number }[]
+  by_topic: { name: string; estimated_usd: number; events: number }[]
+}
+
 export type LoyalChatter = {
   author_login: string
   streams_attended: number
@@ -201,10 +211,12 @@ export type ChannelOverview = {
   total_messages: number
   unique_chatters: number
   total_followers_gained: number
+  total_estimated_usd: number
   loyal_chatters: LoyalChatter[]
   best_weekdays: WeekdaySlot[]
   growth: GrowthPoint[]
   recurring_topics: { name: string; streams: number }[]
+  top_contributors: { login: string; estimated_usd: number; streams: number }[]
 }
 
 export type QueueItem = {

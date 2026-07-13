@@ -190,6 +190,37 @@ function RecurringTopics({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+function TopContributors({ overview }: { overview: ChannelOverview }) {
+  if (overview.top_contributors.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Quem mais contribuiu (todas as lives)</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        Estimativa da sua parte em bits e assinaturas ao longo do tempo.
+      </p>
+      <div className="space-y-2">
+        {overview.top_contributors.map((contributor, index) => (
+          <div
+            key={contributor.login}
+            className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm"
+          >
+            <span>
+              <span className="mr-2 text-zinc-600">{index + 1}º</span>
+              <span className="font-semibold text-purple-300">{contributor.login}</span>
+              <span className="ml-2 text-xs text-zinc-500">
+                em {contributor.streams} live{contributor.streams > 1 ? 's' : ''}
+              </span>
+            </span>
+            <span className="font-semibold text-emerald-400">
+              {contributor.estimated_usd.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ChannelView() {
   const [overview, setOverview] = useState<ChannelOverview | null>(null)
 
@@ -220,7 +251,7 @@ export default function ChannelView() {
         ← voltar
       </a>
       <h2 className="mb-4 mt-2 text-xl font-bold">Meu canal</h2>
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard label="Lives" value={overview.total_streams.toLocaleString('pt-BR')} />
         <StatCard label="Mensagens" value={overview.total_messages.toLocaleString('pt-BR')} />
         <StatCard label="Chatters únicos" value={overview.unique_chatters.toLocaleString('pt-BR')} />
@@ -228,8 +259,16 @@ export default function ChannelView() {
           label="Seguidores ganhos"
           value={overview.total_followers_gained.toLocaleString('pt-BR')}
         />
+        <StatCard
+          label="Arrecadado (estimado)"
+          value={overview.total_estimated_usd.toLocaleString('pt-BR', {
+            style: 'currency',
+            currency: 'USD',
+          })}
+        />
       </div>
       <LoyalChatters overview={overview} />
+      <TopContributors overview={overview} />
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />
       <RecurringTopics overview={overview} />

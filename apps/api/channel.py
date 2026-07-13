@@ -1,6 +1,7 @@
 """Channel-level analytics across all of a channel's streams: loyal chatters,
 best time to go live, growth, and recurring topics. All numbers from SQL."""
 
+from collections import defaultdict
 from datetime import datetime
 
 from fastapi import APIRouter
@@ -8,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import Float, func, select
 
 from apps.api.deps import CurrentChannel, DbSession
+from core.finance import MONEY_EVENT_TYPES, event_contributor, event_usd
 from core.models import (
     ChatMessage,
     Event,
@@ -22,6 +24,7 @@ router = APIRouter(prefix="/api/channel")
 
 LOYAL_LIMIT = 20
 TOPIC_LIMIT = 10
+CONTRIBUTORS_LIMIT = 10
 FOLLOW_EVENT_TYPE = "channel.follow"
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
@@ -56,15 +59,23 @@ class RecurringTopic(BaseModel):
     streams: int
 
 
+class TopContributor(BaseModel):
+    login: str
+    estimated_usd: float
+    streams: int
+
+
 class ChannelOverview(BaseModel):
     total_streams: int
     total_messages: int
     unique_chatters: int
     total_followers_gained: int
+    total_estimated_usd: float
     loyal_chatters: list[LoyalChatter]
     best_weekdays: list[WeekdaySlot]
     growth: list[GrowthPoint]
     recurring_topics: list[RecurringTopic]
+    top_contributors: list[TopContributor]
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -216,6 +227,39 @@ def _growth(db: DbSession, channel_id: int) -> list[GrowthPoint]:
     ]
 
 
+def _top_contributors(
+    db: DbSession, channel_id: int
+) -> tuple[list[TopContributor], float]:
+    """All-time spenders across the channel's streams, from money events."""
+    events = db.scalars(
+        select(Event)
+        .where(Event.channel_id == channel_id)
+        .where(Event.type.in_(MONEY_EVENT_TYPES))
+    ).all()
+    per_login: dict[str, float] = defaultdict(float)
+    per_login_streams: dict[str, set[int]] = defaultdict(set)
+    total = 0.0
+    for event in events:
+        value = event_usd(event)
+        total += value
+        login = event_contributor(event)
+        if login:
+            per_login[login] += value
+            per_login_streams[login].add(event.stream_id)
+    ranked = sorted(per_login.items(), key=lambda item: item[1], reverse=True)[
+        :CONTRIBUTORS_LIMIT
+    ]
+    contributors = [
+        TopContributor(
+            login=login,
+            estimated_usd=round(usd, 2),
+            streams=len(per_login_streams[login]),
+        )
+        for login, usd in ranked
+    ]
+    return contributors, round(total, 2)
+
+
 def _recurring_topics(db: DbSession, stream_ids: list[int]) -> list[RecurringTopic]:
     if not stream_ids:
         return []
@@ -243,14 +287,17 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
             ChatMessage.channel_id == channel.id
         )
     ).one()
+    contributors, total_usd = _top_contributors(db, channel.id)
 
     return ChannelOverview(
         total_streams=len(ready_ids),
         total_messages=int(total_messages),
         unique_chatters=int(unique_chatters),
         total_followers_gained=len(follower_logins),
+        total_estimated_usd=total_usd,
         loyal_chatters=_loyal_chatters(db, channel.id, follower_logins),
         best_weekdays=_best_weekdays(db, channel.id),
         growth=_growth(db, channel.id),
         recurring_topics=_recurring_topics(db, ready_ids),
+        top_contributors=contributors,
     )

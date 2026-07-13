@@ -84,9 +84,19 @@ function mockFetch() {
                 unanswered_questions_count: 0,
                 unanswered_questions: [],
               }
-            : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
-              ? []
-              : report
+            : url.startsWith('/api/streams/6/finance')
+              ? {
+                  estimated_usd: 0,
+                  total_bits: 0,
+                  total_subs: 0,
+                  total_gifts: 0,
+                  money_events: 0,
+                  top_contributors: [],
+                  by_topic: [],
+                }
+              : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
+                ? []
+                : report
       return new Response(JSON.stringify(body), { status: 200 })
     }),
   )
