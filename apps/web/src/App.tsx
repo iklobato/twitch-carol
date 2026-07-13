@@ -1,29 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useRoute } from './router'
 import ChannelView from './views/ChannelView'
+import Landing from './views/Landing'
 import StreamReport from './views/StreamReport'
 import StreamsList from './views/StreamsList'
 import SearchView from './views/SearchView'
 import type { Me } from './types'
-
-function LoginScreen() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100">
-      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
-        <h1 className="mb-6 text-2xl font-bold">Stream Intel</h1>
-        <p className="mb-6 text-zinc-400">
-          Conecte sua conta da Twitch para começar a acompanhar suas lives.
-        </p>
-        <a
-          href="/auth/login"
-          className="inline-block rounded-lg bg-purple-600 px-6 py-3 font-semibold hover:bg-purple-500"
-        >
-          Conectar com a Twitch
-        </a>
-      </div>
-    </div>
-  )
-}
 
 function SearchBox() {
   const [value, setValue] = useState('')
@@ -63,7 +45,7 @@ export default function App() {
     return <div className="min-h-screen bg-zinc-950 p-8 text-zinc-400">Carregando...</div>
   }
   if (!me) {
-    return <LoginScreen />
+    return <Landing />
   }
 
   return (
