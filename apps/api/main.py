@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from apps.api.auth import router as auth_router
+from apps.api.channel import router as channel_router
 from apps.api.community import router as community_router
 from apps.api.dashboard import router as dashboard_router
 from apps.api.deps import CurrentChannel
@@ -15,6 +16,7 @@ app.include_router(auth_router)
 app.include_router(eventsub_router)
 app.include_router(dashboard_router)
 app.include_router(community_router)
+app.include_router(channel_router)
 
 
 class MeResponse(BaseModel):

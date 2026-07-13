@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRoute } from './router'
+import ChannelView from './views/ChannelView'
 import StreamReport from './views/StreamReport'
 import StreamsList from './views/StreamsList'
 import SearchView from './views/SearchView'
@@ -69,9 +70,14 @@ export default function App() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
       <header className="border-b border-zinc-800 bg-zinc-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <a href="#/" className="text-lg font-bold">
-            Stream Intel
-          </a>
+          <div className="flex items-center gap-4">
+            <a href="#/" className="text-lg font-bold">
+              Stream Intel
+            </a>
+            <a href="#/channel" className="text-sm text-zinc-400 hover:text-purple-300">
+              Meu canal
+            </a>
+          </div>
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
             <span className="text-zinc-400">@{me.login}</span>
@@ -83,6 +89,7 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
         {route.view === 'home' && <StreamsList />}
+        {route.view === 'channel' && <ChannelView />}
         {route.view === 'stream' && <StreamReport streamId={route.streamId} />}
         {route.view === 'search' && <SearchView query={route.query} />}
       </main>

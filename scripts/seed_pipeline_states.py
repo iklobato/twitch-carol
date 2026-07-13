@@ -28,6 +28,8 @@ from core.models import (
     Channel,
     ChatMessage,
     Event,
+    Insight,
+    InsightType,
     Job,
     JobStatus,
     SegmentKind,
@@ -41,6 +43,12 @@ from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE, QUEUE_KEYS, get_valkey
 MOCK_LOGIN = "mock_streamer"
 MOCK_TWITCH_USER_ID = 990000002
 
+HISTORY_TITLES = [
+    "Setup inicial do projeto",
+    "Modelando o banco de dados",
+    "Primeira API no ar",
+    "Testes e CI",
+]
 SEED_TITLES = {
     "AO VIVO: configurando deploy",
     "Deploy na DigitalOcean",
@@ -48,7 +56,10 @@ SEED_TITLES = {
     "Caddy do zero",
     "Live com falha de análise",
     "Deploy completo com raid",
+    *HISTORY_TITLES,
 }
+# a few loyal regulars that appear across the historical streams
+LOYAL_REGULARS = ["mockviewer_11", "mockviewer_04", "fiel_carlos", "fiel_ana"]
 
 SPEECH_SCRIPT = [
     "fala pessoal, hoje a gente vai configurar o deploy da nossa api na digital ocean",
@@ -83,7 +94,7 @@ def _wipe_seeded_streams(db, channel: Channel) -> None:
     )
     if not stream_ids:
         return
-    from core.models import Insight, Peak
+    from core.models import Peak
 
     for model in (
         ChatMessage,
@@ -227,6 +238,59 @@ def fill_rich_stream(db, channel, stream) -> None:
     )
 
 
+def seed_history(db, channel) -> None:
+    """Finished (READY) past streams sharing loyal regulars, so the channel
+    overview shows real cross-live loyalty and growth."""
+    for index, title in enumerate(HISTORY_TITLES):
+        days_ago = (len(HISTORY_TITLES) - index) * 7
+        stream = make_stream(
+            db, channel, StreamStatus.READY, days_ago * 24 * 60, 90, title
+        )
+        ensure_chat_partition(db, stream.started_at.date())
+        # regulars grow their message count each stream; audience grows too
+        for regular_index, regular in enumerate(LOYAL_REGULARS):
+            for msg in range(3 + index * 2 + regular_index):
+                db.add(
+                    ChatMessage(
+                        stream_id=stream.id,
+                        channel_id=channel.id,
+                        sent_at=stream.started_at + timedelta(minutes=msg),
+                        message_id=str(uuid.uuid4()),
+                        author_id=regular,
+                        author_login=regular,
+                        text=random.choice(CALM_CHAT),
+                    )
+                )
+        for minute in range(90):
+            db.add(
+                ViewerSample(
+                    stream_id=stream.id,
+                    sampled_at=stream.started_at + timedelta(minutes=minute),
+                    viewer_count=40 + index * 25 + (minute % 20),
+                )
+            )
+        db.add(
+            Event(
+                stream_id=stream.id,
+                channel_id=channel.id,
+                occurred_at=stream.started_at + timedelta(minutes=10),
+                type="channel.follow",
+                payload={"user_login": f"seguidor_{index}"},
+            )
+        )
+        db.add(
+            Insight(
+                stream_id=stream.id,
+                type=InsightType.TOPIC,
+                content="Deploy\nassunto recorrente",
+                evidence={"message_ids": [], "segment_ids": [], "rank": 1},
+                model_used="seed",
+                tokens_in=0,
+                tokens_out=0,
+            )
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -236,6 +300,7 @@ def main() -> None:
 
     with session_factory()() as db:
         channel = target_channel(db, args.login)
+        seed_history(db, channel)
 
         capturing = make_stream(
             db,

@@ -140,6 +140,42 @@ export type CommunityOut = {
   presence: { slots: string[]; rows: { login: string; cells: number[] }[] }
 }
 
+export type LoyalChatter = {
+  author_login: string
+  streams_attended: number
+  total_messages: number
+  last_seen: string
+  followed: boolean
+}
+
+export type WeekdaySlot = {
+  weekday: number
+  label: string
+  streams: number
+  avg_peak_viewers: number
+}
+
+export type GrowthPoint = {
+  stream_id: number
+  started_at: string
+  title: string | null
+  peak_viewers: number
+  avg_viewers: number
+  followers_gained: number
+  messages: number
+}
+
+export type ChannelOverview = {
+  total_streams: number
+  total_messages: number
+  unique_chatters: number
+  total_followers_gained: number
+  loyal_chatters: LoyalChatter[]
+  best_weekdays: WeekdaySlot[]
+  growth: GrowthPoint[]
+  recurring_topics: { name: string; streams: number }[]
+}
+
 export type QueueItem = {
   stream_id: number
   job_type: string
