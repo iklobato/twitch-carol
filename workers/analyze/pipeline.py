@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
 from core.config import get_settings
 from core.llm import LLMBackend, TokenBudget
 from core.models import (
@@ -44,6 +45,9 @@ PEAK_CHAT_SAMPLE = 25
 BLOCK_CHAT_SAMPLE = 15
 EVIDENCE_SEGMENT_SAMPLE = 12
 TOPIC_MAX = 5
+RECOMMEND_OUTPUT_TOKENS = 700
+RECOMMEND_MAX = 3
+RECOMMEND_TOP_PEAKS = 3
 
 JSON_INSTRUCTION = (
     'Responda APENAS um JSON válido: {"content": "<texto em português do Brasil>", '
@@ -84,6 +88,8 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
     if block_summaries:
         _final_summary(db, stream, backend, budget, block_summaries, stats)
         _rank_topics(db, stream, backend, budget, block_summaries, stats)
+
+    _recommend(db, stream, backend, budget, stats)
 
     db.flush()
     logger.info(
@@ -401,6 +407,150 @@ def _store_topics(
                 type=InsightType.TOPIC,
                 content=content,
                 evidence=evidence,
+                model_used=backend.model_name,
+                tokens_in=budget.input_spent,
+                tokens_out=budget.output_spent,
+            )
+        )
+        stats.insights_stored += 1
+
+
+RECOMMEND_NEAREST_GAP = timedelta(seconds=120)
+
+
+def _segment_near(
+    segments: list[TranscriptSegment], moment: datetime
+) -> TranscriptSegment | None:
+    """Speech segment overlapping the moment, else the closest one within
+    RECOMMEND_NEAREST_GAP (a peak/dip may fall between segments)."""
+    best: TranscriptSegment | None = None
+    best_gap = RECOMMEND_NEAREST_GAP.total_seconds()
+    for segment in segments:
+        if not segment.text:
+            continue
+        if segment.started_at <= moment <= segment.ended_at:
+            return segment
+        gap = min(
+            abs((segment.started_at - moment).total_seconds()),
+            abs((segment.ended_at - moment).total_seconds()),
+        )
+        if gap <= best_gap:
+            best = segment
+            best_gap = gap
+    return best
+
+
+def _recommend(
+    db: Session,
+    stream: Stream,
+    backend: LLMBackend,
+    budget: TokenBudget,
+    stats: AnalysisStats,
+) -> None:
+    """Grounded recommendations: the LLM only phrases advice around SQL facts
+    (peaks, dips, retention), and each recommendation must cite a real speech
+    segment from those facts, so nothing is invented."""
+    if not budget.can_afford(TOPICS_PROMPT_INPUT_CAP, RECOMMEND_OUTPUT_TOKENS):
+        stats.skipped_for_budget.append("recommendations")
+        return
+
+    speech = load_speech_segments(db, stream.id)
+    retention, dips = retention_and_dips(
+        load_viewer_samples(db, stream.id), speech, RECOMMEND_MAX
+    )
+    peaks = db.scalars(
+        select(Peak)
+        .where(Peak.stream_id == stream.id)
+        .order_by(Peak.score.desc())
+        .limit(RECOMMEND_TOP_PEAKS)
+    ).all()
+
+    # Facts are numbered 1..N and each maps to a real speech segment id. The
+    # model cites the small fact number (reliable for a small model); we map
+    # it back to the segment id, so grounding stays SQL-anchored either way.
+    lines: list[str] = []
+    fact_segment: dict[int, int] = {}
+    for peak in peaks:
+        segment = _segment_near(speech, peak.window_start)
+        if segment is not None:
+            number = len(lines) + 1
+            fact_segment[number] = segment.id
+            lines.append(
+                f"[{number}] PICO às {peak.window_start:%H:%M}: o chat foi "
+                f"{peak.score:.1f}x o normal enquanto você falava '{segment.text}'"
+            )
+    for dip in dips:
+        segment = _segment_near(speech, dip.at)
+        if segment is not None:
+            number = len(lines) + 1
+            fact_segment[number] = segment.id
+            lines.append(
+                f"[{number}] QUEDA às {dip.at:%H:%M}: perdeu {dip.pct_drop}% da "
+                f"audiência enquanto você falava '{segment.text}'"
+            )
+    if retention is not None:
+        lines.append(
+            f"[contexto] RETENÇÃO: você segurou {retention.retained_pct}% do pico de audiência"
+        )
+
+    if not fact_segment:
+        return  # nothing SQL-grounded to recommend on
+
+    prompt = (
+        "FATOS medidos desta live na Twitch (cada um com um número entre colchetes):\n"
+        + "\n".join(lines)
+        + "\nCom base SOMENTE nesses fatos, dê recomendações práticas para as próximas "
+        "lives (faça mais do que funcionou, ajuste o que esvaziou). Responda APENAS um "
+        'JSON válido: {"recommendations": [{"content": "<recomendação em 1-2 frases, '
+        'português do Brasil>", "fact_ids": [números dos fatos que embasam]}]}. Cite pelo '
+        f"menos um número de fato por recomendação, máximo {RECOMMEND_MAX}, seja concreto."
+    )
+    response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
+    budget.spend(prompt, response)
+    parsed = _parse_json(response)
+    recommendations = parsed.get("recommendations") if parsed else None
+    if not isinstance(recommendations, list):
+        stats.insights_discarded += 1
+        logger.warning(
+            "recommendations discarded: unparseable", extra={"stream_id": stream.id}
+        )
+        return
+
+    rank = 0
+    for item in recommendations[:RECOMMEND_MAX]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content", "")).strip()
+        raw_facts = item.get("fact_ids", [])
+        fact_ids = (
+            [n for n in raw_facts if isinstance(n, int)]
+            if isinstance(raw_facts, list)
+            else []
+        )
+        cited_segments = sorted(
+            {fact_segment[n] for n in fact_ids if n in fact_segment}
+        )
+        if not content or not cited_segments:
+            stats.insights_discarded += 1
+            logger.warning(
+                "recommendation discarded: no grounded fact cited",
+                extra={
+                    "stream_id": stream.id,
+                    "event_type": InsightType.RECOMMENDATION.value,
+                },
+            )
+            continue
+        rank += 1
+        db.add(
+            Insight(
+                stream_id=stream.id,
+                type=InsightType.RECOMMENDATION,
+                content=content,
+                evidence={
+                    "segment_ids": cited_segments,
+                    "message_ids": [],
+                    "rank": rank,
+                },
                 model_used=backend.model_name,
                 tokens_in=budget.input_spent,
                 tokens_out=budget.output_spent,

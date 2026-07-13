@@ -11,19 +11,11 @@ from sqlalchemy.orm import Session
 
 from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
-from core.models import (
-    ChatMessage,
-    Peak,
-    SegmentKind,
-    Stream,
-    TranscriptSegment,
-    ViewerSample,
-)
+from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
+from core.models import ChatMessage, Peak, Stream, TranscriptSegment
 
 router = APIRouter(prefix="/api")
 
-DIP_MIN_DROP = 0.15  # a >=15% viewer fall is worth flagging
-DIP_LOOKAHEAD = 5  # samples (minutes) to look ahead for the trough
 MAX_DIPS = 3
 MAX_CLIPS = 5
 # a chat question is "unanswered" if the streamer wasn't speaking in this window
@@ -75,64 +67,6 @@ def _offset_label(seconds: int) -> str:
     if hours:
         return f"{hours}h{minutes:02d}m{secs:02d}s"
     return f"{minutes}m{secs:02d}s"
-
-
-def _speech_at(segments: list[TranscriptSegment], moment: datetime) -> str | None:
-    for segment in segments:
-        if segment.started_at <= moment <= segment.ended_at and segment.text:
-            return segment.text
-    return None
-
-
-def _retention_and_dips(
-    samples: list[ViewerSample], speech: list[TranscriptSegment]
-) -> tuple[Retention | None, list[ViewerDip]]:
-    if not samples:
-        return None, []
-    counts = [s.viewer_count for s in samples]
-    peak = max(counts)
-    final = counts[-1]
-
-    biggest_drop_at = None
-    biggest_drop = 0.0
-    dips: list[ViewerDip] = []
-    for index in range(len(samples) - 1):
-        before = counts[index]
-        if before <= 0:
-            continue
-        window = counts[index + 1 : index + 1 + DIP_LOOKAHEAD]
-        trough = min(window) if window else before
-        drop = (before - trough) / before
-        if drop > biggest_drop:
-            biggest_drop = drop
-            biggest_drop_at = samples[index].sampled_at
-        if drop >= DIP_MIN_DROP:
-            dips.append(
-                ViewerDip(
-                    at=samples[index].sampled_at,
-                    viewers_before=before,
-                    viewers_after=trough,
-                    pct_drop=round(drop * 100, 1),
-                    speech_context=_speech_at(speech, samples[index].sampled_at),
-                )
-            )
-
-    dips.sort(key=lambda dip: dip.pct_drop, reverse=True)
-    # drop near-duplicates (dips within 2 min of a stronger one)
-    kept: list[ViewerDip] = []
-    for dip in dips:
-        if all(abs((dip.at - other.at).total_seconds()) > 120 for other in kept):
-            kept.append(dip)
-        if len(kept) >= MAX_DIPS:
-            break
-
-    retention = Retention(
-        peak_viewers=peak,
-        final_viewers=final,
-        retained_pct=round(final / peak * 100, 1) if peak else 0.0,
-        biggest_drop_at=biggest_drop_at if biggest_drop >= DIP_MIN_DROP else None,
-    )
-    return retention, kept
 
 
 def _clip_suggestions(db: Session, stream: Stream) -> list[ClipSuggestion]:
@@ -188,26 +122,13 @@ def stream_actionable(
     stream_id: int, channel: CurrentChannel, db: DbSession
 ) -> ActionableOut:
     stream = _owned_stream(db, channel, stream_id)
-    samples = list(
-        db.scalars(
-            select(ViewerSample)
-            .where(ViewerSample.stream_id == stream.id)
-            .order_by(ViewerSample.sampled_at)
-        )
-    )
-    speech = list(
-        db.scalars(
-            select(TranscriptSegment)
-            .where(TranscriptSegment.stream_id == stream.id)
-            .where(TranscriptSegment.kind == SegmentKind.SPEECH)
-            .order_by(TranscriptSegment.started_at)
-        )
-    )
-    retention, dips = _retention_and_dips(samples, speech)
+    samples = load_viewer_samples(db, stream.id)
+    speech = load_speech_segments(db, stream.id)
+    retention, dips = retention_and_dips(samples, speech, MAX_DIPS)
     count, question_samples = _unanswered_questions(db, stream, speech)
     return ActionableOut(
-        retention=retention,
-        dips=dips,
+        retention=Retention(**vars(retention)) if retention else None,
+        dips=[ViewerDip(**vars(dip)) for dip in dips],
         clips=_clip_suggestions(db, stream),
         unanswered_questions_count=count,
         unanswered_questions=question_samples,

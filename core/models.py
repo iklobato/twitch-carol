@@ -47,6 +47,7 @@ class InsightType(enum.StrEnum):
     SUMMARY = "summary"
     PEAK_EXPLANATION = "peak_explanation"
     TOPIC = "topic"
+    RECOMMENDATION = "recommendation"
 
 
 class InsightFeedback(enum.StrEnum):

@@ -503,6 +503,9 @@ export default function StreamReport({ streamId }: { streamId: number }) {
   const topics = report.insights
     .filter((insight) => insight.type === 'topic')
     .sort((a, b) => ((a.evidence.rank as number) ?? 99) - ((b.evidence.rank as number) ?? 99))
+  const recommendations = report.insights
+    .filter((insight) => insight.type === 'recommendation')
+    .sort((a, b) => ((a.evidence.rank as number) ?? 99) - ((b.evidence.rank as number) ?? 99))
   const momentPeaks = [...report.peaks].sort(
     (a, b) => new Date(a.window_start).getTime() - new Date(b.window_start).getTime(),
   )
@@ -552,6 +555,34 @@ export default function StreamReport({ streamId }: { streamId: number }) {
       )}
 
       <ActionableSection actionable={actionable} />
+
+      {recommendations.length > 0 && (
+        <div className="mb-6">
+          <h3 className="mb-3 text-lg font-bold">Recomendações</h3>
+          <div className="space-y-2">
+            {recommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className="flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-zinc-900 p-4"
+              >
+                <span className="text-lg">💡</span>
+                <div className="flex-1">
+                  <p className="text-sm">{rec.content}</p>
+                  <div className="mt-2">
+                    <FeedbackButtons
+                      insight={rec}
+                      onFeedback={(value) => sendFeedback(rec, value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-600">
+            Geradas pelo modelo a partir dos picos e quedas medidos por SQL desta live.
+          </p>
+        </div>
+      )}
 
       {topics.length > 0 && (
         <div className="mb-6">
