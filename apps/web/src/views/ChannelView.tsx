@@ -238,47 +238,14 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
 }
 
 function RecommendationsSection({ overview }: { overview: ChannelOverview }) {
-  const [recs, setRecs] = useState(overview.recommendations)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
-
-  async function generate() {
-    setLoading(true)
-    setError(false)
-    try {
-      const response = await fetch('/api/channel/recommendations', { method: 'POST' })
-      if (!response.ok) throw new Error(String(response.status))
-      setRecs(await response.json())
-    } catch {
-      setError(true)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  const recs = overview.recommendations
+  if (recs.length === 0) return null
   return (
     <div className="mb-6 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-lg font-bold">Como ganhar mais (IA)</h3>
-        <button
-          onClick={generate}
-          disabled={loading}
-          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
-        >
-          {loading ? 'Gerando...' : recs.length > 0 ? 'Atualizar' : 'Gerar recomendações'}
-        </button>
-      </div>
-      {error && (
-        <p className="mb-2 text-sm text-red-400">
-          Não foi possível gerar agora. Tente de novo em instantes.
-        </p>
-      )}
-      {recs.length === 0 && !loading && !error && (
-        <p className="text-sm text-zinc-400">
-          A IA analisa sua receita, assuntos, contribuintes e engajamento e sugere onde focar
-          para monetizar mais. Clique para gerar.
-        </p>
-      )}
+      <h3 className="mb-1 text-lg font-bold">Como ganhar mais (IA)</h3>
+      <p className="mb-3 text-xs text-zinc-500">
+        Recomendações geradas a partir dos seus números, atualizadas quando uma live é analisada.
+      </p>
       <div className="space-y-3">
         {recs.map((rec, index) => (
           <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">

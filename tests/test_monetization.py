@@ -6,12 +6,10 @@ import re
 import pytest
 from sqlalchemy import select
 
-import apps.api.channel as channel_api
 from core.llm import TokenBudget
 from core.models import ChannelRecommendation
-from core.monetization import generate_channel_recommendations
-from tests.conftest import login_as
-from tests.factories import add_event, make_channel, make_stream
+from core.monetization import build_monetization_facts, generate_channel_recommendations
+from tests.factories import add_event, add_subscription, make_channel, make_stream
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -101,21 +99,41 @@ def test_generate_replaces_previous_set(db) -> None:
     assert count == 1  # not duplicated
 
 
-def test_recommendations_endpoint_generates_and_overview_returns(
-    api_client, db, monkeypatch
-) -> None:
+def test_build_monetization_facts_from_real_data(db) -> None:
     channel = make_channel(db)
     stream = make_stream(db, channel, duration_minutes=30)
+    stream.category = "Just Chatting"
     cheer = add_event(db, stream, "channel.cheer", offset_seconds=60, amount=3000)
     cheer.payload = {"user_login": "baleia"}
+    add_subscription(db, channel, "sub_a", tier="1000")
     db.flush()
 
-    monkeypatch.setattr(channel_api, "get_llm_backend", lambda: GroundedFakeLLM())
-    login_as(api_client, channel)
+    facts = build_monetization_facts(db, channel.id, [stream.id])
 
-    created = api_client.post("/api/channel/recommendations").json()
-    assert len(created) == 1
-    assert created[0]["facts"]
+    joined = " ".join(facts)
+    assert facts[0].startswith("[1]")
+    assert "US$ 30.00" in joined  # 3000 bits * 0.01
+    assert "baleia" in joined  # top contributor share
+    assert "assinantes ativos" in joined
 
-    overview = api_client.get("/api/channel").json()
-    assert overview["recommendations"] == created
+
+def test_facts_and_generate_are_the_worker_path(db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=30)
+    cheer = add_event(db, stream, "channel.cheer", offset_seconds=60, amount=1000)
+    cheer.payload = {"user_login": "fan"}
+    db.flush()
+
+    backend = GroundedFakeLLM()
+    facts = build_monetization_facts(db, channel.id, [stream.id])
+    stored = generate_channel_recommendations(
+        db, channel.id, facts, backend, TokenBudget(backend, 4000, 1500)
+    )
+    db.flush()
+    assert stored == 1
+    rec = db.scalar(
+        select(ChannelRecommendation).where(
+            ChannelRecommendation.channel_id == channel.id
+        )
+    )
+    assert rec.evidence["facts"][0].startswith("[1]")
