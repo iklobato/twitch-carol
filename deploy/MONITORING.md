@@ -52,6 +52,29 @@ Set `METRICS_TOKEN` in the app `.env`; the same value is the `authorization`
 credential in the monitoring box's `streamintel-app` scrape job. Empty token =
 endpoint returns 404 (closed).
 
+## Product metrics dashboard (Postgres, not Prometheus)
+
+Product analytics (active channels, streams processed, hours captured/transcribed,
+chat volume, viewers, events, insights + LLM token spend, job throughput) come
+from the app Postgres DB directly via a Grafana **Postgres datasource**, not from
+Prometheus. This is the source of truth and survives app redeploys.
+
+- Dashboard: "StreamIntel - Produto" (`streamintel-product`), 20 SQL panels.
+  Regenerate with `deploy/monitoring/gen_product.py`.
+- Datasource: `StreamIntel DB` (uid `streamintel-pg`), read-only user `grafana_ro`
+  scoped to the `streamintel` DB. See `streamintel-pg-datasource.example.yml`
+  (fill `GRAFANA_RO_PASSWORD`; the real file with the secret lives only on the box).
+
+`grafana_ro` was created on the managed cluster with `GRANT SELECT` only (plus
+default privileges for future `chat_messages` partitions); it cannot write.
+
+## App /metrics is redeployed away
+
+`apps/api/metrics.py` (`/metrics`) lives on this branch but the box deploys from
+another branch, so a redeploy of the app reverts the `/metrics` route. Merge this
+branch into the deploying branch to make the `streamintel-app` Prometheus scrape
+stick. Product metrics above do NOT depend on it.
+
 ## Monitoring box config (lives on that droplet, not here)
 
 - `/opt/monitoring/prometheus.yml` - `streamintel-*` scrape jobs + blackbox targets
