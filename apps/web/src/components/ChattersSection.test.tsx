@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChatterOut } from '../types'
 import ChattersSection from './ChattersSection'
 
-function makeChatters(count: number): ChatterOut[] {
+function makeChatters(count: number, overrides: Partial<ChatterOut>[] = []): ChatterOut[] {
   return Array.from({ length: count }, (_, index) => ({
     author_login: `viewer_${index}`,
     messages: 100 - index,
@@ -12,10 +12,12 @@ function makeChatters(count: number): ChatterOut[] {
     last_at: '2026-07-11T20:20:00Z',
     active_minutes: 10,
     peak_messages: 0,
+    sentiment_score: 0,
     followed_during_stream: false,
     labels: [],
     sample_messages: [],
     top_words: [],
+    ...overrides[index],
   }))
 }
 
@@ -61,5 +63,25 @@ describe('ChattersSection', () => {
     mockChatters(0)
     const { container } = render(<ChattersSection streamId={6} />)
     await waitFor(() => expect(container.firstChild).toBeNull())
+  })
+
+  it('reordena por sentimento ao trocar o filtro', async () => {
+    // viewer_0 has most messages but lowest sentiment; viewer_2 the highest
+    const data = makeChatters(3, [
+      { sentiment_score: -0.5 },
+      { sentiment_score: 0.1 },
+      { sentiment_score: 0.9 },
+    ])
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(data), { status: 200 })))
+    render(<ChattersSection streamId={6} />)
+    await screen.findByText('viewer_0')
+
+    // default order (messages): viewer_0 first
+    const rowsByMessages = screen.getAllByRole('button', { name: /viewer_/ })
+    expect(rowsByMessages[0].textContent).toBe('viewer_0')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sentimento' }))
+    const rowsBySentiment = screen.getAllByRole('button', { name: /viewer_/ })
+    expect(rowsBySentiment[0].textContent).toBe('viewer_2')
   })
 })

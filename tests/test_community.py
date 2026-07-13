@@ -172,3 +172,26 @@ def test_chatter_and_topic_top_words(api_client, db) -> None:
     detail = api_client.get(f"/api/streams/{stream.id}/topics/{topic.id}").json()
     topic_words = {w["word"] for w in detail["top_words"]}
     assert "deploy" in topic_words
+
+
+def test_chatter_sentiment_score(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=10)
+    add_chat(db, stream, 5, author="feliz", text="que live incrível, top demais")
+    add_chat(
+        db, stream, 5, author="bravo", text="lag horrível, que lixo", offset_seconds=60
+    )
+    add_chat(
+        db, stream, 3, author="neutro", text="qual editor você usa", offset_seconds=120
+    )
+    db.flush()
+
+    login_as(api_client, channel)
+    chatters = {
+        c["author_login"]: c
+        for c in api_client.get(f"/api/streams/{stream.id}/chatters").json()
+    }
+    assert chatters["feliz"]["sentiment_score"] > 0
+    assert chatters["bravo"]["sentiment_score"] < 0
+    # no lexicon word matched -> no score
+    assert chatters["neutro"]["sentiment_score"] is None

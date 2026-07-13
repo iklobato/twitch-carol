@@ -111,6 +111,7 @@ export type ChatterOut = {
   last_at: string
   active_minutes: number
   peak_messages: number
+  sentiment_score: number | null
   followed_during_stream: boolean
   labels: string[]
   sample_messages: ChatterMessage[]

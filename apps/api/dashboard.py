@@ -33,7 +33,7 @@ from core.models import (
     ViewerSample,
 )
 from core.schedule import HISTORY_LIMIT, estimate_next_live
-from core.text import meaningful_words
+from core.text import meaningful_words, message_sentiment, strip_emotes, tokenize
 
 router = APIRouter(prefix="/api")
 
@@ -561,6 +561,7 @@ class ChatterOut(BaseModel):
     last_at: datetime
     active_minutes: int
     peak_messages: int
+    sentiment_score: float | None
     followed_during_stream: bool
     labels: list[str]
     sample_messages: list[ChatterMessage]
@@ -632,14 +633,15 @@ def _chatter_samples(
     return samples
 
 
-def _chatter_top_words(
+def _chatter_words_and_sentiment(
     db: Session, stream_id: int, logins: list[str]
-) -> dict[str, list[WordCount]]:
-    """Most-used content words per chatter, counted in Python from their
-    messages (the same lexicon/stopword rules as the community word cloud)."""
+) -> tuple[dict[str, list[WordCount]], dict[str, float | None]]:
+    """Per-chatter top words and mean lexicon sentiment, in one pass over
+    their messages (same rules as the community word cloud and sentiment)."""
     if not logins:
-        return {}
+        return {}, {}
     counters: dict[str, Counter[str]] = {login: Counter() for login in logins}
+    scores: dict[str, list[float]] = {login: [] for login in logins}
     rows = db.execute(
         select(ChatMessage.author_login, ChatMessage.text, ChatMessage.emotes)
         .where(ChatMessage.stream_id == stream_id)
@@ -647,13 +649,21 @@ def _chatter_top_words(
     ).yield_per(2000)
     for login, text, emotes in rows:
         counters[login].update(meaningful_words(text, emotes))
-    return {
+        score = message_sentiment(tokenize(strip_emotes(text, emotes)))
+        if score is not None:
+            scores[login].append(score)
+    top_words = {
         login: [
             WordCount(word=w, count=c)
             for w, c in counter.most_common(CHATTER_TOP_WORDS)
         ]
         for login, counter in counters.items()
     }
+    sentiment = {
+        login: (round(sum(values) / len(values), 2) if values else None)
+        for login, values in scores.items()
+    }
+    return top_words, sentiment
 
 
 def _chatter_labels(
@@ -718,7 +728,7 @@ def stream_chatters(
     peak_counts = _peak_message_counts(db, stream)
     followers = _follower_logins(db, stream.id)
     samples = _chatter_samples(db, stream.id, top_logins)
-    top_words = _chatter_top_words(db, stream.id, top_logins)
+    top_words, sentiment = _chatter_words_and_sentiment(db, stream.id, top_logins)
 
     chatters = []
     for rank, (login, messages, first_at, last_at, active_minutes) in enumerate(rows):
@@ -733,6 +743,7 @@ def stream_chatters(
                 last_at=last_at,
                 active_minutes=active_minutes,
                 peak_messages=peak_messages,
+                sentiment_score=sentiment.get(login),
                 followed_during_stream=followed,
                 top_words=top_words.get(login, []),
                 labels=_chatter_labels(
