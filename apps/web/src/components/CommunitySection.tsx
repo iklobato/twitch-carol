@@ -1,9 +1,32 @@
-import { ArcElement, Chart, DoughnutController, Legend, Tooltip } from 'chart.js'
+import {
+  ArcElement,
+  CategoryScale,
+  Chart,
+  DoughnutController,
+  Filler,
+  Legend,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip,
+} from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatTime } from '../api'
 import type { CommunityOut } from '../types'
 
-Chart.register(DoughnutController, ArcElement, Tooltip, Legend)
+Chart.register(
+  DoughnutController,
+  ArcElement,
+  LineController,
+  LineElement,
+  PointElement,
+  CategoryScale,
+  LinearScale,
+  Filler,
+  Tooltip,
+  Legend,
+)
 
 const DONUT_COLORS = ['#a855f7', '#38bdf8', '#f97316', '#34d399', '#facc15', '#52525b']
 
@@ -49,10 +72,93 @@ function sentimentLabel(score: number): { text: string; color: string } {
   return { text: 'neutro', color: 'text-zinc-400' }
 }
 
+function SentimentGauge({ score }: { score: number }) {
+  // -1..+1 mapped to 0..100%; center line at 50%
+  const position = ((score + 1) / 2) * 100
+  const color = score > 0.15 ? '#34d399' : score < -0.15 ? '#f87171' : '#a1a1aa'
+  return (
+    <div>
+      <div className="relative h-2 rounded-full bg-gradient-to-r from-red-500/40 via-zinc-600/40 to-emerald-500/40">
+        <div className="absolute left-1/2 top-0 h-2 w-px bg-zinc-500" />
+        <div
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-900"
+          style={{ left: `${position}%`, backgroundColor: color }}
+        />
+      </div>
+      <div className="mt-0.5 flex justify-between text-[10px] text-zinc-600">
+        <span>negativo</span>
+        <span>neutro</span>
+        <span>positivo</span>
+      </div>
+    </div>
+  )
+}
+
+function SentimentChart({ community }: { community: CommunityOut }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const chartRef = useRef<Chart | null>(null)
+
+  useEffect(() => {
+    if (!canvasRef.current || community.sentiment_timeline.length === 0) return
+    chartRef.current?.destroy()
+    const points = community.sentiment_timeline
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'line',
+      data: {
+        labels: points.map((point) => formatTime(point.t)),
+        datasets: [
+          {
+            label: 'Sentimento (janelas de 30s)',
+            data: points.map((point) => point.score),
+            borderColor: '#a855f7',
+            segment: {
+              borderColor: (ctx) =>
+                (ctx.p1.parsed.y ?? 0) >= 0 ? '#34d399' : '#f87171',
+            },
+            backgroundColor: 'rgba(168, 85, 247, 0.12)',
+            fill: 'origin',
+            pointRadius: points.map((point) => Math.min(2 + point.messages / 5, 6)),
+            pointBackgroundColor: points.map((point) =>
+              point.score >= 0 ? '#34d399' : '#f87171',
+            ),
+            tension: 0.3,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (item) => {
+                const point = points[item.dataIndex]
+                return `${point.score >= 0 ? '+' : ''}${point.score} · ${point.messages} msgs`
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#71717a', maxTicksLimit: 10 }, grid: { color: '#27272a' } },
+          y: {
+            min: -1,
+            max: 1,
+            ticks: { color: '#71717a', stepSize: 0.5 },
+            grid: { color: '#27272a' },
+          },
+        },
+      },
+    })
+    return () => chartRef.current?.destroy()
+  }, [community])
+
+  if (community.sentiment_timeline.length === 0) return null
+  return <canvas ref={canvasRef} className="max-h-40 w-full" />
+}
+
 function SentimentBlock({ community }: { community: CommunityOut }) {
   if (community.sentiment_overall === null) return null
   const overall = sentimentLabel(community.sentiment_overall)
-  const max = Math.max(...community.sentiment_timeline.map((point) => point.messages), 1)
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -65,24 +171,9 @@ function SentimentBlock({ community }: { community: CommunityOut }) {
           </b>
         </span>
       </p>
-      <div className="flex h-16 items-center gap-0.5">
-        {community.sentiment_timeline.map((point) => {
-          const positive = point.score >= 0
-          const height = Math.max(6, Math.abs(point.score) * 56)
-          return (
-            <div
-              key={point.t}
-              title={`${formatTime(point.t)}: ${point.score} (${point.messages} msgs c/ sentimento)`}
-              className="flex h-full flex-1 flex-col justify-center"
-              style={{ opacity: 0.35 + 0.65 * (point.messages / max) }}
-            >
-              <div
-                className={`w-full rounded-sm ${positive ? 'self-end bg-emerald-500' : 'bg-red-500'}`}
-                style={{ height: `${height}%` }}
-              />
-            </div>
-          )
-        })}
+      <SentimentGauge score={community.sentiment_overall} />
+      <div className="mt-3">
+        <SentimentChart community={community} />
       </div>
       {community.sentiment_by_chatter.length > 0 && (
         <p className="mt-2 text-xs text-zinc-500">
@@ -206,11 +297,9 @@ export default function CommunitySection({ streamId }: { streamId: number }) {
       <div className="space-y-5 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
         <div className="grid gap-6 md:grid-cols-2">
           <ShareDonut community={community} />
-          <div className="space-y-5">
-            <SentimentBlock community={community} />
-            <EmoteChips community={community} />
-          </div>
+          <EmoteChips community={community} />
         </div>
+        <SentimentBlock community={community} />
         <WordCloud community={community} />
         <PresenceHeatmap community={community} />
       </div>

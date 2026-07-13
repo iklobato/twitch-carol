@@ -34,6 +34,23 @@ function ChatterRow({ chatter, maxMessages }: { chatter: ChatterOut; maxMessages
           {chatter.messages.toLocaleString('pt-BR')} msgs · {chatter.pct_of_total}% do chat ·{' '}
           {chatter.active_minutes} min ativo
           {chatter.peak_messages > 0 && ` · ${chatter.peak_messages} em picos`}
+          {chatter.sentiment_score !== null && (
+            <>
+              {' · '}
+              <span
+                className={
+                  chatter.sentiment_score > 0.15
+                    ? 'text-emerald-400'
+                    : chatter.sentiment_score < -0.15
+                      ? 'text-red-400'
+                      : 'text-zinc-400'
+                }
+              >
+                sentimento {chatter.sentiment_score > 0 ? '+' : ''}
+                {chatter.sentiment_score}
+              </span>
+            </>
+          )}
         </span>
         <span className="flex flex-wrap gap-1">
           {chatter.labels.map((label) => (
@@ -42,16 +59,38 @@ function ChatterRow({ chatter, maxMessages }: { chatter: ChatterOut; maxMessages
         </span>
       </div>
       {open && (
-        <div className="mt-2 space-y-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
-          <p className="text-xs text-zinc-500">
-            primeira mensagem {formatTime(chatter.first_at)} · última {formatTime(chatter.last_at)}
-          </p>
-          {chatter.sample_messages.map((message, index) => (
-            <p key={index}>
-              <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
-              {message.text}
+        <div className="mt-2 space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+          {chatter.top_words.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                Palavras mais usadas
+              </p>
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                {chatter.top_words.map((word) => (
+                  <span
+                    key={word.word}
+                    title={`${word.count} vezes`}
+                    className="text-purple-300"
+                    style={{ fontSize: `${12 + Math.min(word.count, 10)}px` }}
+                  >
+                    {word.word}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="mb-1 text-xs text-zinc-500">
+              primeira mensagem {formatTime(chatter.first_at)} · última{' '}
+              {formatTime(chatter.last_at)}
             </p>
-          ))}
+            {chatter.sample_messages.map((message, index) => (
+              <p key={index}>
+                <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
+                {message.text}
+              </p>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -60,9 +99,26 @@ function ChatterRow({ chatter, maxMessages }: { chatter: ChatterOut; maxMessages
 
 const PAGE_SIZE = 5
 
+type SortKey = 'messages' | 'pct_of_total' | 'active_minutes' | 'peak_messages' | 'sentiment_score'
+
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'messages', label: 'Mensagens' },
+  { key: 'pct_of_total', label: '% do chat' },
+  { key: 'active_minutes', label: 'Min. ativo' },
+  { key: 'peak_messages', label: 'Ativo em picos' },
+  { key: 'sentiment_score', label: 'Sentimento' },
+]
+
+function sortValue(chatter: ChatterOut, key: SortKey): number {
+  const value = chatter[key]
+  // null sentiment sorts to the bottom
+  return value === null ? -Infinity : value
+}
+
 export default function ChattersSection({ streamId }: { streamId: number }) {
   const [chatters, setChatters] = useState<ChatterOut[] | null>(null)
   const [page, setPage] = useState(0)
+  const [sortKey, setSortKey] = useState<SortKey>('messages')
 
   useEffect(() => {
     setPage(0)
@@ -70,13 +126,35 @@ export default function ChattersSection({ streamId }: { streamId: number }) {
   }, [streamId])
 
   if (chatters === null || chatters.length === 0) return null
-  const maxMessages = chatters[0].messages
-  const totalPages = Math.ceil(chatters.length / PAGE_SIZE)
-  const visible = chatters.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const maxMessages = Math.max(...chatters.map((chatter) => chatter.messages), 1)
+  const sorted = [...chatters].sort((a, b) => sortValue(b, sortKey) - sortValue(a, sortKey))
+  const totalPages = Math.ceil(sorted.length / PAGE_SIZE)
+  const visible = sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Quem participou</h3>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-lg font-bold">Quem participou</h3>
+        <div className="flex flex-wrap items-center gap-1 text-xs">
+          <span className="mr-1 text-zinc-500">ordenar por:</span>
+          {SORT_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              onClick={() => {
+                setSortKey(option.key)
+                setPage(0)
+              }}
+              className={`rounded-full border px-2.5 py-0.5 ${
+                sortKey === option.key
+                  ? 'border-purple-500 bg-purple-950 text-purple-200'
+                  : 'border-zinc-700 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {visible.map((chatter) => (
         <ChatterRow key={chatter.author_login} chatter={chatter} maxMessages={maxMessages} />
       ))}

@@ -1,11 +1,21 @@
 """Community endpoint: lexicon sentiment, word/emote extraction, share,
 presence and isolation."""
 
+from datetime import datetime
+
 import pytest
 
-from apps.api.community import emote_names, message_sentiment, strip_emotes, tokenize
+from apps.api.community import SENTIMENT_BUCKET_SECONDS
+from core.models import InsightType
+from core.text import emote_names, message_sentiment, strip_emotes, tokenize
 from tests.conftest import login_as
-from tests.factories import add_chat, make_channel, make_stream
+from tests.factories import (
+    add_chat,
+    add_insight,
+    add_segment,
+    make_channel,
+    make_stream,
+)
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -98,3 +108,90 @@ def test_community_empty_stream(api_client, db) -> None:
     body = api_client.get(f"/api/streams/{stream.id}/community").json()
     assert body["share"] == []
     assert body["sentiment_overall"] is None
+    assert body["sentiment_timeline"] == []
+
+
+def test_sentiment_timeline_buckets_are_30_seconds(api_client, db) -> None:
+    assert SENTIMENT_BUCKET_SECONDS == 30
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=5)
+    # two positive messages in the first 30s bucket, one negative in the third
+    add_chat(
+        db,
+        stream,
+        2,
+        author="a",
+        text="incrível top demais",
+        offset_seconds=5,
+        spread_seconds=10,
+    )
+    add_chat(db, stream, 1, author="b", text="lag horrível lixo", offset_seconds=70)
+    db.flush()
+
+    login_as(api_client, channel)
+    timeline = api_client.get(f"/api/streams/{stream.id}/community").json()[
+        "sentiment_timeline"
+    ]
+
+    # buckets land on 30s boundaries relative to stream start
+    by_offset = {
+        round(
+            (datetime.fromisoformat(point["t"]) - stream.started_at).total_seconds()
+        ): point
+        for point in timeline
+    }
+    assert set(by_offset) == {0, 60}
+    assert by_offset[0]["score"] > 0 and by_offset[0]["messages"] == 2
+    assert by_offset[60]["score"] < 0 and by_offset[60]["messages"] == 1
+
+
+def test_chatter_and_topic_top_words(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=20)
+    add_chat(
+        db, stream, 6, author="dev", text="deploy deploy caddy", spread_seconds=200
+    )
+    add_chat(db, stream, 4, author="lurker", text="banana banana", offset_seconds=100)
+    segment = add_segment(db, stream, 60, "explicando o deploy")
+    topic = add_insight(
+        db,
+        stream,
+        InsightType.TOPIC,
+        "Deploy\ndesc",
+        {"segment_ids": [segment.id], "message_ids": [], "rank": 1},
+    )
+
+    login_as(api_client, channel)
+    chatters = api_client.get(f"/api/streams/{stream.id}/chatters").json()
+    dev = next(c for c in chatters if c["author_login"] == "dev")
+    dev_words = {w["word"]: w["count"] for w in dev["top_words"]}
+    assert dev_words["deploy"] == 12
+    assert dev_words["caddy"] == 6
+    assert "banana" not in dev_words  # a different chatter's word
+
+    detail = api_client.get(f"/api/streams/{stream.id}/topics/{topic.id}").json()
+    topic_words = {w["word"] for w in detail["top_words"]}
+    assert "deploy" in topic_words
+
+
+def test_chatter_sentiment_score(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=10)
+    add_chat(db, stream, 5, author="feliz", text="que live incrível, top demais")
+    add_chat(
+        db, stream, 5, author="bravo", text="lag horrível, que lixo", offset_seconds=60
+    )
+    add_chat(
+        db, stream, 3, author="neutro", text="qual editor você usa", offset_seconds=120
+    )
+    db.flush()
+
+    login_as(api_client, channel)
+    chatters = {
+        c["author_login"]: c
+        for c in api_client.get(f"/api/streams/{stream.id}/chatters").json()
+    }
+    assert chatters["feliz"]["sentiment_score"] > 0
+    assert chatters["bravo"]["sentiment_score"] < 0
+    # no lexicon word matched -> no score
+    assert chatters["neutro"]["sentiment_score"] is None
