@@ -237,6 +237,66 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+function RecommendationsSection({ overview }: { overview: ChannelOverview }) {
+  const [recs, setRecs] = useState(overview.recommendations)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  async function generate() {
+    setLoading(true)
+    setError(false)
+    try {
+      const response = await fetch('/api/channel/recommendations', { method: 'POST' })
+      if (!response.ok) throw new Error(String(response.status))
+      setRecs(await response.json())
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-lg font-bold">Como ganhar mais (IA)</h3>
+        <button
+          onClick={generate}
+          disabled={loading}
+          className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-purple-500 disabled:opacity-50"
+        >
+          {loading ? 'Gerando...' : recs.length > 0 ? 'Atualizar' : 'Gerar recomendações'}
+        </button>
+      </div>
+      {error && (
+        <p className="mb-2 text-sm text-red-400">
+          Não foi possível gerar agora. Tente de novo em instantes.
+        </p>
+      )}
+      {recs.length === 0 && !loading && !error && (
+        <p className="text-sm text-zinc-400">
+          A IA analisa sua receita, assuntos, contribuintes e engajamento e sugere onde focar
+          para monetizar mais. Clique para gerar.
+        </p>
+      )}
+      <div className="space-y-3">
+        {recs.map((rec, index) => (
+          <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+            <p className="text-sm">{rec.content}</p>
+            {rec.facts.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-xs text-zinc-500">
+                {rec.facts.map((fact, i) => (
+                  <li key={i}>{fact.replace(/^\[\d+\]\s*/, '↳ ')}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const TIER_LABELS: Record<string, string> = {
   '1000': 'Tier 1',
   '2000': 'Tier 2',
@@ -659,6 +719,7 @@ export default function ChannelView() {
         />
       </div>
       <ChannelMonetization overview={overview} />
+      <RecommendationsSection overview={overview} />
       <SubscribersSection overview={overview} />
       <ContentRevenue overview={overview} />
       <EngagementSection overview={overview} />

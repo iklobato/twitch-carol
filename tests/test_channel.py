@@ -336,6 +336,7 @@ def test_channel_overview_empty(api_client, db) -> None:
     assert overview["community"]["goals"] == []
     assert overview["subscribers"]["total"] == 0
     assert overview["subscribers"]["top_bits"] == []
+    assert overview["recommendations"] == []
 
 
 def test_channel_requires_session(api_client) -> None:

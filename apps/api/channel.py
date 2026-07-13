@@ -18,8 +18,10 @@ from core.finance import (
     event_contributor,
     event_usd,
 )
+from core.llm import TokenBudget, get_llm_backend
 from core.models import (
     BitsLeader,
+    ChannelRecommendation,
     ChatMessage,
     Event,
     Follower,
@@ -33,6 +35,11 @@ from core.models import (
     TranscriptSegment,
     ViewerSample,
     Vip,
+)
+from core.monetization import (
+    RECOMMEND_INPUT_CAP,
+    RECOMMEND_OUTPUT_TOKENS,
+    generate_channel_recommendations,
 )
 
 router = APIRouter(prefix="/api/channel")
@@ -158,6 +165,11 @@ class Subscribers(BaseModel):
     top_bits: list[BitsLeaderOut]
 
 
+class RecommendationOut(BaseModel):
+    content: str
+    facts: list[str]
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -194,6 +206,7 @@ class ChannelOverview(BaseModel):
     engagement: Engagement
     community: Community
     subscribers: Subscribers
+    recommendations: list[RecommendationOut]
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -736,6 +749,93 @@ def _recurring_topics(db: DbSession, stream_ids: list[int]) -> list[RecurringTop
     return [RecurringTopic(name=name, streams=streams) for name, streams in rows]
 
 
+def _recommendations(db: DbSession, channel_id: int) -> list[RecommendationOut]:
+    rows = db.scalars(
+        select(ChannelRecommendation)
+        .where(ChannelRecommendation.channel_id == channel_id)
+        .order_by(ChannelRecommendation.id)
+    )
+    return [
+        RecommendationOut(content=row.content, facts=row.evidence.get("facts", []))
+        for row in rows
+    ]
+
+
+def _monetization_facts(
+    db: DbSession, channel_id: int, ready_ids: list[int]
+) -> list[str]:
+    """Numbered, SQL-derived monetization facts the LLM must ground its advice
+    in. Only facts backed by real data are included."""
+    finance = _channel_finance(db, channel_id, ready_ids)
+    content = _content_revenue(db, channel_id, ready_ids)
+    engagement = _engagement(db, ready_ids)
+    subscribers = _subscribers(db, channel_id, ready_ids)
+    community = _community(db, channel_id, ready_ids)
+
+    facts: list[str] = []
+
+    def add(text: str) -> None:
+        facts.append(f"[{len(facts) + 1}] {text}")
+
+    if finance.total_estimated_usd > 0:
+        add(f"Receita estimada total: US$ {finance.total_estimated_usd:.2f}.")
+        if finance.top_contributors and finance.total_estimated_usd > 0:
+            top = finance.top_contributors[0]
+            share = round(top.estimated_usd / finance.total_estimated_usd * 100)
+            add(
+                f"Seu maior contribuinte ({top.login}) representa {share}% da "
+                f"receita (US$ {top.estimated_usd:.2f})."
+            )
+    for topic in finance.top_monetizing_topics[:2]:
+        add(f"O assunto '{topic.name}' gerou US$ {topic.estimated_usd:.2f}.")
+    for bucket in content[:2]:
+        add(
+            f"A categoria '{bucket.category}' rende US$ {bucket.usd_per_hour:.2f} por "
+            f"hora transmitida (US$ {bucket.estimated_usd:.2f} no total)."
+        )
+    if engagement.hype_train.count > 0:
+        add(
+            f"Você teve {engagement.hype_train.count} hype train(s), melhor nível "
+            f"{engagement.hype_train.best_level}."
+        )
+    if engagement.top_rewards:
+        reward = engagement.top_rewards[0]
+        add(
+            f"A recompensa de pontos mais resgatada é '{reward.title}' "
+            f"({reward.redemptions} vezes)."
+        )
+    if engagement.ads.avg_viewer_change_pct is not None:
+        add(
+            f"Ao redor dos ad breaks a audiência muda "
+            f"{engagement.ads.avg_viewer_change_pct}%."
+        )
+    if subscribers.total > 0:
+        tiers = ", ".join(f"{t.tier}:{t.count}" for t in subscribers.tiers)
+        add(f"{subscribers.total} assinantes ativos (tiers {tiers}).")
+    if subscribers.subs_ended > 0:
+        add(f"{subscribers.subs_ended} assinatura(s) terminaram (churn).")
+    if community.engaged_viewer_pct is not None:
+        add(
+            f"{community.engaged_viewer_pct}% dos viewers escrevem no chat "
+            "(o resto observa em silêncio)."
+        )
+    return facts
+
+
+@router.post("/recommendations")
+def create_recommendations(
+    channel: CurrentChannel, db: DbSession
+) -> list[RecommendationOut]:
+    """Regenerate the account's monetization recommendations with the LLM."""
+    ready_ids = _ready_stream_ids(db, channel.id)
+    facts = _monetization_facts(db, channel.id, ready_ids)
+    backend = get_llm_backend()
+    budget = TokenBudget(backend, RECOMMEND_INPUT_CAP, RECOMMEND_OUTPUT_TOKENS)
+    generate_channel_recommendations(db, channel.id, facts, backend, budget)
+    db.commit()
+    return _recommendations(db, channel.id)
+
+
 @router.get("")
 def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
     ready_ids = _ready_stream_ids(db, channel.id)
@@ -762,4 +862,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         engagement=_engagement(db, ready_ids),
         community=_community(db, channel.id, ready_ids),
         subscribers=_subscribers(db, channel.id, ready_ids),
+        recommendations=_recommendations(db, channel.id),
     )

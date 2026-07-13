@@ -260,6 +260,8 @@ export type Subscribers = {
   top_bits: { login: string; score: number }[]
 }
 
+export type Recommendation = { content: string; facts: string[] }
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -275,6 +277,7 @@ export type ChannelOverview = {
   engagement: Engagement
   community: Community
   subscribers: Subscribers
+  recommendations: Recommendation[]
 }
 
 export type QueueItem = {

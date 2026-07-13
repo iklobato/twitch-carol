@@ -312,6 +312,22 @@ class Insight(Base):
     )
 
 
+class ChannelRecommendation(Base):
+    """Account-level monetization advice from the LLM, grounded in the numbered
+    SQL facts it cited. Regenerated as a set, not per-stream like Insight."""
+
+    __tablename__ = "channel_recommendations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    model_used: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
