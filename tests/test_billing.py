@@ -188,6 +188,10 @@ def test_checkout_returns_stripe_url(api_client, db, billing_env, monkeypatch) -
     assert response.json()["url"] == "https://stripe.test/checkout"
     assert captured["client_reference_id"] == str(channel.id)
     assert captured["line_items"][0]["price"] == "price_test"
+    # Partner promotion codes must be redeemable, and a 100%-off code must not
+    # force a card at checkout.
+    assert captured["allow_promotion_codes"] is True
+    assert captured["payment_method_collection"] == "if_required"
 
 
 def test_portal_requires_customer(api_client, db, billing_env) -> None:

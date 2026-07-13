@@ -42,6 +42,10 @@ def create_checkout(channel: CurrentChannel) -> CheckoutUrl:
         "success_url": f"{base}/?assinatura=sucesso",
         "cancel_url": f"{base}/?assinatura=cancelada",
         "client_reference_id": str(channel.id),
+        # Partner codes: let the customer enter a promotion code, and skip the
+        # card when a 100%-off code makes the total zero.
+        "allow_promotion_codes": True,
+        "payment_method_collection": "if_required",
     }
     if channel.stripe_customer_id:
         params["customer"] = channel.stripe_customer_id
