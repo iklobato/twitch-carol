@@ -159,8 +159,17 @@ def _loyal_chatters(
 
 
 def _follower_logins(db: DbSession, channel_id: int) -> set[str]:
-    rows = db.scalars(select(Follower.login).where(Follower.channel_id == channel_id))
-    return {login for login in rows if login}
+    """Union of the backfilled followers table and live-captured follow events,
+    so follows recorded before the backfill existed still count."""
+    from_table = db.scalars(
+        select(Follower.login).where(Follower.channel_id == channel_id)
+    )
+    from_events = db.scalars(
+        select(Event.payload["user_login"].astext)
+        .where(Event.channel_id == channel_id)
+        .where(Event.type == FOLLOW_EVENT_TYPE)
+    )
+    return {login for login in [*from_table, *from_events] if login}
 
 
 def _past_broadcasts(db: DbSession, channel_id: int) -> list[PastBroadcastOut]:

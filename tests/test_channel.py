@@ -166,6 +166,21 @@ def test_channel_followers_come_from_backfill_table(api_client, db) -> None:
     assert regular["followed"] is True
 
 
+def test_channel_followers_union_backfill_and_live_events(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel)
+    add_follower(db, channel, "backfilled_fan")
+    # a live follow captured before the backfill table existed, events-only
+    event = add_event(db, stream, "channel.follow")
+    event.payload = {"user_login": "legacy_fan"}
+    db.flush()
+
+    login_as(api_client, channel)
+    overview = api_client.get("/api/channel").json()
+
+    assert overview["total_followers_gained"] == 2  # both sources, deduped by login
+
+
 def test_channel_past_broadcasts_listed_newest_first(api_client, db) -> None:
     channel = make_channel(db)
     add_past_broadcast(db, channel, title="Live velha", published_minutes_ago=5000)
