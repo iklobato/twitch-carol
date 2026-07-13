@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "redis>=5.0",
+    "prometheus-fastapi-instrumentator>=7.0",
     "cryptography>=42",
     "httpx>=0.27",
     "boto3>=1.34",

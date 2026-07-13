@@ -1,0 +1,156 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: streamintel
+    folder: StreamIntel
+    interval: 1m
+    rules:
+      - uid: si-site-down
+        title: streamintel fora do ar (blackbox)
+        condition: C
+        for: 3m
+        labels: { severity: critical }
+        annotations: { summary: "streamintel.cc nao responde ao probe HTTPS ha 3 minutos." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'min(probe_success{instance=~"https://streamintel.cc.*"})', instant: true, refId: A }
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [1], type: lt } }]
+
+      - uid: si-host-down
+        title: Droplet stream-intel sem metricas (node-exporter down)
+        condition: C
+        for: 3m
+        labels: { severity: critical }
+        annotations: { summary: "O node-exporter do stream-intel nao responde; box caido ou agente parado." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'up{job="streamintel-node"}', instant: true, refId: A }
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [1], type: lt } }]
+
+      - uid: si-disk
+        title: Disco do stream-intel acima de 85%
+        condition: C
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Disco quase cheio (audio/whisper cache crescem); limpar ou aumentar volume." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: '100 * (1 - node_filesystem_avail_bytes{job="streamintel-node",mountpoint="/host"} / node_filesystem_size_bytes{job="streamintel-node",mountpoint="/host"})'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [85], type: gt } }]
+
+      - uid: si-worker-down
+        title: Worker de pipeline parado (menos de 3 rodando)
+        condition: C
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Um dos workers capture/transcribe/analyze sumiu; pipeline pode travar." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: 'count(container_memory_working_set_bytes{job="streamintel-cadvisor",name=~"deploy-worker-.*"})'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [3], type: lt } }]
+
+      # ponytail: 100 e um chute inicial (backlog atual ~7); ajustar com dados reais de volume.
+      - uid: si-queue-backlog
+        title: Backlog de jobs alto (worker preso?)
+        condition: C
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: "Fila jobs:transcribe/analyze acumulando; worker pode estar preso ou lento." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'max(redis_stream_length{job="streamintel-valkey"})', instant: true, refId: A }
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [100], type: gt } }]
+
+      - uid: si-5xx
+        title: Erros 5xx na API do streamintel
+        condition: C
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "A API esta devolvendo 5xx ha 5 minutos." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              expr: 'sum(rate(http_requests_total{job="streamintel-app",status="5xx"}[5m])) or vector(0)'
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [0], type: gt } }]
+
+      - uid: si-tls-expiry
+        title: Certificado TLS do streamintel expira em menos de 14 dias
+        condition: C
+        for: 1h
+        labels: { severity: warning }
+        annotations: { summary: "Renovacao automatica de TLS pode ter falhado." }
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model: { expr: 'min((probe_ssl_earliest_cert_expiry{instance=~"https://streamintel.cc.*"} - time()) / 86400)', instant: true, refId: A }
+          - refId: C
+            relativeTimeRange: { from: 0, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions: [{ evaluator: { params: [14], type: lt } }]
