@@ -3,6 +3,8 @@ export type Me = {
   login: string
   display_name: string
   scopes: string[]
+  is_pro: boolean
+  trial_used: boolean
 }
 
 export type StreamListItem = {

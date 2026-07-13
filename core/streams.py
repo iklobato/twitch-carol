@@ -4,12 +4,23 @@ finalizes (audit + queue) after its collectors stop."""
 import logging
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from core.models import Channel, Stream, StreamStatus
 
 logger = logging.getLogger(__name__)
+
+
+def channel_stream_count(db: Session, channel_id: int) -> int:
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(Stream)
+            .where(Stream.channel_id == channel_id)
+        )
+        or 0
+    )
 
 
 def get_active_stream(db: Session, channel_id: int) -> Stream | None:

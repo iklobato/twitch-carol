@@ -3,6 +3,8 @@ import { useRoute } from './router'
 import StreamReport from './views/StreamReport'
 import StreamsList from './views/StreamsList'
 import SearchView from './views/SearchView'
+import UpgradeBanner from './components/UpgradeBanner'
+import { openBillingPortal } from './api'
 import type { Me } from './types'
 
 function LoginScreen() {
@@ -75,6 +77,14 @@ export default function App() {
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
             <span className="text-zinc-400">@{me.login}</span>
+            {me.is_pro && (
+              <button
+                onClick={openBillingPortal}
+                className="text-zinc-500 underline hover:text-zinc-300"
+              >
+                Assinatura
+              </button>
+            )}
             <a href="/auth/logout" className="text-zinc-500 underline hover:text-zinc-300">
               Sair
             </a>
@@ -82,6 +92,7 @@ export default function App() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
+        {!me.is_pro && <UpgradeBanner trialUsed={me.trial_used} />}
         {route.view === 'home' && <StreamsList />}
         {route.view === 'stream' && <StreamReport streamId={route.streamId} />}
         {route.view === 'search' && <SearchView query={route.query} />}

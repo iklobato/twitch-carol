@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     simulation: bool = False
     # Fallback audio store when Spaces is not configured (dev/simulation).
     audio_local_dir: str = "/data/audio"
+    # Stripe (test keys in dev, live keys in prod .env). Empty = billing off.
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id: str = ""
 
 
 @lru_cache
