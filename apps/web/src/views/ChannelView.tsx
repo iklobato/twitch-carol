@@ -237,6 +237,89 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+function EngagementSection({ overview }: { overview: ChannelOverview }) {
+  const { hype_train, top_rewards, ads } = overview.engagement
+  if (hype_train.count === 0 && top_rewards.length === 0 && ads.breaks === 0) return null
+  const maxRedemptions = Math.max(...top_rewards.map((r) => r.redemptions), 1)
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-lg font-bold">Engajamento que gera receita</h3>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Hype Trains
+          </p>
+          {hype_train.count > 0 ? (
+            <div className="space-y-1 text-sm">
+              <p className="text-2xl font-bold text-purple-300">{hype_train.count}</p>
+              <p className="text-zinc-400">Melhor nível: {hype_train.best_level}</p>
+              <p className="text-zinc-500">
+                {hype_train.total_contributed.toLocaleString('pt-BR')} em contribuições
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600">Nenhum hype train ainda.</p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Recompensas mais resgatadas
+          </p>
+          {top_rewards.length > 0 ? (
+            <div className="space-y-1.5 text-sm">
+              {top_rewards.map((reward) => (
+                <div key={reward.title} className="flex items-center gap-2">
+                  <span className="w-28 shrink-0 truncate" title={reward.title}>
+                    {reward.title}
+                  </span>
+                  <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-800">
+                    <div
+                      className="h-full rounded bg-purple-500"
+                      style={{ width: `${(reward.redemptions / maxRedemptions) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-8 shrink-0 text-right text-zinc-400">
+                    {reward.redemptions}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600">Nenhum resgate de pontos ainda.</p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Anúncios
+          </p>
+          {ads.breaks > 0 ? (
+            <div className="space-y-1 text-sm">
+              <p className="text-zinc-400">
+                {ads.breaks} break{ads.breaks > 1 ? 's' : ''} ·{' '}
+                {Math.round(ads.total_seconds / 60)}min de ads
+              </p>
+              {ads.avg_viewer_change_pct !== null && (
+                <p
+                  className={
+                    ads.avg_viewer_change_pct < 0 ? 'text-red-400' : 'text-emerald-400'
+                  }
+                >
+                  {ads.avg_viewer_change_pct > 0 ? '+' : ''}
+                  {ads.avg_viewer_change_pct}% de viewers ao redor dos ads
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-zinc-600">Nenhum ad break capturado.</p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function formatDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -435,6 +518,7 @@ export default function ChannelView() {
       </div>
       <ChannelMonetization overview={overview} />
       <ContentRevenue overview={overview} />
+      <EngagementSection overview={overview} />
       <LoyalChatters overview={overview} />
       <GrowthChart growth={overview.growth} />
       <BestWeekdays overview={overview} />

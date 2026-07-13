@@ -232,6 +232,12 @@ export type ContentBucket = {
   avg_peak_viewers: number
 }
 
+export type Engagement = {
+  hype_train: { count: number; best_level: number; total_contributed: number }
+  top_rewards: { title: string; redemptions: number }[]
+  ads: { breaks: number; total_seconds: number; avg_viewer_change_pct: number | null }
+}
+
 export type ChannelOverview = {
   total_streams: number
   total_messages: number
@@ -244,6 +250,7 @@ export type ChannelOverview = {
   finance: ChannelFinance
   past_broadcasts: PastBroadcast[]
   content_revenue: ContentBucket[]
+  engagement: Engagement
 }
 
 export type QueueItem = {

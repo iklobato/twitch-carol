@@ -234,6 +234,46 @@ def test_channel_content_revenue_skips_uncategorized(api_client, db) -> None:
     assert content == []  # revenue with no category is not attributed
 
 
+def test_channel_engagement_hype_points_ads(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=60)
+    add_viewer_samples(db, stream, [100, 100, 100])  # minutes 0,1,2
+    hype = add_event(
+        db, stream, "channel.hype_train.end", offset_seconds=200, amount=8000
+    )
+    hype.payload = {"level": 4, "total": 8000}
+    redeem = "channel.channel_points_custom_reward_redemption.add"
+    r1 = add_event(db, stream, redeem, offset_seconds=100)
+    r1.payload = {"reward": {"title": "Pedir música"}}
+    r2 = add_event(db, stream, redeem, offset_seconds=110)
+    r2.payload = {"reward": {"title": "Pedir música"}}
+    r3 = add_event(db, stream, redeem, offset_seconds=120)
+    r3.payload = {"reward": {"title": "Destacar mensagem"}}
+    ad = add_event(db, stream, "channel.ad_break.begin", offset_seconds=60, amount=60)
+    ad.payload = {"duration_seconds": 60}
+    db.flush()
+
+    login_as(api_client, channel)
+    eng = api_client.get("/api/channel").json()["engagement"]
+
+    assert eng["hype_train"]["count"] == 1
+    assert eng["hype_train"]["best_level"] == 4
+    assert eng["hype_train"]["total_contributed"] == 8000
+    assert eng["top_rewards"][0] == {"title": "Pedir música", "redemptions": 2}
+    assert eng["ads"]["breaks"] == 1
+    assert eng["ads"]["total_seconds"] == 60
+
+
+def test_channel_engagement_empty_when_no_events(api_client, db) -> None:
+    channel = make_channel(db)
+    make_stream(db, channel)
+    login_as(api_client, channel)
+    eng = api_client.get("/api/channel").json()["engagement"]
+    assert eng["hype_train"]["count"] == 0
+    assert eng["top_rewards"] == []
+    assert eng["ads"]["breaks"] == 0
+
+
 def test_channel_overview_empty(api_client, db) -> None:
     channel = make_channel(db)
     login_as(api_client, channel)

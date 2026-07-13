@@ -40,8 +40,13 @@ MONETIZING_TOPIC_LIMIT = 8
 PAST_BROADCAST_LIMIT = 20
 CONTENT_LIMIT = 8
 SECONDS_PER_HOUR = 3600
+POINTS_REWARD_LIMIT = 8
+AD_WINDOW = timedelta(seconds=90)
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
+HYPE_TRAIN_END = "channel.hype_train.end"
+REDEMPTION_ADD = "channel.channel_points_custom_reward_redemption.add"
+AD_BREAK = "channel.ad_break.begin"
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 
@@ -92,6 +97,29 @@ class ContentBucket(BaseModel):
     avg_peak_viewers: float
 
 
+class HypeTrainStats(BaseModel):
+    count: int
+    best_level: int
+    total_contributed: int
+
+
+class PointsReward(BaseModel):
+    title: str
+    redemptions: int
+
+
+class AdImpact(BaseModel):
+    breaks: int
+    total_seconds: int
+    avg_viewer_change_pct: float | None
+
+
+class Engagement(BaseModel):
+    hype_train: HypeTrainStats
+    top_rewards: list[PointsReward]
+    ads: AdImpact
+
+
 class TopContributor(BaseModel):
     login: str
     estimated_usd: float
@@ -125,6 +153,7 @@ class ChannelOverview(BaseModel):
     finance: ChannelFinance
     past_broadcasts: list[PastBroadcastOut]
     content_revenue: list[ContentBucket]
+    engagement: Engagement
 
 
 def _ready_stream_ids(db: DbSession, channel_id: int) -> list[int]:
@@ -259,6 +288,79 @@ def _content_revenue(
     ]
     buckets.sort(key=lambda bucket: bucket.estimated_usd, reverse=True)
     return buckets[:CONTENT_LIMIT]
+
+
+def _engagement(db: DbSession, ready_ids: list[int]) -> Engagement:
+    """Non-money engagement mechanics that drive revenue: hype trains, the
+    channel-points economy, and how ad breaks move viewership."""
+    if not ready_ids:
+        return Engagement(
+            hype_train=HypeTrainStats(count=0, best_level=0, total_contributed=0),
+            top_rewards=[],
+            ads=AdImpact(breaks=0, total_seconds=0, avg_viewer_change_pct=None),
+        )
+    events = db.scalars(
+        select(Event)
+        .where(Event.stream_id.in_(ready_ids))
+        .where(Event.type.in_([HYPE_TRAIN_END, REDEMPTION_ADD, AD_BREAK]))
+    ).all()
+
+    hype = [e for e in events if e.type == HYPE_TRAIN_END]
+    hype_stats = HypeTrainStats(
+        count=len(hype),
+        best_level=max(
+            (int((e.payload or {}).get("level", 0)) for e in hype), default=0
+        ),
+        total_contributed=sum(e.amount or 0 for e in hype),
+    )
+
+    reward_counts: dict[str, int] = defaultdict(int)
+    for event in events:
+        if event.type != REDEMPTION_ADD:
+            continue
+        title = ((event.payload or {}).get("reward") or {}).get("title")
+        if title:
+            reward_counts[title] += 1
+    top_rewards = [
+        PointsReward(title=title, redemptions=count)
+        for title, count in sorted(
+            reward_counts.items(), key=lambda item: item[1], reverse=True
+        )[:POINTS_REWARD_LIMIT]
+    ]
+
+    ad_events = [e for e in events if e.type == AD_BREAK]
+    ads = AdImpact(
+        breaks=len(ad_events),
+        total_seconds=sum(e.amount or 0 for e in ad_events),
+        avg_viewer_change_pct=_ad_viewer_change(db, ad_events),
+    )
+    return Engagement(hype_train=hype_stats, top_rewards=top_rewards, ads=ads)
+
+
+def _ad_viewer_change(db: DbSession, ad_events: list[Event]) -> float | None:
+    """Mean viewer change from just before to just after an ad break, as a
+    percent. Negative means ads cost viewers."""
+    changes: list[float] = []
+    for event in ad_events:
+        before = db.scalar(
+            select(func.avg(ViewerSample.viewer_count)).where(
+                ViewerSample.stream_id == event.stream_id,
+                ViewerSample.sampled_at >= event.occurred_at - AD_WINDOW,
+                ViewerSample.sampled_at < event.occurred_at,
+            )
+        )
+        after = db.scalar(
+            select(func.avg(ViewerSample.viewer_count)).where(
+                ViewerSample.stream_id == event.stream_id,
+                ViewerSample.sampled_at >= event.occurred_at,
+                ViewerSample.sampled_at < event.occurred_at + AD_WINDOW,
+            )
+        )
+        if before and after and before > 0:
+            changes.append((float(after) - float(before)) / float(before) * 100)
+    if not changes:
+        return None
+    return round(sum(changes) / len(changes), 1)
 
 
 def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
@@ -511,4 +613,5 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         finance=_channel_finance(db, channel.id, ready_ids),
         past_broadcasts=_past_broadcasts(db, channel.id),
         content_revenue=_content_revenue(db, channel.id, ready_ids),
+        engagement=_engagement(db, ready_ids),
     )

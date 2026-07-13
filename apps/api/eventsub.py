@@ -146,6 +146,9 @@ AMOUNT_EXTRACTORS: dict[str, Callable[[dict], int | None]] = {
     "channel.subscribe": _amount_from_field("tier"),
     "channel.subscription.message": _amount_from_field("tier"),
     "channel.subscription.gift": _amount_from_field("total"),
+    "channel.subscription.end": _amount_from_field("tier"),
+    "channel.hype_train.end": _amount_from_field("total"),
+    "channel.ad_break.begin": _amount_from_field("duration_seconds"),
 }
 
 
