@@ -26,6 +26,11 @@ class Base(DeclarativeBase):
     pass
 
 
+# Stripe subscription statuses that unlock the full platform. Everything else
+# (past_due, unpaid, canceled, incomplete, None) means capture is gated.
+PRO_STATUSES = frozenset({"active", "trialing"})
+
+
 class StreamStatus(enum.StrEnum):
     CAPTURING = "capturing"
     QUEUED_TRANSCRIPTION = "queued_transcription"
@@ -83,9 +88,16 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    stripe_customer_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    subscription_status: Mapped[str | None] = mapped_column(String(32))
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    @property
+    def is_pro(self) -> bool:
+        return self.subscription_status in PRO_STATUSES
 
 
 class Stream(Base):

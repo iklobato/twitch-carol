@@ -1653,6 +1653,7 @@ dependencies = [
     { name = "redis" },
     { name = "sqlalchemy" },
     { name = "streamlink" },
+    { name = "stripe" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1680,6 +1681,7 @@ requires-dist = [
     { name = "redis", specifier = ">=5.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "streamlink", specifier = ">=6.7" },
+    { name = "stripe", specifier = ">=9" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 
@@ -1712,6 +1714,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/7f/30293ee4d1dfb5c5713645bae8ba19b1e55fb0f5af385f9ce1fc85d6c9cc/streamlink-8.4.0-py3-none-any.whl", hash = "sha256:eb261a5c4b7330b3a0b4576f994b6b315ad21c2b0273130ad94544c4c29b3842", size = 565095, upload-time = "2026-05-06T18:15:02.313Z" },
     { url = "https://files.pythonhosted.org/packages/00/87/73f7bed91d286e21b876444c00e3bab20512158b8d794b703240d3d5b59b/streamlink-8.4.0-py3-none-win32.whl", hash = "sha256:51aadbaaf4fac1102434938e286912e3640ac21820fffd7d7da84bd40741dfc0", size = 565107, upload-time = "2026-05-06T18:15:04.027Z" },
     { url = "https://files.pythonhosted.org/packages/c7/0e/c3a402c7eede387bcf15c114c7aea6570ad212f77f716cd59619d8d30197/streamlink-8.4.0-py3-none-win_amd64.whl", hash = "sha256:02133a168c4bd8961549a0bdeff38a17bdd1b77b809b25e80891c33c1c78a1d1", size = 565112, upload-time = "2026-05-06T18:15:05.457Z" },
+]
+
+[[package]]
+name = "stripe"
+version = "15.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/07/aed5656b3fd89a36e80835fe62c668692ee4ebf3a935095933d03f67a47b/stripe-15.3.0.tar.gz", hash = "sha256:ff05524255f51bf7df0e5bc4a99dbd0f737afd05587b7657c82e0d99c7fc45a4", size = 1514134, upload-time = "2026-06-24T22:49:40.276Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/f4/0dcf5bc464941132e3b109d26086a8a0aae7e4ed7e0243a1c47084b4de4b/stripe-15.3.0-py3-none-any.whl", hash = "sha256:99c427d306d9348123e73da3f4f2cae0a5732cac9b703155dba0418e32d3cf1c", size = 2172165, upload-time = "2026-06-24T22:49:38.18Z" },
 ]
 
 [[package]]

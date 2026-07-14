@@ -17,6 +17,23 @@ export async function apiPost(path: string, body: unknown): Promise<void> {
   }
 }
 
+async function redirectToBilling(path: string, method: 'GET' | 'POST'): Promise<void> {
+  const response = await fetch(path, { method })
+  if (!response.ok) {
+    throw new Error(`${method} ${path}: ${response.status}`)
+  }
+  const { url } = (await response.json()) as { url: string }
+  window.location.href = url
+}
+
+export function startCheckout(): Promise<void> {
+  return redirectToBilling('/api/billing/checkout', 'POST')
+}
+
+export function openBillingPortal(): Promise<void> {
+  return redirectToBilling('/api/billing/portal', 'GET')
+}
+
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }

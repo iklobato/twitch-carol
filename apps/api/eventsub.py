@@ -29,7 +29,12 @@ from core.eventsub import (
 )
 from core.models import Channel, Event
 from core.queues import get_valkey
-from core.streams import get_active_stream, mark_stream_offline, start_stream
+from core.streams import (
+    channel_stream_count,
+    get_active_stream,
+    mark_stream_offline,
+    start_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +111,15 @@ def _find_channel(db: Session, event: dict) -> Channel | None:
 def _handle_online(
     db: Session, channel: Channel, event_type: str, event: dict, occurred_at: datetime
 ) -> None:
+    # Free channels get one live captured (the trial). After that, capture is
+    # PRO-only. The count includes the active stream, so re-fired online events
+    # during the trial live still resolve to the same stream via start_stream.
+    if not channel.is_pro and channel_stream_count(db, channel.id) >= 1:
+        logger.info(
+            "capture skipped: free trial live already used",
+            extra={"channel_id": channel.id},
+        )
+        return
     started_at = datetime.fromisoformat(event["started_at"].replace("Z", "+00:00"))
     start_stream(db, channel, started_at)
 
