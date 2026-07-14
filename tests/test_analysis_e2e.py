@@ -45,6 +45,17 @@ class PromptAwareFakeLLM:
 
     def generate(self, prompt: str, max_tokens: int) -> str:
         segment_ids, message_ids = self._candidates(prompt)
+        if '"recommendations"' in prompt:
+            import re
+
+            facts = [int(m) for m in re.findall(r"\[(\d+)\]", prompt)]
+            return json.dumps(
+                {
+                    "recommendations": [
+                        {"content": "Faça mais X.", "fact_ids": facts[:1]}
+                    ]
+                }
+            )
         if '"topics"' in prompt:
             topics = [
                 {

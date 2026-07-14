@@ -7,7 +7,13 @@ import pytest
 
 from apps.api.community import SENTIMENT_BUCKET_SECONDS
 from core.models import InsightType
-from core.text import emote_names, message_sentiment, strip_emotes, tokenize
+from core.text import (
+    emote_names,
+    emote_occurrences,
+    message_sentiment,
+    strip_emotes,
+    tokenize,
+)
 from tests.conftest import login_as
 from tests.factories import (
     add_chat,
@@ -49,6 +55,7 @@ def test_emote_names_recovered_from_ranges() -> None:
     text = "Kappa muito bom Kappa"
     emotes = {"25": ["0-4", "16-20"]}
     assert emote_names(text, emotes) == ["Kappa", "Kappa"]
+    assert emote_occurrences(text, emotes) == [("25", "Kappa"), ("25", "Kappa")]
     assert "Kappa" not in strip_emotes(text, emotes)
     assert emote_names(text, None) == []
 
@@ -88,7 +95,7 @@ def test_community_endpoint_full_payload(api_client, db) -> None:
     top_words = {w["word"] for w in body["words"]}
     assert "deploy" in top_words
     assert "que" not in top_words  # stopword
-    assert body["emotes"] == [{"name": "Kappa", "count": 2}]
+    assert body["emotes"] == [{"emote_id": "25", "name": "Kappa", "count": 2}]
     assert body["sentiment_overall"] is not None
     scores = {c["login"]: c["score"] for c in body["sentiment_by_chatter"]}
     assert scores["animada"] > 0

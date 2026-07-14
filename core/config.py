@@ -30,8 +30,13 @@ class Settings(BaseSettings):
     llm_max_input_tokens: int = 30000
     llm_max_output_tokens: int = 3000
     simulation: bool = False
+    # Comma-separated Twitch logins allowed to impersonate other channels.
+    admin_logins: str = ""
     # Fallback audio store when Spaces is not configured (dev/simulation).
     audio_local_dir: str = "/data/audio"
+    # Sentry error reporting. Empty DSN disables it (dev/tests never send).
+    sentry_dsn: str = ""
+    sentry_environment: str = "development"
 
 
 @lru_cache

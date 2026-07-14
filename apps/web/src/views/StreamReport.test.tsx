@@ -76,9 +76,27 @@ function mockFetch() {
               sentiment_by_chatter: [],
               presence: { slots: [], rows: [] },
             }
-          : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
-            ? []
-            : report
+          : url.startsWith('/api/streams/6/actionable')
+            ? {
+                retention: null,
+                dips: [],
+                clips: [],
+                unanswered_questions_count: 0,
+                unanswered_questions: [],
+              }
+            : url.startsWith('/api/streams/6/finance')
+              ? {
+                  estimated_usd: 0,
+                  total_bits: 0,
+                  total_subs: 0,
+                  total_gifts: 0,
+                  money_events: 0,
+                  top_contributors: [],
+                  by_topic: [],
+                }
+              : url.startsWith('/api/queue') || url.startsWith('/api/streams/6/chatters')
+                ? []
+                : report
       return new Response(JSON.stringify(body), { status: 200 })
     }),
   )
@@ -94,7 +112,8 @@ describe('StreamReport', () => {
     mockFetch()
     render(<StreamReport streamId={6} />)
     expect(await screen.findByText('Resumo da live de teste.')).toBeTruthy()
-    expect(screen.getByText(/100%/)).toBeTruthy()
+    // the +100% delta appears in the numbers row (and the TL;DR card)
+    expect(screen.getAllByText(/100%/).length).toBeGreaterThanOrEqual(1)
     const chip = screen.getByRole('button', { name: /primeiro trecho citado/ })
     fireEvent.click(chip)
     expect(screen.getByText('primeiro trecho citado')).toBeTruthy()

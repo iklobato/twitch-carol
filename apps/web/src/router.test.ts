@@ -23,6 +23,10 @@ describe('parseHash', () => {
     })
   })
 
+  it('abre a visão do canal', () => {
+    expect(parseHash('#/channel')).toEqual({ view: 'channel' })
+  })
+
   it('rota desconhecida cai na home', () => {
     expect(parseHash('#/qualquer/coisa')).toEqual({ view: 'home' })
   })

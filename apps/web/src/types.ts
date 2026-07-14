@@ -3,7 +3,11 @@ export type Me = {
   login: string
   display_name: string
   scopes: string[]
+  is_admin: boolean
+  impersonating: { as_login: string; admin_login: string } | null
 }
+
+export type ChannelOption = { login: string; display_name: string }
 
 export type StreamListItem = {
   id: number
@@ -133,11 +137,151 @@ export type TopicDetail = {
 export type CommunityOut = {
   share: { login: string | null; messages: number }[]
   words: { word: string; count: number }[]
-  emotes: { name: string; count: number }[]
+  emotes: { emote_id: string; name: string; count: number }[]
   sentiment_overall: number | null
   sentiment_timeline: { t: string; score: number; messages: number }[]
   sentiment_by_chatter: { login: string; score: number }[]
   presence: { slots: string[]; rows: { login: string; cells: number[] }[] }
+}
+
+export type ViewerDip = {
+  at: string
+  viewers_before: number
+  viewers_after: number
+  pct_drop: number
+  speech_context: string | null
+}
+
+export type Retention = {
+  peak_viewers: number
+  final_viewers: number
+  retained_pct: number
+  biggest_drop_at: string | null
+}
+
+export type ClipSuggestion = {
+  window_start: string
+  window_end: string
+  offset_seconds: number
+  offset_label: string
+  score: number
+}
+
+export type ActionableOut = {
+  retention: Retention | null
+  dips: ViewerDip[]
+  clips: ClipSuggestion[]
+  unanswered_questions_count: number
+  unanswered_questions: { sent_at: string; author_login: string; text: string }[]
+}
+
+export type FinanceOut = {
+  estimated_usd: number
+  total_bits: number
+  total_subs: number
+  total_gifts: number
+  money_events: number
+  top_contributors: { login: string; estimated_usd: number; bits: number; subs: number }[]
+  by_topic: { name: string; estimated_usd: number; events: number }[]
+}
+
+export type LoyalChatter = {
+  author_login: string
+  streams_attended: number
+  total_messages: number
+  last_seen: string
+  followed: boolean
+}
+
+export type WeekdaySlot = {
+  weekday: number
+  label: string
+  streams: number
+  avg_peak_viewers: number
+}
+
+export type GrowthPoint = {
+  stream_id: number
+  started_at: string
+  title: string | null
+  peak_viewers: number
+  avg_viewers: number
+  followers_gained: number
+  messages: number
+  estimated_usd: number
+}
+
+export type ChannelFinance = {
+  total_estimated_usd: number
+  total_bits: number
+  total_subs: number
+  total_gifts: number
+  top_contributors: { login: string; estimated_usd: number; streams: number }[]
+  top_monetizing_topics: { name: string; estimated_usd: number; streams: number }[]
+}
+
+export type PastBroadcast = {
+  title: string | null
+  published_at: string
+  duration_seconds: number
+  view_count: number
+  url: string
+}
+
+export type ContentBucket = {
+  category: string
+  estimated_usd: number
+  usd_per_hour: number
+  streams: number
+  avg_peak_viewers: number
+}
+
+export type Engagement = {
+  hype_train: { count: number; best_level: number; total_contributed: number }
+  top_rewards: { title: string; redemptions: number }[]
+  ads: { breaks: number; total_seconds: number; avg_viewer_change_pct: number | null }
+}
+
+export type GoalOut = {
+  goal_type: string
+  description: string | null
+  current_amount: number
+  target_amount: number
+  pct: number
+}
+
+export type Community = {
+  engaged_viewer_pct: number | null
+  vips: string[]
+  goals: GoalOut[]
+}
+
+export type Subscribers = {
+  total: number
+  tiers: { tier: string; count: number }[]
+  gifted_pct: number
+  subs_ended: number
+  top_bits: { login: string; score: number }[]
+}
+
+export type Recommendation = { content: string; facts: string[] }
+
+export type ChannelOverview = {
+  total_streams: number
+  total_messages: number
+  unique_chatters: number
+  total_followers_gained: number
+  loyal_chatters: LoyalChatter[]
+  best_weekdays: WeekdaySlot[]
+  growth: GrowthPoint[]
+  recurring_topics: { name: string; streams: number }[]
+  finance: ChannelFinance
+  past_broadcasts: PastBroadcast[]
+  content_revenue: ContentBucket[]
+  engagement: Engagement
+  community: Community
+  subscribers: Subscribers
+  recommendations: Recommendation[]
 }
 
 export type QueueItem = {

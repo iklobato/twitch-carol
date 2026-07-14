@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react'
 
 export type Route =
   | { view: 'home' }
+  | { view: 'channel' }
   | { view: 'stream'; streamId: number }
   | { view: 'search'; query: string }
 
 export function parseHash(hash: string): Route {
   const clean = hash.replace(/^#\/?/, '')
+  if (clean === 'channel') {
+    return { view: 'channel' }
+  }
   const streamMatch = clean.match(/^stream\/(\d+)/)
   if (streamMatch) {
     return { view: 'stream', streamId: Number(streamMatch[1]) }

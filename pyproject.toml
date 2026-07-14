@@ -14,6 +14,7 @@ dependencies = [
     "redis>=5.0",
     "cryptography>=42",
     "httpx>=0.27",
+    "sentry-sdk>=2.0",
     "boto3>=1.34",
     "streamlink>=6.7",
     "faster-whisper>=1.1",

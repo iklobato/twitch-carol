@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
 import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
+import ActionableSection from '../components/ActionableSection'
 import ChattersSection from '../components/ChattersSection'
+import FinanceSection from '../components/FinanceSection'
 import CommunitySection from '../components/CommunitySection'
 import PipelineStepper from '../components/PipelineStepper'
 import TimelineChart from '../components/TimelineChart'
 import type {
+  ActionableOut,
   InsightOut,
   PeakDetail,
   PeakOut,
@@ -13,6 +16,15 @@ import type {
   Timeline,
   TopicDetail,
 } from '../types'
+
+function scrollToPeak(peakId: number) {
+  const el = document.getElementById(`momento-${peakId}`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-orange-500')
+    setTimeout(() => el.classList.remove('ring-2', 'ring-orange-500'), 1600)
+  }
+}
 
 const PROCESSING_POLL_MS = 10000
 const TERMINAL_STATUSES = new Set(['ready', 'failed'])
@@ -153,7 +165,10 @@ function MomentCard({
   const citedIds = new Set(insight?.cited_messages.map((message) => message.id))
 
   return (
-    <div className="mb-3 rounded-xl border border-zinc-800 border-l-4 border-l-orange-500 bg-zinc-900 p-4">
+    <div
+      id={`momento-${peak.id}`}
+      className="mb-3 rounded-xl border border-zinc-800 border-l-4 border-l-orange-500 bg-zinc-900 p-4 transition-all"
+    >
       <div className="flex flex-wrap gap-x-6 gap-y-2 md:flex-nowrap">
         <div className="w-24 shrink-0">
           <p className="text-lg font-bold tabular-nums text-orange-400">{formatTime(peak.window_start)}</p>
@@ -360,10 +375,93 @@ function AuditNotes({ audit }: { audit: Record<string, unknown> | null }) {
   )
 }
 
+function TldrCard({
+  report,
+  actionable,
+  topics,
+  topPeak,
+}: {
+  report: Report
+  actionable: ActionableOut | null
+  topics: InsightOut[]
+  topPeak: PeakOut | null
+}) {
+  const bullets: { icon: string; text: React.ReactNode }[] = []
+  if (topPeak) {
+    bullets.push({
+      icon: '🔥',
+      text: (
+        <>
+          Melhor momento:{' '}
+          <button
+            onClick={() => scrollToPeak(topPeak.id)}
+            className="font-semibold text-orange-300 underline hover:text-orange-200"
+          >
+            {formatTime(topPeak.window_start)} · {topPeak.score.toFixed(1)}x o chat
+          </button>
+        </>
+      ),
+    })
+  }
+  if (topics[0]) {
+    bullets.push({
+      icon: '💬',
+      text: (
+        <>
+          Assunto que mais engajou:{' '}
+          <span className="font-semibold">{topics[0].content.split('\n')[0]}</span>
+        </>
+      ),
+    })
+  }
+  if (actionable?.retention) {
+    bullets.push({
+      icon: '📉',
+      text: (
+        <>
+          Retenção de <span className="font-semibold">{actionable.retention.retained_pct}%</span> do
+          pico de audiência
+        </>
+      ),
+    })
+  }
+  const messages = report.numbers.messages
+  if (messages) {
+    bullets.push({
+      icon: '📊',
+      text: (
+        <>
+          <span className="font-semibold">{messages.value.toLocaleString('pt-BR')}</span> mensagens
+          {messages.delta_pct != null &&
+            ` (${messages.delta_pct >= 0 ? '+' : ''}${messages.delta_pct}% vs últimas 10)`}
+        </>
+      ),
+    })
+  }
+  if (bullets.length === 0) return null
+
+  return (
+    <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
+      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+        Resumo rápido
+      </p>
+      <ul className="grid gap-x-6 gap-y-1.5 text-sm md:grid-cols-2">
+        {bullets.map((bullet, index) => (
+          <li key={index} className="flex gap-2">
+            <span>{bullet.icon}</span>
+            <span>{bullet.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 export default function StreamReport({ streamId }: { streamId: number }) {
   const [report, setReport] = useState<Report | null>(null)
   const [timeline, setTimeline] = useState<Timeline | null>(null)
   const [queue, setQueue] = useState<QueueItem | null>(null)
+  const [actionable, setActionable] = useState<ActionableOut | null>(null)
   const processing = report !== null && !TERMINAL_STATUSES.has(report.status)
 
   useEffect(() => {
@@ -373,6 +471,9 @@ export default function StreamReport({ streamId }: { streamId: number }) {
       apiGet<QueueItem[]>('/api/queue').then((items) =>
         setQueue(items.find((item) => item.stream_id === streamId) ?? null),
       )
+      apiGet<ActionableOut>(`/api/streams/${streamId}/actionable`)
+        .then(setActionable)
+        .catch(() => setActionable(null))
     }
     load()
     if (!processing) return
@@ -403,8 +504,15 @@ export default function StreamReport({ streamId }: { streamId: number }) {
   const topics = report.insights
     .filter((insight) => insight.type === 'topic')
     .sort((a, b) => ((a.evidence.rank as number) ?? 99) - ((b.evidence.rank as number) ?? 99))
+  const recommendations = report.insights
+    .filter((insight) => insight.type === 'recommendation')
+    .sort((a, b) => ((a.evidence.rank as number) ?? 99) - ((b.evidence.rank as number) ?? 99))
   const momentPeaks = [...report.peaks].sort(
     (a, b) => new Date(a.window_start).getTime() - new Date(b.window_start).getTime(),
+  )
+  const topPeak = report.peaks.reduce<PeakOut | null>(
+    (best, peak) => (best === null || peak.score > best.score ? peak : best),
+    null,
   )
 
   return (
@@ -419,12 +527,15 @@ export default function StreamReport({ streamId }: { streamId: number }) {
 
       <PipelineStepper status={report.status} queue={queue} />
       <AuditNotes audit={report.audit} />
+      {report.status === 'ready' && (
+        <TldrCard report={report} actionable={actionable} topics={topics} topPeak={topPeak} />
+      )}
       {summary && <SummaryHero insight={summary} onFeedback={(value) => sendFeedback(summary, value)} />}
       <NumbersRow report={report} />
 
       {timeline && (
         <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <TimelineChart timeline={timeline} />
+          <TimelineChart timeline={timeline} onPeakClick={scrollToPeak} />
         </div>
       )}
 
@@ -444,6 +555,38 @@ export default function StreamReport({ streamId }: { streamId: number }) {
         </div>
       )}
 
+      <ActionableSection actionable={actionable} />
+
+      <FinanceSection streamId={report.id} />
+
+      {recommendations.length > 0 && (
+        <div className="mb-6">
+          <h3 className="mb-3 text-lg font-bold">Recomendações</h3>
+          <div className="space-y-2">
+            {recommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className="flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-zinc-900 p-4"
+              >
+                <span className="text-lg">💡</span>
+                <div className="flex-1">
+                  <p className="text-sm">{rec.content}</p>
+                  <div className="mt-2">
+                    <FeedbackButtons
+                      insight={rec}
+                      onFeedback={(value) => sendFeedback(rec, value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-600">
+            Geradas pelo modelo a partir dos picos e quedas medidos por SQL desta live.
+          </p>
+        </div>
+      )}
+
       {topics.length > 0 && (
         <div className="mb-6">
           <h3 className="mb-3 text-lg font-bold">Assuntos da live</h3>
@@ -458,7 +601,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
         </div>
       )}
 
-      <CommunitySection streamId={report.id} />
+      <CommunitySection streamId={report.id} events={timeline?.events ?? []} />
       <ChattersSection streamId={report.id} />
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (

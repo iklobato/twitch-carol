@@ -7,22 +7,130 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from core.models import (
+    BitsLeader,
     Channel,
     ChatMessage,
     Event,
+    Follower,
+    Goal,
     Insight,
     InsightType,
     Job,
     JobStatus,
+    PastBroadcast,
     Peak,
     SegmentKind,
     Stream,
     StreamStatus,
+    Subscription,
     TranscriptSegment,
     ViewerSample,
+    Vip,
 )
 
 _sequence = iter(range(1000, 10_000_000))
+
+
+def add_follower(
+    db: Session,
+    channel: Channel,
+    login: str,
+    followed_minutes_ago: int = 60,
+) -> Follower:
+    unique = next(_sequence)
+    follower = Follower(
+        channel_id=channel.id,
+        twitch_user_id=unique,
+        login=login,
+        followed_at=datetime.now(UTC) - timedelta(minutes=followed_minutes_ago),
+    )
+    db.add(follower)
+    db.flush()
+    return follower
+
+
+def add_vip(db: Session, channel: Channel, login: str) -> Vip:
+    unique = next(_sequence)
+    vip = Vip(channel_id=channel.id, twitch_user_id=unique, login=login)
+    db.add(vip)
+    db.flush()
+    return vip
+
+
+def add_goal(
+    db: Session,
+    channel: Channel,
+    goal_type: str = "follower",
+    current_amount: int = 500,
+    target_amount: int = 1000,
+    description: str | None = "Meta de seguidores",
+) -> Goal:
+    unique = next(_sequence)
+    goal = Goal(
+        channel_id=channel.id,
+        twitch_goal_id=str(unique),
+        goal_type=goal_type,
+        description=description,
+        current_amount=current_amount,
+        target_amount=target_amount,
+    )
+    db.add(goal)
+    db.flush()
+    return goal
+
+
+def add_subscription(
+    db: Session,
+    channel: Channel,
+    login: str,
+    tier: str = "1000",
+    is_gift: bool = False,
+    gifter_login: str | None = None,
+) -> Subscription:
+    unique = next(_sequence)
+    sub = Subscription(
+        channel_id=channel.id,
+        twitch_user_id=unique,
+        login=login,
+        tier=tier,
+        is_gift=is_gift,
+        gifter_login=gifter_login,
+    )
+    db.add(sub)
+    db.flush()
+    return sub
+
+
+def add_bits_leader(
+    db: Session, channel: Channel, login: str, rank: int, score: int
+) -> BitsLeader:
+    leader = BitsLeader(channel_id=channel.id, login=login, rank=rank, score=score)
+    db.add(leader)
+    db.flush()
+    return leader
+
+
+def add_past_broadcast(
+    db: Session,
+    channel: Channel,
+    title: str = "Live antiga",
+    published_minutes_ago: int = 1440,
+    duration_seconds: int = 3600,
+    view_count: int = 100,
+) -> PastBroadcast:
+    unique = next(_sequence)
+    broadcast = PastBroadcast(
+        channel_id=channel.id,
+        twitch_video_id=str(unique),
+        title=title,
+        published_at=datetime.now(UTC) - timedelta(minutes=published_minutes_ago),
+        duration_seconds=duration_seconds,
+        view_count=view_count,
+        url=f"https://twitch.tv/videos/{unique}",
+    )
+    db.add(broadcast)
+    db.flush()
+    return broadcast
 
 
 def make_channel(db: Session, login: str | None = None) -> Channel:
