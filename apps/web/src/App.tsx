@@ -5,7 +5,7 @@ import Landing from './views/Landing'
 import StreamReport from './views/StreamReport'
 import StreamsList from './views/StreamsList'
 import SearchView from './views/SearchView'
-import type { Me } from './types'
+import type { ChannelOption, Me } from './types'
 
 function SearchBox() {
   const [value, setValue] = useState('')
@@ -25,6 +25,57 @@ function SearchBox() {
         className="w-64 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm placeholder-zinc-500 focus:border-purple-500 focus:outline-none"
       />
     </form>
+  )
+}
+
+function ImpersonatePicker() {
+  const [options, setOptions] = useState<ChannelOption[] | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/channels')
+      .then((response) => (response.ok ? response.json() : []))
+      .then(setOptions)
+      .catch(() => setOptions([]))
+  }, [])
+
+  async function impersonate(login: string) {
+    if (!login) return
+    await fetch(`/api/admin/impersonate/${login}`, { method: 'POST' })
+    window.location.reload()
+  }
+
+  if (!options || options.length === 0) return null
+  return (
+    <select
+      defaultValue=""
+      onChange={(event) => impersonate(event.target.value)}
+      className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-300 focus:border-purple-500 focus:outline-none"
+    >
+      <option value="" disabled>
+        Impersonar...
+      </option>
+      {options.map((option) => (
+        <option key={option.login} value={option.login}>
+          {option.display_name} (@{option.login})
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function ImpersonationBanner({ login }: { login: string }) {
+  async function stop() {
+    await fetch('/api/admin/impersonate/stop', { method: 'POST' })
+    window.location.reload()
+  }
+  return (
+    <div className="flex items-center justify-center gap-3 bg-red-700 px-4 py-2 text-sm text-white">
+      <span>
+        Vendo como <strong>@{login}</strong>
+      </span>
+      <button onClick={stop} className="rounded bg-red-900 px-2 py-0.5 hover:bg-red-950">
+        Sair
+      </button>
+    </div>
   )
 }
 
@@ -50,6 +101,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      {me.impersonating && <ImpersonationBanner login={me.impersonating.as_login} />}
       <header className="border-b border-zinc-800 bg-zinc-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-4">
@@ -62,6 +114,7 @@ export default function App() {
           </div>
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
+            {me.is_admin && <ImpersonatePicker />}
             <span className="text-zinc-400">@{me.login}</span>
             <a href="/auth/logout" className="text-zinc-500 underline hover:text-zinc-300">
               Sair

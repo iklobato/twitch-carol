@@ -3,7 +3,11 @@ export type Me = {
   login: string
   display_name: string
   scopes: string[]
+  is_admin: boolean
+  impersonating: { as_login: string; admin_login: string } | null
 }
+
+export type ChannelOption = { login: string; display_name: string }
 
 export type StreamListItem = {
   id: number

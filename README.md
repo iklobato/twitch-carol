@@ -159,3 +159,21 @@ restauração portátil.
   e reinicie `worker-analyze`
 - Benchmark de transcrição: `docker compose ... exec worker-transcribe \
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
+
+### Impersonar um cliente (suporte/debug)
+
+Ver o dashboard como um cliente vê, para debugar valores ou dar suporte.
+Acesso total: enquanto impersonando, a sessão age como a do cliente.
+
+1. Libere seu login na allowlist: `ADMIN_LOGINS=seu_login` (csv para vários),
+   e reinicie a `api`. Vazio = ninguém pode impersonar.
+2. Faça login normal no dashboard com sua conta (a que está em `ADMIN_LOGINS`).
+3. No header aparece um seletor **"Impersonar..."** com os canais cadastrados.
+   Escolha um: a página recarrega já vendo o dashboard como aquele cliente.
+4. Uma faixa vermelha "Vendo como @cliente" aparece no topo. Clique **Sair**
+   para voltar à sua conta.
+
+Via API (mesma coisa que o seletor faz): `POST /api/admin/impersonate/{login}`
+e `POST /api/admin/impersonate/stop`, com o cookie de sessão do admin.
+
+Início e fim ficam no log da `api` (`admin X impersonating Y`).

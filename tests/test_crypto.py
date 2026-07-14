@@ -1,6 +1,7 @@
 import pytest
 
 from core.crypto import (
+    Session,
     create_session_token,
     decrypt_secret,
     encrypt_secret,
@@ -18,7 +19,20 @@ def test_secret_round_trip() -> None:
 
 def test_session_token_round_trip() -> None:
     token = create_session_token(42)
-    assert read_session_token(token) == 42
+    assert read_session_token(token) == Session(channel_id=42, admin_id=None)
+
+
+def test_impersonation_token_carries_admin() -> None:
+    token = create_session_token(42, admin_id=7)
+    assert read_session_token(token) == Session(channel_id=42, admin_id=7)
+
+
+def test_legacy_bare_int_token_still_reads() -> None:
+    from core.crypto import _fernet
+
+    # Tokens minted before impersonation stored a bare channel id.
+    legacy = _fernet().encrypt(b"42").decode()
+    assert read_session_token(legacy) == Session(channel_id=42, admin_id=None)
 
 
 def test_tampered_session_token_is_rejected() -> None:
