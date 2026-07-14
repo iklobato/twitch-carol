@@ -159,7 +159,11 @@ def _run_live(api_client, fake_twitch: FakeTwitch, db, channel: Channel) -> Stre
         ("channel.raid", {"to_broadcaster_user_id": FAKE_USER["id"], "viewers": 60}),
         (
             "channel.follow",
-            {"broadcaster_user_id": FAKE_USER["id"], "user_login": "raider_1"},
+            {
+                "broadcaster_user_id": FAKE_USER["id"],
+                "user_id": "701",
+                "user_login": "raider_1",
+            },
         ),
         ("channel.cheer", {"broadcaster_user_id": FAKE_USER["id"], "bits": 300}),
     ]
@@ -258,6 +262,24 @@ def test_full_flow_login_processing_visualization(
     monkeypatch.setattr(core.worker_loop, "get_valkey", lambda: fake_valkey)
 
     # ---- phase 1: login (oauth code flow against FakeTwitch) --------------
+    # Helix serves follower + VOD history; connect backfills both.
+    fake_twitch.followers = [
+        {
+            "user_id": "301",
+            "user_login": "veterano",
+            "followed_at": "2026-01-01T00:00:00Z",
+        }
+    ]
+    fake_twitch.videos = [
+        {
+            "id": "v9",
+            "title": "Live antiga",
+            "created_at": "2026-02-01T20:00:00Z",
+            "duration": "1h30m",
+            "view_count": "250",
+            "url": "https://twitch.tv/videos/v9",
+        }
+    ]
     channel = _login(api_client, fake_twitch, db)
     assert channel.access_token_encrypted is not None
     issued_access = decrypt_secret(channel.access_token_encrypted)
@@ -267,6 +289,12 @@ def test_full_flow_login_processing_visualization(
     # eventsub sync ran on login: every subscription challenged and enabled
     assert len(fake_twitch.subscriptions) == len(core.eventsub.SUBSCRIPTION_SPECS)
     assert {s["status"] for s in fake_twitch.subscriptions} == {"enabled"}
+
+    # backfill seeded follower history and past VODs before any live capture
+    overview = api_client.get("/api/channel").json()
+    assert overview["total_followers_gained"] == 1
+    assert overview["past_broadcasts"][0]["title"] == "Live antiga"
+    assert overview["past_broadcasts"][0]["duration_seconds"] == 90 * 60
 
     # token refresh rotates through the fake as well
     channel.token_expires_at = datetime.now(UTC) - timedelta(minutes=1)

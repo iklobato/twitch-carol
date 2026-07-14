@@ -89,6 +89,114 @@ class Channel(Base):
     )
 
 
+class Follower(Base):
+    """Channel-level follower state. Seeded from Helix on connect (with real
+    followed_at) and kept fresh by the live channel.follow event."""
+
+    __tablename__ = "followers"
+    __table_args__ = (
+        Index("uq_followers_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+    followed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PastBroadcast(Base):
+    """A past VOD pulled from Helix on connect. Kept apart from Stream because
+    VODs carry total-view counts, not the concurrent-viewer/chat timeline that
+    the analytics run on."""
+
+    __tablename__ = "past_broadcasts"
+    __table_args__ = (
+        Index(
+            "uq_past_broadcasts_channel_video",
+            "channel_id",
+            "twitch_video_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_video_id: Mapped[str] = mapped_column(String(32))
+    title: Mapped[str | None] = mapped_column(String(256))
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    duration_seconds: Mapped[int]
+    view_count: Mapped[int]
+    url: Mapped[str] = mapped_column(String(256))
+
+
+class Vip(Base):
+    """Channel VIPs, seeded from Helix on connect."""
+
+    __tablename__ = "vips"
+    __table_args__ = (
+        Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+
+
+class Goal(Base):
+    """Current creator goal snapshot (follower/sub/etc), seeded on connect."""
+
+    __tablename__ = "goals"
+    __table_args__ = (
+        Index("uq_goals_channel_twitch", "channel_id", "twitch_goal_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_goal_id: Mapped[str] = mapped_column(String(64))
+    goal_type: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str | None] = mapped_column(String(256))
+    current_amount: Mapped[int]
+    target_amount: Mapped[int]
+
+
+class Subscription(Base):
+    """Current subscriber snapshot from Helix (affiliate/partner only), seeded
+    on connect. Churn is derived separately from channel.subscription.end."""
+
+    __tablename__ = "subscriptions"
+    __table_args__ = (
+        Index(
+            "uq_subscriptions_channel_user",
+            "channel_id",
+            "twitch_user_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+    tier: Mapped[str] = mapped_column(String(8))
+    is_gift: Mapped[bool] = mapped_column(default=False)
+    gifter_login: Mapped[str | None] = mapped_column(String(64))
+
+
+class BitsLeader(Base):
+    """All-time bits leaderboard snapshot from Helix (affiliate only)."""
+
+    __tablename__ = "bits_leaders"
+    __table_args__ = (Index("ix_bits_leaders_channel_rank", "channel_id", "rank"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    login: Mapped[str] = mapped_column(String(64))
+    rank: Mapped[int]
+    score: Mapped[int]
+
+
 class Stream(Base):
     __tablename__ = "streams"
 
@@ -199,6 +307,22 @@ class Insight(Base):
     model_used: Mapped[str] = mapped_column(String(128))
     tokens_in: Mapped[int]
     tokens_out: Mapped[int]
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ChannelRecommendation(Base):
+    """Account-level monetization advice from the LLM, grounded in the numbered
+    SQL facts it cited. Regenerated as a set, not per-stream like Insight."""
+
+    __tablename__ = "channel_recommendations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    model_used: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

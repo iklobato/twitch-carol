@@ -95,6 +95,7 @@ SUBSCRIPTION_SPECS = [
         "channel.follow", "2", "moderator:read:followers", _follow_condition
     ),
     SubscriptionSpec("channel.subscribe", "1", "channel:read:subscriptions"),
+    SubscriptionSpec("channel.subscription.end", "1", "channel:read:subscriptions"),
     SubscriptionSpec("channel.subscription.gift", "1", "channel:read:subscriptions"),
     SubscriptionSpec("channel.subscription.message", "1", "channel:read:subscriptions"),
     SubscriptionSpec("channel.cheer", "1", "bits:read"),

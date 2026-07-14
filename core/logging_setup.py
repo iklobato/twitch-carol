@@ -7,6 +7,10 @@ import json
 import logging
 import sys
 
+from core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
 CONTEXT_FIELDS = ("stream_id", "channel_id", "event_type", "job_type", "source")
 
 
@@ -27,7 +31,27 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(entry, ensure_ascii=False)
 
 
+def init_sentry() -> None:
+    """Wire error reporting. No-op (and no import) when SENTRY_DSN is unset, so
+    dev and tests never send and never need sentry-sdk installed."""
+    dsn = get_settings().sentry_dsn
+    if not dsn:
+        return
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=get_settings().sentry_environment,
+        traces_sample_rate=0.0,
+        send_default_pii=False,
+    )
+    logger.info("sentry initialized", extra={"source": "sentry"})
+
+
 def setup_logging(level: int = logging.INFO) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     logging.basicConfig(level=level, handlers=[handler], force=True)
+    # Bootstrap point every entrypoint (api + workers) already calls, so Sentry
+    # gets wired everywhere from one place.
+    init_sentry()

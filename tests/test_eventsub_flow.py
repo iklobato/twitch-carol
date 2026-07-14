@@ -14,7 +14,7 @@ from core.eventsub import (
     HEADER_TIMESTAMP,
     compute_signature,
 )
-from core.models import Event, Stream, StreamStatus
+from core.models import Event, Follower, Stream, StreamStatus
 from tests.factories import make_channel, make_stream
 from tests.test_eventsub import SECRET
 
@@ -109,7 +109,11 @@ def test_events_recorded_with_amounts(api_client, db, eventsub_env) -> None:
         == 204
     )
     assert (
-        post_notification(api_client, "channel.follow", {**base, "user_login": "fan"})
+        post_notification(
+            api_client,
+            "channel.follow",
+            {**base, "user_id": "7", "user_login": "fan"},
+        )
         == 204
     )
 
@@ -120,6 +124,29 @@ def test_events_recorded_with_amounts(api_client, db, eventsub_env) -> None:
     assert events["channel.subscribe"].amount == 2000
     assert events["channel.raid"].amount == 42
     assert events["channel.follow"].amount is None
+
+
+def test_follow_upserts_channel_follower(api_client, db, eventsub_env) -> None:
+    channel = make_channel(db)
+    make_stream(db, channel, StreamStatus.CAPTURING, duration_minutes=None)
+    base = {"broadcaster_user_id": str(channel.twitch_user_id)}
+    payload = {
+        **base,
+        "user_id": "55",
+        "user_login": "fiel",
+        "followed_at": "2026-05-01T12:00:00Z",
+    }
+
+    assert post_notification(api_client, "channel.follow", payload) == 204
+    # a duplicate follow from the same user must not create a second row
+    assert post_notification(api_client, "channel.follow", payload) == 204
+
+    followers = db.scalars(
+        select(Follower).where(Follower.channel_id == channel.id)
+    ).all()
+    assert len(followers) == 1
+    assert followers[0].login == "fiel"
+    assert followers[0].followed_at == datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
 
 
 def test_event_outside_active_stream_is_dropped(api_client, db, eventsub_env) -> None:

@@ -24,8 +24,10 @@ from core.models import (
     Peak,
     SegmentKind,
     Stream,
+    StreamStatus,
     TranscriptSegment,
 )
+from core.monetization import build_monetization_facts, generate_channel_recommendations
 from workers.analyze.evidence import validated_evidence
 from workers.analyze.peaks import compute_and_store_peaks
 
@@ -90,6 +92,7 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
         _rank_topics(db, stream, backend, budget, block_summaries, stats)
 
     _recommend(db, stream, backend, budget, stats)
+    _recommend_channel(db, stream, backend, budget)
 
     db.flush()
     logger.info(
@@ -102,6 +105,22 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
         extra={"stream_id": stream.id},
     )
     return stats
+
+
+def _recommend_channel(
+    db: Session, stream: Stream, backend: LLMBackend, budget: TokenBudget
+) -> None:
+    """Refresh the account-level monetization recommendations after each stream
+    is analyzed, grounded in the channel's SQL facts."""
+    ready_ids = list(
+        db.scalars(
+            select(Stream.id)
+            .where(Stream.channel_id == stream.channel_id)
+            .where(Stream.status == StreamStatus.READY)
+        )
+    )
+    facts = build_monetization_facts(db, stream.channel_id, ready_ids)
+    generate_channel_recommendations(db, stream.channel_id, facts, backend, budget)
 
 
 def _window_context(

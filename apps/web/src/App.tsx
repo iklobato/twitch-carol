@@ -1,29 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useRoute } from './router'
 import ChannelView from './views/ChannelView'
+import Landing from './views/Landing'
 import StreamReport from './views/StreamReport'
 import StreamsList from './views/StreamsList'
 import SearchView from './views/SearchView'
-import type { Me } from './types'
-
-function LoginScreen() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-950 text-zinc-100">
-      <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-8 text-center">
-        <h1 className="mb-6 text-2xl font-bold">Stream Intel</h1>
-        <p className="mb-6 text-zinc-400">
-          Conecte sua conta da Twitch para começar a acompanhar suas lives.
-        </p>
-        <a
-          href="/auth/login"
-          className="inline-block rounded-lg bg-purple-600 px-6 py-3 font-semibold hover:bg-purple-500"
-        >
-          Conectar com a Twitch
-        </a>
-      </div>
-    </div>
-  )
-}
+import type { ChannelOption, Me } from './types'
 
 function SearchBox() {
   const [value, setValue] = useState('')
@@ -46,6 +28,57 @@ function SearchBox() {
   )
 }
 
+function ImpersonatePicker() {
+  const [options, setOptions] = useState<ChannelOption[] | null>(null)
+  useEffect(() => {
+    fetch('/api/admin/channels')
+      .then((response) => (response.ok ? response.json() : []))
+      .then(setOptions)
+      .catch(() => setOptions([]))
+  }, [])
+
+  async function impersonate(login: string) {
+    if (!login) return
+    await fetch(`/api/admin/impersonate/${login}`, { method: 'POST' })
+    window.location.reload()
+  }
+
+  if (!options || options.length === 0) return null
+  return (
+    <select
+      defaultValue=""
+      onChange={(event) => impersonate(event.target.value)}
+      className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-300 focus:border-purple-500 focus:outline-none"
+    >
+      <option value="" disabled>
+        Impersonar...
+      </option>
+      {options.map((option) => (
+        <option key={option.login} value={option.login}>
+          {option.display_name} (@{option.login})
+        </option>
+      ))}
+    </select>
+  )
+}
+
+function ImpersonationBanner({ login }: { login: string }) {
+  async function stop() {
+    await fetch('/api/admin/impersonate/stop', { method: 'POST' })
+    window.location.reload()
+  }
+  return (
+    <div className="flex items-center justify-center gap-3 bg-red-700 px-4 py-2 text-sm text-white">
+      <span>
+        Vendo como <strong>@{login}</strong>
+      </span>
+      <button onClick={stop} className="rounded bg-red-900 px-2 py-0.5 hover:bg-red-950">
+        Sair
+      </button>
+    </div>
+  )
+}
+
 export default function App() {
   const [me, setMe] = useState<Me | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,11 +96,12 @@ export default function App() {
     return <div className="min-h-screen bg-zinc-950 p-8 text-zinc-400">Carregando...</div>
   }
   if (!me) {
-    return <LoginScreen />
+    return <Landing />
   }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      {me.impersonating && <ImpersonationBanner login={me.impersonating.as_login} />}
       <header className="border-b border-zinc-800 bg-zinc-900">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-4">
@@ -80,6 +114,7 @@ export default function App() {
           </div>
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
+            {me.is_admin && <ImpersonatePicker />}
             <span className="text-zinc-400">@{me.login}</span>
             <a href="/auth/logout" className="text-zinc-500 underline hover:text-zinc-300">
               Sair
