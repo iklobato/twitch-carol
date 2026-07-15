@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
 import type {
   CohortRow,
+  FollowerAi,
   FollowerProfile,
   FollowersOverview,
   FollowerSignals,
@@ -530,6 +531,84 @@ function Signals({ signals }: { signals: FollowerSignals }) {
   )
 }
 
+const SEGMENT_COLOR: Record<string, string> = {
+  streamers: 'border-pink-800 bg-pink-950/20',
+  paying_fans: 'border-emerald-800 bg-emerald-950/20',
+  dormant: 'border-amber-800 bg-amber-950/20',
+  engaged: 'border-sky-800 bg-sky-950/20',
+  newcomers: 'border-purple-800 bg-purple-950/20',
+  lurkers: 'border-zinc-800 bg-zinc-900',
+}
+
+function AiSection({ ai }: { ai: FollowerAi }) {
+  const { segments, audience_summary, reactivations } = ai
+  if (segments.length === 0 && !audience_summary && reactivations.length === 0)
+    return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Personas e decisões (IA)</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        A base agrupada em personas. Ações e mensagens são geradas quando uma live é
+        analisada.
+      </p>
+
+      {audience_summary && (
+        <div className="mb-4 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-purple-300">
+            Quem te segue
+          </p>
+          <p className="text-sm">{audience_summary}</p>
+        </div>
+      )}
+
+      {segments.length > 0 && (
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          {segments.map((seg) => (
+            <div
+              key={seg.key}
+              className={`rounded-lg border p-4 ${SEGMENT_COLOR[seg.key] ?? 'border-zinc-800 bg-zinc-900'}`}
+            >
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <span className="font-semibold">{seg.label}</span>
+                <span className="tabular-nums text-zinc-400">
+                  {seg.count.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <p className="mb-2 text-xs text-zinc-500">{seg.description}</p>
+              {seg.examples.length > 0 && (
+                <p className="mb-2 truncate text-xs text-zinc-600">
+                  ex: {seg.examples.join(', ')}
+                </p>
+              )}
+              {seg.action && (
+                <p className="rounded bg-black/30 p-2 text-sm text-zinc-200">
+                  → {seg.action}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reactivations.length > 0 && (
+        <div className="rounded-lg border border-amber-900/50 bg-amber-950/10 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-400">
+            Trazer de volta (mensagens sugeridas)
+          </p>
+          <div className="space-y-3">
+            {reactivations.map((r, i) => (
+              <div key={i} className="text-sm">
+                <span className="font-semibold text-purple-300">{r.who}</span>
+                <p className="mt-0.5 rounded bg-black/30 p-2 text-zinc-200">{r.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function FollowersView() {
   const [overview, setOverview] = useState<FollowersOverview | null>(null)
 
@@ -555,6 +634,7 @@ export default function FollowersView() {
         <>
           <Kpis overview={overview} />
           <Recommendations overview={overview} />
+          <AiSection ai={overview.ai} />
           <Funnel funnel={overview.funnel} />
           <GrowthChart growth={overview.growth} />
           <Signals signals={overview.signals} />
