@@ -287,6 +287,45 @@ export type ChannelOverview = {
   recommendations: Recommendation[]
 }
 
+export type FollowerKpis = {
+  total: number
+  enriched: number
+  streamers: number
+  affiliates: number
+  partners: number
+  new_7d: number
+  new_30d: number
+  avg_account_age_days: number | null
+}
+
+export type GrowthBucket = { month: string; gained: number; cumulative: number }
+
+export type FollowerProfile = {
+  login: string
+  display_name: string | null
+  profile_image_url: string | null
+  description: string | null
+  broadcaster_type: string | null
+  followed_at: string
+  account_created_at: string | null
+}
+
+export type FollowerComposition = {
+  by_type: { label: string; count: number }[]
+  by_age: { label: string; count: number }[]
+  silent: number
+  chatty: number
+}
+
+export type FollowersOverview = {
+  kpis: FollowerKpis
+  growth: GrowthBucket[]
+  recent: FollowerProfile[]
+  notable: FollowerProfile[]
+  composition: FollowerComposition
+  recommendations: Recommendation[]
+}
+
 export type QueueItem = {
   stream_id: number
   job_type: string

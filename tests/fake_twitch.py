@@ -40,6 +40,7 @@ class FakeTwitch:
         self.subscriptions: list[dict] = []
         self.stream_info: dict | None = None  # helix /streams payload for the user
         self.followers: list[dict] = []  # helix /channels/followers backfill
+        self.user_profiles: dict[str, dict] = {}  # helix /users?id=... enrichment
         self.videos: list[dict] = []  # helix /videos backfill
         self.vips: list[dict] = []  # helix /channels/vips backfill
         self.goals: list[dict] = []  # helix /goals backfill
@@ -175,6 +176,11 @@ class FakeTwitch:
         return httpx.Response(400, json={"message": "unsupported grant"})
 
     def _handle_users(self, request: httpx.Request) -> httpx.Response:
+        ids = request.url.params.get_list("id")
+        if ids:
+            # batch Get Users by id (follower enrichment), served from a map
+            data = [self.user_profiles[i] for i in ids if i in self.user_profiles]
+            return httpx.Response(200, json={"data": data})
         token = request.headers.get("Authorization", "").removeprefix("Bearer ")
         if token not in self.user_tokens:
             return httpx.Response(401, json={"message": "invalid token"})

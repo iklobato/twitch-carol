@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
 from core.config import get_settings
+from core.follower_intel import build_follower_facts, generate_follower_recommendations
 from core.llm import LLMBackend, TokenBudget
 from core.models import (
     ChatMessage,
@@ -127,6 +128,10 @@ def _recommend_channel(
     )
     facts = build_monetization_facts(db, stream.channel_id, ready_ids)
     generate_channel_recommendations(db, stream.channel_id, facts, backend, budget)
+    follower_facts = build_follower_facts(db, stream.channel_id)
+    generate_follower_recommendations(
+        db, stream.channel_id, follower_facts, backend, budget
+    )
 
 
 def _window_context(

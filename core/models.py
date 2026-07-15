@@ -103,6 +103,14 @@ class Follower(Base):
     twitch_user_id: Mapped[int] = mapped_column(BigInteger)
     login: Mapped[str] = mapped_column(String(64))
     followed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Enrichment from Helix Get Users, filled on connect. enriched_at is NULL
+    # until the first enrichment, so a partial backfill can be resumed.
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    profile_image_url: Mapped[str | None] = mapped_column(String(256))
+    description: Mapped[str | None] = mapped_column(Text)
+    broadcaster_type: Mapped[str | None] = mapped_column(String(16))
+    account_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class PastBroadcast(Base):
@@ -318,6 +326,23 @@ class ChannelRecommendation(Base):
     SQL facts it cited. Regenerated as a set, not per-stream like Insight."""
 
     __tablename__ = "channel_recommendations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    content: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    model_used: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FollowerRecommendation(Base):
+    """Account-level advice about the follower base (reactivation, collab, fake-
+    follow risk, content/timing), grounded in numbered SQL facts. Regenerated as
+    a set, mirroring ChannelRecommendation."""
+
+    __tablename__ = "follower_recommendations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)

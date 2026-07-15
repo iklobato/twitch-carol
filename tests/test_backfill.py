@@ -13,6 +13,7 @@ from core.backfill import (
     backfill_subscriptions,
     backfill_videos,
     backfill_vips,
+    enrich_followers,
 )
 from core.crypto import encrypt_secret
 from core.models import (
@@ -24,7 +25,7 @@ from core.models import (
     Subscription,
     Vip,
 )
-from tests.factories import make_channel
+from tests.factories import add_follower, make_channel
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -249,3 +250,54 @@ def test_backfill_bits_leaders_replaces_snapshot(db) -> None:
         .order_by(BitsLeader.rank)
     )
     assert top == "whale"
+
+
+def test_enrich_followers_fills_profiles_and_stamps_missing(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    ana = add_follower(db, channel, "ana")
+    bruno = add_follower(db, channel, "bruno")
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/oauth2/token"):
+            return httpx.Response(200, json={"access_token": "app", "expires_in": 3600})
+        # Twitch returns only ana; bruno is absent (e.g. banned/deleted)
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "id": str(ana.twitch_user_id),
+                        "login": "ana",
+                        "display_name": "Ana",
+                        "profile_image_url": "https://cdn/ana.png",
+                        "description": "streamer de variedades",
+                        "broadcaster_type": "affiliate",
+                        "created_at": "2020-01-01T00:00:00Z",
+                    }
+                ]
+            },
+        )
+
+    enriched = enrich_followers(db, channel, client=_mock_client(handler))
+    db.flush()
+    assert enriched == 1
+
+    ana_row = db.scalar(
+        select(Follower).where(Follower.twitch_user_id == ana.twitch_user_id)
+    )
+    assert ana_row.display_name == "Ana"
+    assert ana_row.broadcaster_type == "affiliate"
+    assert ana_row.account_created_at == datetime(2020, 1, 1, tzinfo=UTC)
+    assert ana_row.enriched_at is not None
+
+    # bruno was not returned, but must be stamped so it is not retried forever
+    bruno_row = db.scalar(
+        select(Follower).where(Follower.twitch_user_id == bruno.twitch_user_id)
+    )
+    assert bruno_row.enriched_at is not None
+    assert bruno_row.broadcaster_type is None
+
+    # a second run has nothing pending
+    assert enrich_followers(db, channel, client=_mock_client(handler)) == 0

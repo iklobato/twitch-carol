@@ -270,6 +270,17 @@ def test_full_flow_login_processing_visualization(
             "followed_at": "2026-01-01T00:00:00Z",
         }
     ]
+    fake_twitch.user_profiles = {
+        "301": {
+            "id": "301",
+            "login": "veterano",
+            "display_name": "Veterano",
+            "profile_image_url": "https://cdn/veterano.png",
+            "description": "streamer parceiro",
+            "broadcaster_type": "partner",
+            "created_at": "2018-05-01T00:00:00Z",
+        }
+    }
     fake_twitch.videos = [
         {
             "id": "v9",
@@ -295,6 +306,13 @@ def test_full_flow_login_processing_visualization(
     assert overview["total_followers_gained"] == 1
     assert overview["past_broadcasts"][0]["title"] == "Live antiga"
     assert overview["past_broadcasts"][0]["duration_seconds"] == 90 * 60
+
+    # connect also enriched the follower from Helix Get Users
+    followers = api_client.get("/api/followers").json()
+    assert followers["kpis"]["total"] == 1
+    assert followers["kpis"]["partners"] == 1
+    assert followers["recent"][0]["display_name"] == "Veterano"
+    assert followers["notable"][0]["login"] == "veterano"
 
     # token refresh rotates through the fake as well
     channel.token_expires_at = datetime.now(UTC) - timedelta(minutes=1)

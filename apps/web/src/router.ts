@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 export type Route =
   | { view: 'home' }
   | { view: 'channel' }
+  | { view: 'followers' }
   | { view: 'stream'; streamId: number }
   | { view: 'search'; query: string }
 
@@ -10,6 +11,9 @@ export function parseHash(hash: string): Route {
   const clean = hash.replace(/^#\/?/, '')
   if (clean === 'channel') {
     return { view: 'channel' }
+  }
+  if (clean === 'followers') {
+    return { view: 'followers' }
   }
   const streamMatch = clean.match(/^stream\/(\d+)/)
   if (streamMatch) {
