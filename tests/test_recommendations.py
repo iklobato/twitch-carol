@@ -16,7 +16,7 @@ from tests.factories import (
     make_stream,
 )
 from workers.analyze.peaks import compute_and_store_peaks
-from workers.analyze.pipeline import AnalysisStats, _recommend
+from workers.analyze.pipeline import AnalysisStats, _recommend, _retention_line
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -134,3 +134,28 @@ def test_no_recommendations_without_facts(db) -> None:
     _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats)
     db.flush()
     assert stats.insights_stored == 0
+
+
+def test_retention_line_compares_to_channel_median(db) -> None:
+    channel = make_channel(db)
+    # two past lives both held 50% (peak 100 -> final 50): channel median = 50%
+    for _ in range(2):
+        past = make_stream(db, channel, duration_minutes=20)
+        add_viewer_samples(db, past, [100, 80, 50])
+    this = make_stream(db, channel, duration_minutes=20)
+    db.flush()
+
+    line = _retention_line(db, this, retained_pct=80.0)
+
+    assert "sua média (50%)" in line
+    assert "30 pontos acima" in line
+
+
+def test_retention_line_falls_back_without_history(db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=20)
+    db.flush()
+
+    line = _retention_line(db, stream, retained_pct=42.0)
+
+    assert line == "[contexto] RETENÇÃO: você segurou 42.0% do pico de audiência"

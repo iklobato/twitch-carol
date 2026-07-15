@@ -8,8 +8,10 @@ have been shown in the prompt AND exist in the database.
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from statistics import median
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -47,6 +49,10 @@ PEAK_CHAT_SAMPLE = 25
 BLOCK_CHAT_SAMPLE = 15
 EVIDENCE_SEGMENT_SAMPLE = 12
 TOPIC_MAX = 5
+# A topic name is a label, not a chat dump; and two topics that share most of
+# their words are the same subject sliced twice.
+TOPIC_NAME_MAX_CHARS = 60
+TOPIC_SIMILARITY_MAX = 0.6
 RECOMMEND_OUTPUT_TOKENS = 700
 RECOMMEND_MAX = 3
 RECOMMEND_TOP_PEAKS = 3
@@ -374,7 +380,8 @@ def _rank_topics(
         'Responda APENAS um JSON válido: {"topics": [{"name": "<assunto em poucas palavras>", '
         '"description": "<1 frase em português do Brasil>", "segment_ids": [ids dos trechos], '
         '"message_ids": []}]}. Use somente ids listados acima, máximo '
-        f"{TOPIC_MAX} assuntos, cite pelo menos um id por assunto. Seja conciso."
+        f"{TOPIC_MAX} assuntos DISTINTOS (não fatie o mesmo assunto), cite pelo menos "
+        "um id por assunto. O name é um rótulo curto, nunca uma mensagem do chat."
     )
     response = backend.generate(prompt, TOPICS_OUTPUT_TOKENS)
     budget.spend(prompt, response)
@@ -389,6 +396,28 @@ def _rank_topics(
     _store_topics(db, stream, backend, budget, topics, context, stats)
 
 
+def _topic_words(name: str) -> set[str]:
+    return {
+        word for word in re.sub(r"[^\w\s]", " ", name.lower()).split() if len(word) > 2
+    }
+
+
+def _is_duplicate_topic(name: str, kept_names: list[str]) -> bool:
+    """True when `name` overlaps an already-kept topic on most of its words:
+    the same subject the model split into fragments."""
+    words = _topic_words(name)
+    if not words:
+        return False
+    for other in kept_names:
+        other_words = _topic_words(other)
+        if not other_words:
+            continue
+        jaccard = len(words & other_words) / len(words | other_words)
+        if jaccard >= TOPIC_SIMILARITY_MAX:
+            return True
+    return False
+
+
 def _store_topics(
     db: Session,
     stream: Stream,
@@ -399,11 +428,15 @@ def _store_topics(
     stats: AnalysisStats,
 ) -> None:
     rank = 0
+    kept_names: list[str] = []
     for topic in topics[:TOPIC_MAX]:
         if not isinstance(topic, dict):
             continue
         name = str(topic.get("name", "")).strip()
-        if not name:
+        if not name or len(name) > TOPIC_NAME_MAX_CHARS:
+            # a name longer than a label is a chat dump, not a topic
+            continue
+        if _is_duplicate_topic(name, kept_names):
             continue
         evidence = validated_evidence(
             db, stream.id, topic, context.message_ids, context.segment_ids
@@ -415,6 +448,7 @@ def _store_topics(
                 extra={"stream_id": stream.id, "event_type": InsightType.TOPIC.value},
             )
             continue
+        kept_names.append(name)
         rank += 1
         evidence["rank"] = rank
         description = str(topic.get("description", "")).strip()
@@ -457,6 +491,42 @@ def _segment_near(
             best = segment
             best_gap = gap
     return best
+
+
+def _channel_median_retention(
+    db: Session, channel_id: int, exclude_stream_id: int
+) -> float | None:
+    """Median retained-% across the channel's other analyzed streams, so this
+    stream's retention can be stated as above/below the streamer's own norm."""
+    # ponytail: reloads sibling streams' samples each run; fine at low stream counts.
+    other_ids = db.scalars(
+        select(Stream.id)
+        .where(Stream.channel_id == channel_id)
+        .where(Stream.status == StreamStatus.READY)
+        .where(Stream.id != exclude_stream_id)
+    )
+    rates: list[float] = []
+    for other_id in other_ids:
+        samples = load_viewer_samples(db, other_id)
+        counts = [sample.viewer_count for sample in samples]
+        peak = max(counts) if counts else 0
+        if peak > 0:
+            rates.append(counts[-1] / peak * 100)
+    return median(rates) if rates else None
+
+
+def _retention_line(db: Session, stream: Stream, retained_pct: float) -> str:
+    """A retention number alone only invites 'improve retention'; compared to
+    the channel's own median it says whether THIS live held better or worse."""
+    channel_median = _channel_median_retention(db, stream.channel_id, stream.id)
+    if channel_median is None:
+        return f"[contexto] RETENÇÃO: você segurou {retained_pct}% do pico de audiência"
+    delta = retained_pct - channel_median
+    direction = "acima" if delta >= 0 else "abaixo"
+    return (
+        f"[contexto] RETENÇÃO: você segurou {retained_pct}% do pico, "
+        f"{abs(delta):.0f} pontos {direction} da sua média ({channel_median:.0f}%)"
+    )
 
 
 def _recommend(
@@ -508,9 +578,7 @@ def _recommend(
                 f"audiência enquanto você falava '{segment.text}'"
             )
     if retention is not None:
-        lines.append(
-            f"[contexto] RETENÇÃO: você segurou {retention.retained_pct}% do pico de audiência"
-        )
+        lines.append(_retention_line(db, stream, retention.retained_pct))
 
     if not fact_segment:
         return  # nothing SQL-grounded to recommend on

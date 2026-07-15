@@ -100,6 +100,7 @@ export default function TimelineChart({
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { labels: { color: '#d4d4d8' } },
@@ -144,5 +145,9 @@ export default function TimelineChart({
     return () => chartRef.current?.destroy()
   }, [timeline, onPeakClick])
 
-  return <canvas ref={canvasRef} className="max-h-72 w-full" />
+  return (
+    <div className="h-72 w-full">
+      <canvas ref={canvasRef} />
+    </div>
+  )
 }
