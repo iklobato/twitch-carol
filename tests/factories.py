@@ -36,13 +36,22 @@ def add_follower(
     channel: Channel,
     login: str,
     followed_minutes_ago: int = 60,
+    broadcaster_type: str | None = None,
+    account_created_at: datetime | None = None,
+    enriched: bool = False,
 ) -> Follower:
     unique = next(_sequence)
+    followed_at = datetime.now(UTC) - timedelta(minutes=followed_minutes_ago)
     follower = Follower(
         channel_id=channel.id,
         twitch_user_id=unique,
         login=login,
-        followed_at=datetime.now(UTC) - timedelta(minutes=followed_minutes_ago),
+        followed_at=followed_at,
+        display_name=login.title() if enriched else None,
+        profile_image_url=f"https://cdn/{login}.png" if enriched else None,
+        broadcaster_type=broadcaster_type,
+        account_created_at=account_created_at,
+        enriched_at=followed_at if enriched else None,
     )
     db.add(follower)
     db.flush()

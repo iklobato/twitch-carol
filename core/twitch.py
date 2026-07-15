@@ -187,6 +187,46 @@ class FollowerRecord(BaseModel):
     followed_at: datetime
 
 
+class UserProfile(BaseModel):
+    """Public profile from Helix Get Users, used to enrich followers.
+    broadcaster_type is '' | 'affiliate' | 'partner'."""
+
+    id: str
+    login: str
+    display_name: str
+    profile_image_url: str = ""
+    description: str = ""
+    broadcaster_type: str = ""
+    created_at: datetime
+
+
+USERS_BATCH_SIZE = 100
+
+
+def get_users_by_ids(
+    user_ids: list[int], client: httpx.Client | None = None
+) -> list[UserProfile]:
+    """Helix Get Users by id, batched 100 per call (an app token suffices, as
+    this is public profile data). Ids Twitch no longer knows are simply absent
+    from the response."""
+    profiles: list[UserProfile] = []
+    with _http(client) as http:
+        for start in range(0, len(user_ids), USERS_BATCH_SIZE):
+            batch = user_ids[start : start + USERS_BATCH_SIZE]
+            response = http.get(
+                f"{HELIX_URL}/users",
+                params=[("id", str(uid)) for uid in batch],
+                headers=app_headers(http),
+            )
+            if response.status_code != 200:
+                raise TwitchAuthError(f"Twitch /users returned {response.status_code}")
+            profiles.extend(
+                UserProfile.model_validate(row)
+                for row in response.json().get("data", [])
+            )
+    return profiles
+
+
 class VideoRecord(BaseModel):
     id: str
     title: str

@@ -4,6 +4,7 @@ account shows real data before any live capture. Everything else (chat,
 viewers, money, engagement) is forward-only and cannot be backfilled."""
 
 import logging
+from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import delete, select
@@ -23,6 +24,7 @@ from core.twitch import (
     get_bits_leaderboard,
     get_goals,
     get_subscriptions,
+    get_users_by_ids,
     get_videos,
     get_vips,
     iter_followers,
@@ -58,6 +60,51 @@ def backfill_followers(
         )
         added += 1
     return added
+
+
+ENRICH_BATCH_SIZE = 100
+
+
+def enrich_followers(
+    db: Session, channel: Channel, client: httpx.Client | None = None
+) -> int:
+    """Fill profile fields (name, avatar, bio, broadcaster_type, account age)
+    for followers not yet enriched, via Helix Get Users. Resumable: only rows
+    with enriched_at IS NULL are fetched, so a partial run picks up where it
+    stopped. Returns how many followers were enriched."""
+    pending = list(
+        db.scalars(
+            select(Follower)
+            .where(Follower.channel_id == channel.id)
+            .where(Follower.enriched_at.is_(None))
+        )
+    )
+    if not pending:
+        return 0
+    by_id = {follower.twitch_user_id: follower for follower in pending}
+    now = datetime.now(UTC)
+    enriched = 0
+    for start in range(0, len(pending), ENRICH_BATCH_SIZE):
+        batch = pending[start : start + ENRICH_BATCH_SIZE]
+        profiles = get_users_by_ids([f.twitch_user_id for f in batch], client)
+        for profile in profiles:
+            follower = by_id.get(int(profile.id))
+            if follower is None:
+                continue
+            follower.login = profile.login
+            follower.display_name = profile.display_name
+            follower.profile_image_url = profile.profile_image_url
+            follower.description = profile.description
+            follower.broadcaster_type = profile.broadcaster_type
+            follower.account_created_at = profile.created_at
+            follower.enriched_at = now
+            enriched += 1
+        # Stamp the rest of the batch too: an id Twitch dropped (banned/deleted)
+        # must not be retried forever.
+        for follower in batch:
+            if follower.enriched_at is None:
+                follower.enriched_at = now
+    return enriched
 
 
 def backfill_vips(
