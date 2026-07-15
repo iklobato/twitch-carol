@@ -10,8 +10,22 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from apps.api.deps import CurrentChannel, DbSession
+from core.follower_ai import KIND_BIO, KIND_REACTIVATION, KIND_SEGMENT, build_segments
 from core.follower_profiles import FollowerProfile, build_follower_profiles
-from core.models import ChatMessage, Follower, FollowerRecommendation
+from core.follower_signals import (
+    follow_velocity,
+    raid_attribution,
+    suspicious_followers,
+    topic_to_follows,
+)
+from core.models import (
+    ChatMessage,
+    Follower,
+    FollowerAiInsight,
+    FollowerRecommendation,
+    Stream,
+    StreamStatus,
+)
 
 router = APIRouter(prefix="/api/followers")
 
@@ -117,6 +131,70 @@ class TopFollower(BaseModel):
     last_seen: datetime | None
 
 
+class RaidOut(BaseModel):
+    raider_login: str | None
+    viewers: int
+    at: datetime
+    follows_after: int
+
+
+class SuspiciousOut(BaseModel):
+    login: str
+    display_name: str | None
+    score: int
+    reasons: list[str]
+
+
+class VelocityDayOut(BaseModel):
+    day: str
+    follows: int
+    is_spike: bool
+
+
+class TopicFollowsOut(BaseModel):
+    topic: str
+    follows: int
+
+
+class Signals(BaseModel):
+    raids: list[RaidOut]
+    suspicious: list[SuspiciousOut]
+    suspicious_total: int
+    velocity: list[VelocityDayOut]
+    topic_follows: list[TopicFollowsOut]
+
+
+class SegmentOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    count: int
+    examples: list[str]
+    action: str | None
+
+
+class ReactivationOut(BaseModel):
+    who: str
+    message: str
+
+
+class FollowerAi(BaseModel):
+    segments: list[SegmentOut]
+    audience_summary: str | None
+    reactivations: list[ReactivationOut]
+
+
+class CollabCandidate(BaseModel):
+    login: str
+    display_name: str | None
+    profile_image_url: str | None
+    broadcaster_type: str | None
+    stream_category: str | None
+    stream_language: str | None
+    shared_category: bool
+    followed_at: datetime
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -127,6 +205,9 @@ class FollowersOverview(BaseModel):
     cohorts: list[CohortRow]
     top_value: list[TopFollower]
     loyal_subscribers: list[TopFollower]
+    signals: Signals
+    ai: FollowerAi
+    collab: list[CollabCandidate]
     recommendations: list[RecommendationOut]
 
 
@@ -287,6 +368,115 @@ def _loyal_subscribers(profiles: list[FollowerProfile]) -> list[TopFollower]:
     return [_top(p) for p in loyal[:LOYAL_LIMIT]]
 
 
+COLLAB_LIMIT = 24
+
+
+def _collab(db: DbSession, channel_id: int) -> list[CollabCandidate]:
+    """Streamer followers ranked as collab candidates: those whose category
+    overlaps yours come first (shared audience), then the rest by recency."""
+    my_categories = {
+        cat
+        for cat in db.scalars(
+            select(func.distinct(Stream.category))
+            .where(Stream.channel_id == channel_id)
+            .where(Stream.status == StreamStatus.READY)
+        )
+        if cat
+    }
+    streamers = db.scalars(
+        select(Follower)
+        .where(Follower.channel_id == channel_id)
+        .where(Follower.broadcaster_type.in_((AFFILIATE, PARTNER)))
+        .where(Follower.streamer_enriched_at.is_not(None))
+    )
+    candidates = [
+        CollabCandidate(
+            login=f.login,
+            display_name=f.display_name,
+            profile_image_url=f.profile_image_url,
+            broadcaster_type=f.broadcaster_type,
+            stream_category=f.stream_category,
+            stream_language=f.stream_language,
+            shared_category=(
+                f.stream_category in my_categories if f.stream_category else False
+            ),
+            followed_at=f.followed_at,
+        )
+        for f in streamers
+    ]
+    candidates.sort(key=lambda c: (c.shared_category, c.followed_at), reverse=True)
+    return candidates[:COLLAB_LIMIT]
+
+
+def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> FollowerAi:
+    """Rule-based segments (always available) joined to the LLM's per-segment
+    action, plus the audience bio summary and reactivation nudges (present only
+    after a live has been analyzed)."""
+    rows = list(
+        db.scalars(
+            select(FollowerAiInsight).where(FollowerAiInsight.channel_id == channel_id)
+        )
+    )
+    action_by_label = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
+    summary = next((r.content for r in rows if r.kind == KIND_BIO), None)
+    reactivations = [
+        ReactivationOut(who=r.title or "", message=r.content)
+        for r in rows
+        if r.kind == KIND_REACTIVATION and r.title
+    ]
+    segments = [
+        SegmentOut(
+            key=s.key,
+            label=s.label,
+            description=s.description,
+            count=s.count,
+            examples=s.examples,
+            action=action_by_label.get(s.label),
+        )
+        for s in build_segments(profiles)
+    ]
+    return FollowerAi(
+        segments=segments, audience_summary=summary, reactivations=reactivations
+    )
+
+
+def _signals(db: DbSession, channel_id: int, now: datetime) -> Signals:
+    """Derived signals: raid attribution, fake-follow risk, follow velocity with
+    spikes, and topic-to-follow correlation."""
+    raids = raid_attribution(db, channel_id)
+    suspicious = suspicious_followers(db, channel_id, now)
+    velocity = follow_velocity(db, channel_id)
+    topics = topic_to_follows(db, channel_id)
+    return Signals(
+        raids=[
+            RaidOut(
+                raider_login=r.raider_login,
+                viewers=r.viewers,
+                at=r.at,
+                follows_after=r.follows_after,
+            )
+            for r in raids
+        ],
+        suspicious=[
+            SuspiciousOut(
+                login=s.login,
+                display_name=s.display_name,
+                score=s.score,
+                reasons=s.reasons,
+            )
+            for s in suspicious
+        ],
+        suspicious_total=len(suspicious),
+        velocity=[
+            VelocityDayOut(day=v.day, follows=v.follows, is_spike=v.is_spike)
+            for v in velocity
+        ],
+        topic_follows=[
+            TopicFollowsOut(topic=t.topic, follows=t.follows) for t in topics
+        ],
+    )
+
+
 def _chatter_logins(db: DbSession, channel_id: int) -> set[str]:
     return set(
         db.scalars(
@@ -333,5 +523,8 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         cohorts=_cohorts(profiles),
         top_value=_top_value(profiles),
         loyal_subscribers=_loyal_subscribers(profiles),
+        signals=_signals(db, channel.id, now),
+        ai=_ai(db, channel.id, profiles),
+        collab=_collab(db, channel.id),
         recommendations=_recommendations(db, channel.id),
     )

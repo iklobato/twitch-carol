@@ -201,6 +201,42 @@ class UserProfile(BaseModel):
 
 
 USERS_BATCH_SIZE = 100
+CHANNELS_BATCH_SIZE = 100
+
+
+class ChannelInfo(BaseModel):
+    """What a follower who is themselves a streamer broadcasts, from Helix Get
+    Channel Information. Used to score collab fit."""
+
+    broadcaster_id: str
+    broadcaster_language: str = ""
+    game_name: str = ""
+    title: str = ""
+
+
+def get_channels_by_ids(
+    broadcaster_ids: list[int], client: httpx.Client | None = None
+) -> list[ChannelInfo]:
+    """Helix Get Channel Information, batched 100 per call (app token). Returns
+    each channel's language and last category, for collab-fit scoring."""
+    channels: list[ChannelInfo] = []
+    with _http(client) as http:
+        for start in range(0, len(broadcaster_ids), CHANNELS_BATCH_SIZE):
+            batch = broadcaster_ids[start : start + CHANNELS_BATCH_SIZE]
+            response = http.get(
+                f"{HELIX_URL}/channels",
+                params=[("broadcaster_id", str(bid)) for bid in batch],
+                headers=app_headers(http),
+            )
+            if response.status_code != 200:
+                raise TwitchAuthError(
+                    f"Twitch /channels returned {response.status_code}"
+                )
+            channels.extend(
+                ChannelInfo.model_validate(row)
+                for row in response.json().get("data", [])
+            )
+    return channels
 
 
 def get_users_by_ids(

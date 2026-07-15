@@ -39,9 +39,11 @@ def add_follower(
     broadcaster_type: str | None = None,
     account_created_at: datetime | None = None,
     enriched: bool = False,
+    followed_at: datetime | None = None,
 ) -> Follower:
     unique = next(_sequence)
-    followed_at = datetime.now(UTC) - timedelta(minutes=followed_minutes_ago)
+    if followed_at is None:
+        followed_at = datetime.now(UTC) - timedelta(minutes=followed_minutes_ago)
     follower = Follower(
         channel_id=channel.id,
         twitch_user_id=unique,
@@ -164,6 +166,7 @@ def make_stream(
     started_minutes_ago: int = 60,
     duration_minutes: int | None = 30,
     title: str | None = None,
+    category: str | None = None,
 ) -> Stream:
     started = datetime.now(UTC) - timedelta(minutes=started_minutes_ago)
     stream = Stream(
@@ -174,6 +177,7 @@ def make_stream(
         ),
         status=status,
         title=title,
+        category=category,
     )
     db.add(stream)
     db.flush()

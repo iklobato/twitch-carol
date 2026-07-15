@@ -15,11 +15,15 @@ import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
 import type {
   CohortRow,
+  CollabCandidate,
+  FollowerAi,
   FollowerProfile,
   FollowersOverview,
+  FollowerSignals,
   FunnelStage,
   GrowthBucket,
   TopFollower,
+  VelocityDay,
 } from '../types'
 
 Chart.register(
@@ -432,6 +436,235 @@ function FollowerTable({
   )
 }
 
+function VelocitySparkline({ velocity }: { velocity: VelocityDay[] }) {
+  if (velocity.length === 0) return null
+  const recent = velocity.slice(-60)
+  const max = Math.max(...recent.map((d) => d.follows), 1)
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Velocidade de follows (barras vermelhas = picos anômalos)
+      </p>
+      <div className="flex h-24 items-end gap-0.5">
+        {recent.map((day) => (
+          <div
+            key={day.day}
+            title={`${day.day}: ${day.follows} follows${day.is_spike ? ' (pico)' : ''}`}
+            className={`flex-1 rounded-t ${day.is_spike ? 'bg-red-500' : 'bg-sky-600'}`}
+            style={{ height: `${Math.max((day.follows / max) * 100, 2)}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Signals({ signals }: { signals: FollowerSignals }) {
+  const { raids, suspicious, suspicious_total, velocity, topic_follows } = signals
+  const hasAny =
+    raids.length > 0 ||
+    suspicious.length > 0 ||
+    velocity.length > 0 ||
+    topic_follows.length > 0
+  if (!hasAny) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-lg font-bold">De onde vêm e o que é real</h3>
+      <div className="mb-3">
+        <VelocitySparkline velocity={velocity} />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {raids.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Raids que trouxeram seguidores
+            </p>
+            <div className="space-y-1.5 text-sm">
+              {raids.slice(0, 6).map((raid, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <span className="text-purple-300">
+                    {raid.raider_login ?? 'raid'} <span className="text-zinc-600">· {raid.viewers} viewers</span>
+                  </span>
+                  <span className="text-emerald-400">+{raid.follows_after} follows</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {topic_follows.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Assuntos que geraram follows
+            </p>
+            <div className="space-y-1.5 text-sm">
+              {topic_follows.slice(0, 6).map((t, i) => (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">{t.topic}</span>
+                  <span className="shrink-0 text-emerald-400">+{t.follows}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {suspicious.length > 0 && (
+        <div className="mt-4 rounded-lg border border-red-900/50 bg-red-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">
+            Follows suspeitos ({suspicious_total})
+          </p>
+          <p className="mb-3 text-xs text-zinc-500">
+            Perfis com sinais de bot/fake (conta nova, sem foto/bio, seguiu logo após criar).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {suspicious.slice(0, 18).map((s) => (
+              <span
+                key={s.login}
+                title={s.reasons.join(', ')}
+                className="rounded-full border border-red-800 px-3 py-1 text-xs text-red-200"
+              >
+                {s.display_name ?? s.login} <span className="text-red-400">· {s.score}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const SEGMENT_COLOR: Record<string, string> = {
+  streamers: 'border-pink-800 bg-pink-950/20',
+  paying_fans: 'border-emerald-800 bg-emerald-950/20',
+  dormant: 'border-amber-800 bg-amber-950/20',
+  engaged: 'border-sky-800 bg-sky-950/20',
+  newcomers: 'border-purple-800 bg-purple-950/20',
+  lurkers: 'border-zinc-800 bg-zinc-900',
+}
+
+function AiSection({ ai }: { ai: FollowerAi }) {
+  const { segments, audience_summary, reactivations } = ai
+  if (segments.length === 0 && !audience_summary && reactivations.length === 0)
+    return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Personas e decisões (IA)</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        A base agrupada em personas. Ações e mensagens são geradas quando uma live é
+        analisada.
+      </p>
+
+      {audience_summary && (
+        <div className="mb-4 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-purple-300">
+            Quem te segue
+          </p>
+          <p className="text-sm">{audience_summary}</p>
+        </div>
+      )}
+
+      {segments.length > 0 && (
+        <div className="mb-4 grid gap-3 md:grid-cols-2">
+          {segments.map((seg) => (
+            <div
+              key={seg.key}
+              className={`rounded-lg border p-4 ${SEGMENT_COLOR[seg.key] ?? 'border-zinc-800 bg-zinc-900'}`}
+            >
+              <div className="mb-1 flex items-baseline justify-between gap-2">
+                <span className="font-semibold">{seg.label}</span>
+                <span className="tabular-nums text-zinc-400">
+                  {seg.count.toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <p className="mb-2 text-xs text-zinc-500">{seg.description}</p>
+              {seg.examples.length > 0 && (
+                <p className="mb-2 truncate text-xs text-zinc-600">
+                  ex: {seg.examples.join(', ')}
+                </p>
+              )}
+              {seg.action && (
+                <p className="rounded bg-black/30 p-2 text-sm text-zinc-200">
+                  → {seg.action}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {reactivations.length > 0 && (
+        <div className="rounded-lg border border-amber-900/50 bg-amber-950/10 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-400">
+            Trazer de volta (mensagens sugeridas)
+          </p>
+          <div className="space-y-3">
+            {reactivations.map((r, i) => (
+              <div key={i} className="text-sm">
+                <span className="font-semibold text-purple-300">{r.who}</span>
+                <p className="mt-0.5 rounded bg-black/30 p-2 text-zinc-200">{r.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CollabSection({ collab }: { collab: CollabCandidate[] }) {
+  if (collab.length === 0) return null
+  const shared = collab.filter((c) => c.shared_category).length
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Candidatos a collab</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        Streamers que te seguem, com o que transmitem.{' '}
+        {shared > 0 && (
+          <span className="text-emerald-400">
+            {shared} jogam a mesma categoria que você.
+          </span>
+        )}
+      </p>
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {collab.map((c) => (
+          <div
+            key={c.login}
+            className={`flex items-center gap-3 rounded-lg border p-3 ${c.shared_category ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900'}`}
+          >
+            {c.profile_image_url ? (
+              <img
+                src={c.profile_image_url}
+                alt={c.login}
+                className="h-10 w-10 shrink-0 rounded-full"
+              />
+            ) : (
+              <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-800" />
+            )}
+            <div className="min-w-0 flex-1">
+              <a
+                href={`https://twitch.tv/${c.login}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate text-sm font-semibold text-purple-300 hover:underline"
+              >
+                {c.display_name ?? c.login}
+              </a>
+              <p className="truncate text-xs text-zinc-500">
+                {c.stream_category ?? 'categoria desconhecida'}
+                {c.stream_language && ` · ${c.stream_language}`}
+              </p>
+            </div>
+            {c.shared_category && (
+              <span className="shrink-0 rounded-full border border-emerald-700 px-2 py-0.5 text-[10px] text-emerald-300">
+                mesma categoria
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function FollowersView() {
   const [overview, setOverview] = useState<FollowersOverview | null>(null)
 
@@ -457,8 +690,10 @@ export default function FollowersView() {
         <>
           <Kpis overview={overview} />
           <Recommendations overview={overview} />
+          <AiSection ai={overview.ai} />
           <Funnel funnel={overview.funnel} />
           <GrowthChart growth={overview.growth} />
+          <Signals signals={overview.signals} />
           <Composition overview={overview} />
           <FollowerTable
             title="Quem mais contribuiu"
@@ -473,11 +708,7 @@ export default function FollowersView() {
             valueColumn="months"
           />
           <Cohorts cohorts={overview.cohorts} />
-          <ProfileGrid
-            title="Streamers que te seguem"
-            subtitle="Afiliados e parceiros na sua base: candidatos a collab."
-            profiles={overview.notable}
-          />
+          <CollabSection collab={overview.collab} />
           <ProfileGrid
             title="Seguidores recentes"
             subtitle="Quem chegou por último."

@@ -22,6 +22,7 @@ from core.models import (
 )
 from core.twitch import (
     get_bits_leaderboard,
+    get_channels_by_ids,
     get_goals,
     get_subscriptions,
     get_users_by_ids,
@@ -104,6 +105,45 @@ def enrich_followers(
         for follower in batch:
             if follower.enriched_at is None:
                 follower.enriched_at = now
+    return enriched
+
+
+STREAMER_TYPES = ("affiliate", "partner")
+
+
+def enrich_streamer_followers(
+    db: Session, channel: Channel, client: httpx.Client | None = None
+) -> int:
+    """Fill category/language for followers who are themselves streamers, via
+    Helix Get Channel Information, to score collab fit. Only affiliate/partner
+    rows not yet streamer-enriched are fetched. Returns how many were enriched."""
+    pending = list(
+        db.scalars(
+            select(Follower)
+            .where(Follower.channel_id == channel.id)
+            .where(Follower.broadcaster_type.in_(STREAMER_TYPES))
+            .where(Follower.streamer_enriched_at.is_(None))
+        )
+    )
+    if not pending:
+        return 0
+    by_id = {follower.twitch_user_id: follower for follower in pending}
+    now = datetime.now(UTC)
+    enriched = 0
+    for start in range(0, len(pending), ENRICH_BATCH_SIZE):
+        batch = pending[start : start + ENRICH_BATCH_SIZE]
+        infos = get_channels_by_ids([f.twitch_user_id for f in batch], client)
+        for info in infos:
+            follower = by_id.get(int(info.broadcaster_id))
+            if follower is None:
+                continue
+            follower.stream_category = info.game_name or None
+            follower.stream_language = info.broadcaster_language or None
+            follower.streamer_enriched_at = now
+            enriched += 1
+        for follower in batch:
+            if follower.streamer_enriched_at is None:
+                follower.streamer_enriched_at = now
     return enriched
 
 

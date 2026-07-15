@@ -14,6 +14,7 @@ from core.backfill import (
     backfill_videos,
     backfill_vips,
     enrich_followers,
+    enrich_streamer_followers,
 )
 from core.crypto import encrypt_secret
 from core.models import (
@@ -301,3 +302,42 @@ def test_enrich_followers_fills_profiles_and_stamps_missing(db) -> None:
 
     # a second run has nothing pending
     assert enrich_followers(db, channel, client=_mock_client(handler)) == 0
+
+
+def test_enrich_streamer_followers_fills_category(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    # two followers who are streamers, one who isn't
+    streamer = add_follower(db, channel, "streamerx", broadcaster_type="affiliate")
+    add_follower(db, channel, "common")  # broadcaster_type None -> skipped
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/oauth2/token"):
+            return httpx.Response(200, json={"access_token": "app", "expires_in": 3600})
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "broadcaster_id": str(streamer.twitch_user_id),
+                        "broadcaster_language": "pt",
+                        "game_name": "Valorant",
+                        "title": "ranqueada",
+                    }
+                ]
+            },
+        )
+
+    enriched = enrich_streamer_followers(db, channel, client=_mock_client(handler))
+    db.flush()
+    assert enriched == 1
+
+    row = db.scalar(
+        select(Follower).where(Follower.twitch_user_id == streamer.twitch_user_id)
+    )
+    assert row.stream_category == "Valorant"
+    assert row.stream_language == "pt"
+    assert row.streamer_enriched_at is not None
+    # a second run has nothing pending
+    assert enrich_streamer_followers(db, channel, client=_mock_client(handler)) == 0

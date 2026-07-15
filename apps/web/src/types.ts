@@ -338,6 +338,60 @@ export type TopFollower = {
   last_seen: string | null
 }
 
+export type Raid = {
+  raider_login: string | null
+  viewers: number
+  at: string
+  follows_after: number
+}
+
+export type SuspiciousFollower = {
+  login: string
+  display_name: string | null
+  score: number
+  reasons: string[]
+}
+
+export type VelocityDay = { day: string; follows: number; is_spike: boolean }
+
+export type TopicFollows = { topic: string; follows: number }
+
+export type FollowerSignals = {
+  raids: Raid[]
+  suspicious: SuspiciousFollower[]
+  suspicious_total: number
+  velocity: VelocityDay[]
+  topic_follows: TopicFollows[]
+}
+
+export type FollowerSegment = {
+  key: string
+  label: string
+  description: string
+  count: number
+  examples: string[]
+  action: string | null
+}
+
+export type Reactivation = { who: string; message: string }
+
+export type FollowerAi = {
+  segments: FollowerSegment[]
+  audience_summary: string | null
+  reactivations: Reactivation[]
+}
+
+export type CollabCandidate = {
+  login: string
+  display_name: string | null
+  profile_image_url: string | null
+  broadcaster_type: string | null
+  stream_category: string | null
+  stream_language: string | null
+  shared_category: boolean
+  followed_at: string
+}
+
 export type FollowersOverview = {
   kpis: FollowerKpis
   growth: GrowthBucket[]
@@ -348,6 +402,9 @@ export type FollowersOverview = {
   cohorts: CohortRow[]
   top_value: TopFollower[]
   loyal_subscribers: TopFollower[]
+  signals: FollowerSignals
+  ai: FollowerAi
+  collab: CollabCandidate[]
   recommendations: Recommendation[]
 }
 

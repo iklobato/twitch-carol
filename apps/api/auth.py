@@ -14,6 +14,7 @@ from core.backfill import (
     backfill_videos,
     backfill_vips,
     enrich_followers,
+    enrich_streamer_followers,
 )
 from core.channels import upsert_channel
 from core.config import get_settings
@@ -128,14 +129,16 @@ def _enrich_followers_best_effort(db: DbSession, channel: Channel) -> None:
     unenriched rows are picked up on the next connect."""
     try:
         enriched = enrich_followers(db, channel)
+        streamers = enrich_streamer_followers(db, channel)
         db.commit()
     except (httpx.HTTPError, TwitchAuthError):
         db.rollback()
         logger.exception("follower enrichment failed", extra={"channel_id": channel.id})
         return
     logger.info(
-        "follower enrichment done: %d enriched",
+        "follower enrichment done: %d enriched, %d streamers",
         enriched,
+        streamers,
         extra={"channel_id": channel.id},
     )
 
