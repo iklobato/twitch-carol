@@ -1,13 +1,16 @@
-"""Local LLM backends. All v1 inference is local CPU (llama.cpp); the
-Gradient backend is a config-selectable stub only, per the PRD.
+"""LLM backends. Local CPU (llama.cpp) or DigitalOcean Gradient serverless
+inference (OpenAI-compatible HTTP), selected by LLM_BACKEND.
 
-Token budgets are enforced with the model's real tokenizer, never estimates.
+The local backend budgets with the model's real tokenizer; the remote one has
+no local tokenizer, so it approximates (see GradientBackend.count_tokens).
 """
 
 import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
+
+import httpx
 
 from core.config import Settings, get_settings
 
@@ -54,19 +57,55 @@ class LocalLlamaBackend:
         return response["choices"][0]["message"]["content"]
 
 
+class LLMError(Exception):
+    pass
+
+
 class GradientBackend:
-    """Placeholder for DigitalOcean Gradient (paid API): out of v1 scope."""
+    """DigitalOcean Gradient serverless inference over its OpenAI-compatible
+    endpoint. No local model: requests go over HTTP with an app-level API key."""
 
-    model_name = "gradient-stub"
+    CHARS_PER_TOKEN = 4
+    TIMEOUT_SECONDS = 120.0
 
-    def __init__(self, settings: Settings) -> None:
-        raise NotImplementedError("LLM_BACKEND=gradient is reserved for post-v1")
+    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+        missing = [
+            name
+            for name, value in (
+                ("GRADIENT_ENDPOINT", settings.gradient_endpoint),
+                ("GRADIENT_API_KEY", settings.gradient_api_key),
+                ("GRADIENT_MODEL", settings.gradient_model),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(f"gradient backend needs {', '.join(missing)}")
+        self.model_name = settings.gradient_model
+        self._url = settings.gradient_endpoint.rstrip("/") + "/chat/completions"
+        self._headers = {"Authorization": f"Bearer {settings.gradient_api_key}"}
+        self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
 
     def count_tokens(self, text: str) -> int:
-        raise NotImplementedError
+        """Char-based approximation (~4 chars/token): the remote model's
+        tokenizer isn't local. Used only to size the budget; the hard output
+        limit is enforced by max_tokens on the request."""
+        return max(1, -(-len(text) // self.CHARS_PER_TOKEN))
 
     def generate(self, prompt: str, max_tokens: int) -> str:
-        raise NotImplementedError
+        response = self._client.post(
+            self._url,
+            headers=self._headers,
+            json={
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        if response.status_code != 200:
+            raise LLMError(f"Gradient inference returned {response.status_code}")
+        return response.json()["choices"][0]["message"]["content"]
 
 
 _BACKENDS: dict[str, Callable[[Settings], LLMBackend]] = {

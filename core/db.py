@@ -9,7 +9,15 @@ from core.config import get_settings
 
 @lru_cache
 def get_engine() -> Engine:
-    return create_engine(get_settings().database_url, pool_pre_ping=True)
+    settings = get_settings()
+    connect_args: dict[str, object] = {}
+    if settings.db_disable_prepared_statements:
+        # None disables psycopg server-side prepared statements, required behind
+        # PgBouncer transaction pooling (the shared managed cluster's pool).
+        connect_args["prepare_threshold"] = None
+    return create_engine(
+        settings.database_url, pool_pre_ping=True, connect_args=connect_args
+    )
 
 
 def session_factory() -> sessionmaker[Session]:
