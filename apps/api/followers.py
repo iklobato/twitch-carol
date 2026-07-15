@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from apps.api.deps import CurrentChannel, DbSession
+from core.follower_profiles import FollowerProfile, build_follower_profiles
 from core.models import ChatMessage, Follower, FollowerRecommendation
 
 router = APIRouter(prefix="/api/followers")
@@ -30,6 +31,16 @@ AGE_BUCKETS = (
     ("1 a 2 anos", 2 * DAYS_PER_YEAR),
 )
 AGE_BUCKET_OLDEST = "mais de 2 anos"
+
+TOP_VALUE_LIMIT = 15
+LOYAL_LIMIT = 15
+# Funnel stages from widest to deepest; each implies the ones above it.
+FUNNEL_STAGES = (
+    ("seguidor", "Só seguem"),
+    ("engajado", "Já deram chat"),
+    ("inscrito", "Inscritos"),
+    ("pagante", "Já pagaram (bits/subs)"),
+)
 
 
 class FollowerKpis(BaseModel):
@@ -81,12 +92,41 @@ class RecommendationOut(BaseModel):
     facts: list[str]
 
 
+class FunnelStage(BaseModel):
+    stage: str
+    label: str
+    count: int
+
+
+class CohortRow(BaseModel):
+    month: str
+    size: int
+    chatted: int
+    subscribed: int
+    paid: int
+
+
+class TopFollower(BaseModel):
+    login: str
+    display_name: str | None
+    stage: str
+    messages: int
+    streams_present: int
+    estimated_usd: float
+    sub_months: int
+    last_seen: datetime | None
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
     recent: list[ProfileOut]
     notable: list[ProfileOut]
     composition: Composition
+    funnel: list[FunnelStage]
+    cohorts: list[CohortRow]
+    top_value: list[TopFollower]
+    loyal_subscribers: list[TopFollower]
     recommendations: list[RecommendationOut]
 
 
@@ -189,6 +229,64 @@ def _ordered_age_slices(age_counts: Counter[str]) -> list[AgeSlice]:
     ]
 
 
+def _funnel(profiles: list[FollowerProfile]) -> list[FunnelStage]:
+    """Cumulative funnel: each stage counts everyone who reached it OR deeper,
+    so 'engajado' includes subscribers and payers too."""
+    order = [stage for stage, _ in FUNNEL_STAGES]
+    reached: Counter[str] = Counter(profile.stage for profile in profiles)
+    stages: list[FunnelStage] = []
+    for depth, (stage, label) in enumerate(FUNNEL_STAGES):
+        count = sum(reached[s] for s in order[depth:])
+        stages.append(FunnelStage(stage=stage, label=label, count=count))
+    return stages
+
+
+def _cohorts(profiles: list[FollowerProfile]) -> list[CohortRow]:
+    """Followers grouped by the month they followed, with how many of each
+    cohort went on to chat, subscribe, or pay: retention by vintage."""
+    rows: dict[str, CohortRow] = {}
+    for profile in profiles:
+        month = profile.followed_at.strftime("%Y-%m")
+        row = rows.setdefault(
+            month, CohortRow(month=month, size=0, chatted=0, subscribed=0, paid=0)
+        )
+        row.size += 1
+        if profile.messages > 0:
+            row.chatted += 1
+        if profile.is_subscriber:
+            row.subscribed += 1
+        if profile.estimated_usd > 0:
+            row.paid += 1
+    return [rows[month] for month in sorted(rows)]
+
+
+def _top(profile: FollowerProfile) -> TopFollower:
+    return TopFollower(
+        login=profile.login,
+        display_name=profile.display_name,
+        stage=profile.stage,
+        messages=profile.messages,
+        streams_present=profile.streams_present,
+        estimated_usd=profile.estimated_usd,
+        sub_months=profile.sub_months,
+        last_seen=profile.last_seen,
+    )
+
+
+def _top_value(profiles: list[FollowerProfile]) -> list[TopFollower]:
+    paying = [p for p in profiles if p.estimated_usd > 0]
+    return [_top(p) for p in paying[:TOP_VALUE_LIMIT]]
+
+
+def _loyal_subscribers(profiles: list[FollowerProfile]) -> list[TopFollower]:
+    loyal = sorted(
+        (p for p in profiles if p.sub_months > 0),
+        key=lambda p: p.sub_months,
+        reverse=True,
+    )
+    return [_top(p) for p in loyal[:LOYAL_LIMIT]]
+
+
 def _chatter_logins(db: DbSession, channel_id: int) -> set[str]:
     return set(
         db.scalars(
@@ -223,11 +321,17 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
     notable = [f for f in followers if f.broadcaster_type in (AFFILIATE, PARTNER)]
     notable.sort(key=lambda f: f.followed_at, reverse=True)
 
+    profiles = build_follower_profiles(db, channel.id)
+
     return FollowersOverview(
         kpis=_kpis(followers, now),
         growth=_growth(followers),
         recent=[_profile(f) for f in recent],
         notable=[_profile(f) for f in notable[:NOTABLE_LIMIT]],
         composition=_composition(followers, chatter_logins, now),
+        funnel=_funnel(profiles),
+        cohorts=_cohorts(profiles),
+        top_value=_top_value(profiles),
+        loyal_subscribers=_loyal_subscribers(profiles),
         recommendations=_recommendations(db, channel.id),
     )
