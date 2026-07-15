@@ -104,6 +104,7 @@ def backfill_goals(
             existing.current_amount = goal.current_amount
             existing.target_amount = goal.target_amount
             existing.description = goal.description
+            existing.created_at = goal.created_at
             continue
         db.add(
             Goal(
@@ -113,6 +114,7 @@ def backfill_goals(
                 description=goal.description,
                 current_amount=goal.current_amount,
                 target_amount=goal.target_amount,
+                created_at=goal.created_at,
             )
         )
         added += 1

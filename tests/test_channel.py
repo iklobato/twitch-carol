@@ -285,14 +285,17 @@ def test_channel_community_goals_vips_engagement(api_client, db) -> None:
     add_chat(db, stream, 4, author="a")
     add_chat(db, stream, 2, author="b")  # 2 distinct chatters over peak 100 = 2%
     add_vip(db, channel, "vip_carol")
-    add_goal(db, channel, current_amount=750, target_amount=1000)
+    created = datetime(2026, 7, 1, tzinfo=UTC)
+    add_goal(db, channel, current_amount=750, target_amount=1000, created_at=created)
     db.flush()
 
     login_as(api_client, channel)
     community = api_client.get("/api/channel").json()["community"]
 
     assert community["vips"] == ["vip_carol"]
-    assert community["goals"][0]["pct"] == 75.0
+    goal = community["goals"][0]
+    assert goal["pct"] == 75.0
+    assert goal["created_at"].startswith("2026-07-01")
     assert community["engaged_viewer_pct"] == 2.0
 
 

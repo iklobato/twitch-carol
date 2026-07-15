@@ -133,6 +133,7 @@ class GoalOut(BaseModel):
     current_amount: int
     target_amount: int
     pct: float
+    created_at: datetime | None
 
 
 class Community(BaseModel):
@@ -403,6 +404,7 @@ def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Communit
                 if goal.target_amount > 0
                 else 0.0
             ),
+            created_at=goal.created_at,
         )
         for goal in db.scalars(
             select(Goal).where(Goal.channel_id == channel_id).order_by(Goal.goal_type)

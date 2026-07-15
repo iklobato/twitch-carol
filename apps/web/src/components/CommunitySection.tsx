@@ -118,6 +118,7 @@ function SentimentChart({
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
           tooltip: {
@@ -145,7 +146,11 @@ function SentimentChart({
   }, [community, events])
 
   if (community.sentiment_timeline.length === 0) return null
-  return <canvas ref={canvasRef} className="max-h-40 w-full" />
+  return (
+    <div className="h-40 w-full">
+      <canvas ref={canvasRef} />
+    </div>
+  )
 }
 
 function SentimentBlock({

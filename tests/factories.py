@@ -64,6 +64,7 @@ def add_goal(
     current_amount: int = 500,
     target_amount: int = 1000,
     description: str | None = "Meta de seguidores",
+    created_at: datetime | None = None,
 ) -> Goal:
     unique = next(_sequence)
     goal = Goal(
@@ -73,6 +74,7 @@ def add_goal(
         description=description,
         current_amount=current_amount,
         target_amount=target_amount,
+        created_at=created_at,
     )
     db.add(goal)
     db.flush()

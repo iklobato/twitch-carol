@@ -155,6 +155,7 @@ def test_backfill_goals_replaces_snapshot(db) -> None:
                             "description": "1k seguidores",
                             "current_amount": current,
                             "target_amount": 1000,
+                            "created_at": "2026-07-01T12:00:00Z",
                         }
                     ]
                 },
@@ -166,6 +167,7 @@ def test_backfill_goals_replaces_snapshot(db) -> None:
     db.flush()
     goal = db.scalar(select(Goal).where(Goal.channel_id == channel.id))
     assert goal.current_amount == 500
+    assert goal.created_at == datetime(2026, 7, 1, 12, tzinfo=UTC)
 
     # a later connect refreshes progress in place
     backfill_goals(db, channel, client=_mock_client(handler_with(750)))

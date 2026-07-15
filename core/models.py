@@ -159,6 +159,7 @@ class Goal(Base):
     description: Mapped[str | None] = mapped_column(String(256))
     current_amount: Mapped[int]
     target_amount: Mapped[int]
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Subscription(Base):
