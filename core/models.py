@@ -308,6 +308,27 @@ class Peak(Base):
     score: Mapped[float] = mapped_column(Float)
 
 
+class Clip(Base):
+    """A rendered video clip cut from the stream's VOD around a peak, stored in
+    object storage. Produced post-analysis, so it never touches live capture."""
+
+    __tablename__ = "clips"
+    __table_args__ = (
+        Index("uq_clips_stream_peak", "stream_id", "peak_id", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    peak_id: Mapped[int] = mapped_column(ForeignKey("peaks.id"))
+    offset_seconds: Mapped[int]
+    duration_seconds: Mapped[int]
+    storage_key: Mapped[str] = mapped_column(String(256))
+    score: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Insight(Base):
     __tablename__ = "insights"
 

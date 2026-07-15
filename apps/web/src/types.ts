@@ -165,6 +165,7 @@ export type ClipSuggestion = {
   offset_seconds: number
   offset_label: string
   score: number
+  download_url: string | null
 }
 
 export type ActionableOut = {
