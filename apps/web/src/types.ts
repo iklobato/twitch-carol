@@ -267,6 +267,8 @@ export type Subscribers = {
 export type Recommendation = { content: string; facts: string[] }
 
 export type ChannelOverview = {
+  connected_at: string
+  scopes: string[]
   total_streams: number
   total_messages: number
   unique_chatters: number

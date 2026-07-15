@@ -642,6 +642,45 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
   )
 }
 
+const SCOPE_LABELS: Record<string, string> = {
+  'bits:read': 'Bits',
+  'channel:read:ads': 'Anúncios',
+  'channel:read:goals': 'Metas',
+  'channel:read:hype_train': 'Hype Train',
+  'channel:read:polls': 'Enquetes',
+  'channel:read:predictions': 'Predições',
+  'channel:read:redemptions': 'Pontos do canal',
+  'channel:read:subscriptions': 'Assinantes',
+  'channel:read:vips': 'VIPs',
+  'moderator:read:followers': 'Seguidores',
+}
+
+function AccountSummary({ overview }: { overview: ChannelOverview }) {
+  return (
+    <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-lg font-bold">Resumo da conta</h3>
+        <span className="text-xs text-zinc-500">
+          conectado à Twitch em {formatDate(overview.connected_at)}
+        </span>
+      </div>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Dados que você autorizou o StreamIntel a ler
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {overview.scopes.map((scope) => (
+          <span
+            key={scope}
+            className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300"
+          >
+            {SCOPE_LABELS[scope] ?? scope}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ChannelView() {
   const [overview, setOverview] = useState<ChannelOverview | null>(null)
 
@@ -651,20 +690,7 @@ export default function ChannelView() {
 
   if (overview === null) return <p className="text-zinc-400">Carregando o resumo do canal...</p>
 
-  if (overview.total_streams === 0) {
-    return (
-      <div>
-        <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">
-          ← voltar
-        </a>
-        <h2 className="mb-2 mt-2 text-xl font-bold">Meu canal</h2>
-        <p className="text-zinc-400">
-          Ainda não há lives finalizadas. Assim que você transmitir, este resumo mostra seus
-          fiéis, melhores horários e crescimento.
-        </p>
-      </div>
-    )
-  }
+  const noStreams = overview.total_streams === 0
 
   return (
     <div>
@@ -685,6 +711,14 @@ export default function ChannelView() {
           value={usd(overview.finance.total_estimated_usd)}
         />
       </div>
+      <AccountSummary overview={overview} />
+      {noStreams && (
+        <p className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
+          Ainda sem lives capturadas. Abaixo está o resumo da sua conta importado da Twitch. Os
+          blocos de desempenho (fiéis, crescimento, receita por hora, recomendações) aparecem
+          quando você transmitir.
+        </p>
+      )}
       <ChannelMonetization overview={overview} />
       <RecommendationsSection overview={overview} />
       <SubscribersSection overview={overview} />

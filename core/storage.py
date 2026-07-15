@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 import boto3
+from botocore.exceptions import ClientError
 
 from core.config import Settings, get_settings
 
@@ -73,26 +74,37 @@ class SpacesAudioStorage:
 
     def ensure_lifecycle_rule(self) -> None:
         """Idempotent. put_bucket_lifecycle_configuration REPLACES the whole
-        config, so every rule (audio + backups) must live in this one call."""
-        self._client.put_bucket_lifecycle_configuration(
-            Bucket=self._bucket,
-            LifecycleConfiguration={
-                "Rules": [
-                    {
-                        "ID": f"expire-audio-{AUDIO_RETENTION_DAYS}d",
-                        "Status": "Enabled",
-                        "Filter": {"Prefix": AUDIO_PREFIX},
-                        "Expiration": {"Days": AUDIO_RETENTION_DAYS},
-                    },
-                    {
-                        "ID": f"expire-backups-{BACKUP_RETENTION_DAYS}d",
-                        "Status": "Enabled",
-                        "Filter": {"Prefix": BACKUP_PREFIX},
-                        "Expiration": {"Days": BACKUP_RETENTION_DAYS},
-                    },
-                ]
-            },
-        )
+        config, so every rule (audio + backups) must live in this one call.
+        A least-privilege bucket-scoped key cannot manage lifecycle; the rule is
+        applied once by an owner/admin key, so AccessDenied here is expected and
+        must not stop the worker from storing audio."""
+        try:
+            self._client.put_bucket_lifecycle_configuration(
+                Bucket=self._bucket,
+                LifecycleConfiguration={
+                    "Rules": [
+                        {
+                            "ID": f"expire-audio-{AUDIO_RETENTION_DAYS}d",
+                            "Status": "Enabled",
+                            "Filter": {"Prefix": AUDIO_PREFIX},
+                            "Expiration": {"Days": AUDIO_RETENTION_DAYS},
+                        },
+                        {
+                            "ID": f"expire-backups-{BACKUP_RETENTION_DAYS}d",
+                            "Status": "Enabled",
+                            "Filter": {"Prefix": BACKUP_PREFIX},
+                            "Expiration": {"Days": BACKUP_RETENTION_DAYS},
+                        },
+                    ]
+                },
+            )
+        except ClientError as err:
+            if err.response["Error"]["Code"] != "AccessDenied":
+                raise
+            logger.info(
+                "lifecycle rule not set by app key (managed by an owner key)",
+                extra={"source": "storage"},
+            )
 
 
 def audio_key(channel_id: int, stream_id: int, sequence: int) -> str:

@@ -186,6 +186,8 @@ class ChannelFinance(BaseModel):
 
 
 class ChannelOverview(BaseModel):
+    connected_at: datetime
+    scopes: list[str]
     total_streams: int
     total_messages: int
     unique_chatters: int
@@ -767,6 +769,8 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
     ).one()
 
     return ChannelOverview(
+        connected_at=channel.created_at,
+        scopes=channel.scopes,
         total_streams=len(ready_ids),
         total_messages=int(total_messages),
         unique_chatters=int(unique_chatters),

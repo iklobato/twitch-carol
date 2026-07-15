@@ -326,6 +326,9 @@ def test_channel_overview_empty(api_client, db) -> None:
     login_as(api_client, channel)
     overview = api_client.get("/api/channel").json()
     assert overview["total_streams"] == 0
+    # account snapshot is available from the connect backfill, with no streams
+    assert overview["connected_at"] is not None
+    assert overview["scopes"] == ["bits:read"]
     assert overview["loyal_chatters"] == []
     assert overview["growth"] == []
     assert overview["finance"]["total_estimated_usd"] == 0.0
