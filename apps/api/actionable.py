@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
 from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
-from core.models import ChatMessage, Peak, Stream, TranscriptSegment
+from core.models import ChatMessage, Clip, Peak, Stream, TranscriptSegment
+from core.storage import get_audio_storage
 
 router = APIRouter(prefix="/api")
 
@@ -45,6 +46,7 @@ class ClipSuggestion(BaseModel):
     offset_seconds: int
     offset_label: str
     score: float
+    download_url: str | None = None
 
 
 class QuestionSample(BaseModel):
@@ -76,9 +78,17 @@ def _clip_suggestions(db: Session, stream: Stream) -> list[ClipSuggestion]:
         .order_by(Peak.score.desc())
         .limit(MAX_CLIPS)
     ).all()
+    rendered = {
+        peak_id: key
+        for peak_id, key in db.execute(
+            select(Clip.peak_id, Clip.storage_key).where(Clip.stream_id == stream.id)
+        )
+    }
+    storage = get_audio_storage() if rendered else None
     clips = []
     for peak in peaks:
         offset = int((peak.window_start - stream.started_at).total_seconds())
+        key = rendered.get(peak.id)
         clips.append(
             ClipSuggestion(
                 window_start=peak.window_start,
@@ -86,6 +96,7 @@ def _clip_suggestions(db: Session, stream: Stream) -> list[ClipSuggestion]:
                 offset_seconds=offset,
                 offset_label=_offset_label(max(offset, 0)),
                 score=peak.score,
+                download_url=(storage.presigned_url(key) if storage and key else None),
             )
         )
     return clips

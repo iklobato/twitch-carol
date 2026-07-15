@@ -11,12 +11,15 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import partial
 from statistics import median
 
+import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
+from core.clips import generate_clips, vod_m3u8_for_stream
 from core.config import get_settings
 from core.follower_ai import generate_follower_ai
 from core.follower_intel import build_follower_facts, generate_follower_recommendations
@@ -32,6 +35,8 @@ from core.models import (
     TranscriptSegment,
 )
 from core.monetization import build_monetization_facts, generate_channel_recommendations
+from core.storage import get_audio_storage
+from core.twitch import TwitchAuthError
 from workers.analyze.evidence import validated_evidence
 from workers.analyze.peaks import compute_and_store_peaks
 
@@ -101,6 +106,7 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
 
     _recommend(db, stream, backend, budget, stats)
     _recommend_channel(db, stream, backend, budget)
+    _generate_clips_best_effort(db, stream)
 
     db.flush()
     logger.info(
@@ -113,6 +119,20 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
         extra={"stream_id": stream.id},
     )
     return stats
+
+
+def _generate_clips_best_effort(db: Session, stream: Stream) -> None:
+    """Cut clips from the VOD around the top peaks. Best-effort: a VOD that is
+    not published yet or a cutting failure must not fail the analysis."""
+    try:
+        stored = generate_clips(
+            db, stream, get_audio_storage(), partial(vod_m3u8_for_stream, db)
+        )
+    except (httpx.HTTPError, TwitchAuthError):
+        logger.exception("clip generation failed", extra={"stream_id": stream.id})
+        return
+    if stored:
+        logger.info("clips stored: %d", stored, extra={"stream_id": stream.id})
 
 
 def _recommend_channel(

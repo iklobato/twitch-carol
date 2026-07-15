@@ -71,11 +71,22 @@ function Clips({ actionable }: { actionable: ActionableOut }) {
               {formatTime(clip.window_start)}–{formatTime(clip.window_end)}
             </span>
             <span className="text-xs text-zinc-500">chat {clip.score.toFixed(1)}x o normal</span>
+            {clip.download_url && (
+              <a
+                href={clip.download_url}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto rounded bg-orange-700 px-2 py-0.5 text-xs text-white hover:bg-orange-600"
+              >
+                ↓ baixar clipe
+              </a>
+            )}
           </div>
         ))}
       </div>
       <p className="mt-2 text-[11px] text-zinc-600">
-        O tempo (ex.: 2m05s) é o offset desde o início da live, para achar o momento no VOD.
+        O clipe é cortado do VOD automaticamente após a análise. O tempo (ex.: 2m05s) é o offset
+        desde o início da live.
       </p>
     </div>
   )

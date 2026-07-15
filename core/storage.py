@@ -26,6 +26,12 @@ class AudioStorage(Protocol):
 
     def fetch_file(self, key: str, destination: Path) -> None: ...
 
+    def presigned_url(self, key: str, expires_seconds: int = 3600) -> str | None: ...
+
+
+# The object store is shared by audio segments and rendered clips.
+ClipStorage = AudioStorage
+
 
 class LocalAudioStorage:
     def __init__(self, base_dir: Path) -> None:
@@ -46,6 +52,10 @@ class LocalAudioStorage:
 
     def fetch_file(self, key: str, destination: Path) -> None:
         shutil.copyfile(self._base_dir / key, destination)
+
+    def presigned_url(self, key: str, expires_seconds: int = 3600) -> str | None:
+        # Local dev has no signed URLs; the file lives under the data dir.
+        return None
 
 
 class SpacesAudioStorage:
@@ -71,6 +81,17 @@ class SpacesAudioStorage:
 
     def fetch_file(self, key: str, destination: Path) -> None:
         self._client.download_file(self._bucket, key, str(destination))
+
+    def presigned_url(self, key: str, expires_seconds: int = 3600) -> str | None:
+        try:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self._bucket, "Key": key},
+                ExpiresIn=expires_seconds,
+            )
+        except ClientError:
+            logger.exception("presigned url failed", extra={"key": key})
+            return None
 
     def ensure_lifecycle_rule(self) -> None:
         """Idempotent. put_bucket_lifecycle_configuration REPLACES the whole
