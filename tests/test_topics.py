@@ -87,3 +87,27 @@ def test_malformed_topic_entries_are_skipped(monkeypatch: pytest.MonkeyPatch) ->
     )
     assert stats.insights_stored == 0
     db.add.assert_not_called()
+
+
+def test_chat_dump_name_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a "name" that is really a dump of chat messages, not a label
+    dump = (
+        "Streamer joga muito, viewer_05 e viewer_39. qual teclado voce usa? viewer_16"
+    )
+    db, stats = _run_store(monkeypatch, [{"name": dump, "segment_ids": [10]}], [])
+    assert stats.insights_stored == 0
+    db.add.assert_not_called()
+
+
+def test_duplicate_topic_names_collapse(monkeypatch: pytest.MonkeyPatch) -> None:
+    topics = [
+        {"name": "Subindo API em Produção", "segment_ids": [10]},
+        {"name": "Subindo API produção agora", "segment_ids": [11]},  # same subject
+    ]
+    # only the first reaches evidence validation; the second is deduped before it
+    db, stats = _run_store(
+        monkeypatch, topics, [{"segment_ids": [10], "message_ids": []}]
+    )
+    assert stats.insights_stored == 1
+    stored = db.add.call_args_list[0][0][0]
+    assert stored.content.splitlines()[0] == "Subindo API em Produção"
