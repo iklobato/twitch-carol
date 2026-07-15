@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     admin_logins: str = ""
     # Fallback audio store when Spaces is not configured (dev/simulation).
     audio_local_dir: str = "/data/audio"
+    # How long raw recordings live in Spaces. Long by default: capture is
+    # decoupled from processing (a throttled pool of N transcribe workers drains
+    # the backlog over time), so audio must outlive the backlog and stay
+    # available for re-processing. Transcript/analysis output is already durable
+    # in Postgres; this is the knob that trades storage cost for backlog depth.
+    audio_retention_days: int = 365
     # Sentry error reporting. Empty DSN disables it (dev/tests never send).
     sentry_dsn: str = ""
     sentry_environment: str = "development"

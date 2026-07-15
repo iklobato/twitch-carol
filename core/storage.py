@@ -13,7 +13,6 @@ from core.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-AUDIO_RETENTION_DAYS = 7
 AUDIO_PREFIX = "audio/"
 BACKUP_RETENTION_DAYS = 30
 BACKUP_PREFIX = "backups/"
@@ -51,6 +50,7 @@ class LocalAudioStorage:
 class SpacesAudioStorage:
     def __init__(self, settings: Settings) -> None:
         self._bucket = settings.spaces_bucket
+        self._audio_retention_days = settings.audio_retention_days
         self._client = boto3.client(
             "s3",
             endpoint_url=settings.spaces_endpoint,
@@ -84,10 +84,10 @@ class SpacesAudioStorage:
                 LifecycleConfiguration={
                     "Rules": [
                         {
-                            "ID": f"expire-audio-{AUDIO_RETENTION_DAYS}d",
+                            "ID": f"expire-audio-{self._audio_retention_days}d",
                             "Status": "Enabled",
                             "Filter": {"Prefix": AUDIO_PREFIX},
-                            "Expiration": {"Days": AUDIO_RETENTION_DAYS},
+                            "Expiration": {"Days": self._audio_retention_days},
                         },
                         {
                             "ID": f"expire-backups-{BACKUP_RETENTION_DAYS}d",
