@@ -1,0 +1,181 @@
+# DigitalOcean App Platform spec para o StreamIntel.
+#
+# Reusa a infra existente (nada de estado novo):
+#   - Postgres: cluster compartilhado db-postgresql-nyc3-86715, via POOL PgBouncer
+#     (porta 25061, transaction). DATABASE_URL aponta pro pool; ver core/db.py
+#     (db_disable_prepared_statements=true).
+#   - Valkey: financialdata-valkey (nyc1) para fila + dedup EventSub.
+#   - Spaces: streamintel-audio (áudio + clipes).
+#   - LLM: Gradient serverless inference (gradient_* envs), não mais local.
+#
+# Segredos (type: SECRET) NÃO ficam neste arquivo: os valores são preenchidos no
+# dashboard do App Platform, copiados do droplet. Aqui só os nomes.
+#
+# Deploy:  doctl apps create --spec deploy/app.yaml   (uma vez)
+#          depois: git push na main -> deploy automático de cada componente.
+
+name: streamintel
+region: nyc
+
+# Config compartilhada por todos os componentes (envs de app).
+# Secrets ficam vazios aqui e são setados no dashboard (SECRET, criptografado).
+envs:
+  - key: LLM_BACKEND
+    scope: RUN_AND_BUILD_TIME
+    value: gradient
+  - key: DB_DISABLE_PREPARED_STATEMENTS
+    scope: RUN_TIME
+    value: "true"
+  - key: WHISPER_MODEL
+    scope: RUN_TIME
+    value: small
+  - key: AUDIO_RETENTION_DAYS # backlog depth / history knob (owner key applies the bucket rule)
+    scope: RUN_TIME
+    value: "365"
+  - key: WHISPER_COMPUTE_TYPE
+    scope: RUN_TIME
+    value: int8
+  - key: SENTRY_ENVIRONMENT
+    scope: RUN_TIME
+    value: production
+  - key: PUBLIC_BASE_URL
+    scope: RUN_TIME
+    value: https://streamintel.cc
+  # --- secrets: preencher no dashboard, copiando do droplet ---
+  - key: FERNET_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: DATABASE_URL # pool: postgresql+psycopg://streamintel_app:...@...:25061/streamintel?sslmode=require
+    scope: RUN_TIME
+    type: SECRET
+  - key: VALKEY_URL # financialdata-valkey (nyc1)
+    scope: RUN_TIME
+    type: SECRET
+  - key: TWITCH_CLIENT_ID
+    scope: RUN_TIME
+    type: SECRET
+  - key: TWITCH_CLIENT_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: TWITCH_EVENTSUB_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_ENDPOINT
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_REGION
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: SPACES_BUCKET
+    scope: RUN_TIME
+    type: SECRET
+  - key: SENTRY_DSN
+    scope: RUN_TIME
+    type: SECRET
+  - key: ADMIN_LOGINS
+    scope: RUN_TIME
+    type: SECRET
+  - key: GRADIENT_ENDPOINT
+    scope: RUN_TIME
+    type: SECRET
+  - key: GRADIENT_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: GRADIENT_MODEL
+    scope: RUN_TIME
+    type: SECRET
+
+# --- API (HTTP) ---
+services:
+  - name: api
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    run_command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    http_port: 8000
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+    health_check:
+      http_path: /healthz
+    routes:
+      - path: /api
+      - path: /auth
+      - path: /eventsub
+      - path: /healthz
+
+# --- Front estático ---
+static_sites:
+  - name: web
+    source_dir: apps/web
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    build_command: npm ci && npm run build
+    output_dir: dist
+    routes:
+      - path: /
+
+# --- Workers (sem HTTP) ---
+workers:
+  - name: worker-capture
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    run_command: python -m workers.capture.main
+    instance_size_slug: apps-s-1vcpu-1gb
+    instance_count: 1
+
+  - name: worker-transcribe
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    run_command: python -m workers.transcribe.main
+    instance_size_slug: apps-s-1vcpu-2gb
+    instance_count: 1 # <- o dial N: sobe pra drenar o backlog mais rápido
+
+  - name: worker-analyze
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    run_command: python -m workers.analyze.main
+    instance_size_slug: apps-s-1vcpu-1gb # leve: LLM via Gradient
+    instance_count: 1
+
+# --- Migração antes de cada deploy (idempotente) ---
+jobs:
+  - name: migrate
+    kind: PRE_DEPLOY
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+    run_command: alembic upgrade head
+    instance_size_slug: apps-s-1vcpu-0.5gb
+
+# --- Anexa o cluster Postgres EXISTENTE (só pra trusted sources / rede) ---
+# Não cria banco novo. A conexão real vem de DATABASE_URL (pool), acima.
+databases:
+  - name: streamintel-pg
+    engine: PG
+    cluster_name: db-postgresql-nyc3-86715
+    production: true

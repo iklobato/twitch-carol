@@ -39,9 +39,11 @@ class _FakeLifecycleClient:
     def __init__(self, err_code: str | None) -> None:
         self._err_code = err_code
         self.called = False
+        self.config: dict[str, object] | None = None
 
-    def put_bucket_lifecycle_configuration(self, **_kwargs) -> None:
+    def put_bucket_lifecycle_configuration(self, **kwargs) -> None:
         self.called = True
+        self.config = kwargs.get("LifecycleConfiguration")
         if self._err_code is not None:
             raise ClientError(
                 {"Error": {"Code": self._err_code, "Message": "x"}},
@@ -49,7 +51,9 @@ class _FakeLifecycleClient:
             )
 
 
-def _spaces_storage(err_code: str | None) -> SpacesAudioStorage:
+def _spaces_storage(
+    err_code: str | None, retention_days: int = 365
+) -> SpacesAudioStorage:
     storage = SpacesAudioStorage(
         Settings(
             spaces_bucket="b",
@@ -57,10 +61,23 @@ def _spaces_storage(err_code: str | None) -> SpacesAudioStorage:
             spaces_secret="s",
             spaces_endpoint="https://e",
             spaces_region="r",
+            audio_retention_days=retention_days,
         )
     )
     storage._client = _FakeLifecycleClient(err_code)
     return storage
+
+
+def test_ensure_lifecycle_uses_configured_audio_retention() -> None:
+    storage = _spaces_storage(None, retention_days=90)
+    storage.ensure_lifecycle_rule()
+
+    config = storage._client.config
+    assert config is not None
+    audio_rule = config["Rules"][0]
+    assert audio_rule["Filter"]["Prefix"] == "audio/"
+    assert audio_rule["Expiration"]["Days"] == 90
+    assert audio_rule["ID"] == "expire-audio-90d"
 
 
 def test_ensure_lifecycle_swallows_access_denied() -> None:
