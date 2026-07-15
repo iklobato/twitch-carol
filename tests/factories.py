@@ -166,6 +166,7 @@ def make_stream(
     started_minutes_ago: int = 60,
     duration_minutes: int | None = 30,
     title: str | None = None,
+    category: str | None = None,
 ) -> Stream:
     started = datetime.now(UTC) - timedelta(minutes=started_minutes_ago)
     stream = Stream(
@@ -176,6 +177,7 @@ def make_stream(
         ),
         status=status,
         title=title,
+        category=category,
     )
     db.add(stream)
     db.flush()

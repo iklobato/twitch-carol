@@ -18,7 +18,14 @@ from core.follower_signals import (
     suspicious_followers,
     topic_to_follows,
 )
-from core.models import ChatMessage, Follower, FollowerAiInsight, FollowerRecommendation
+from core.models import (
+    ChatMessage,
+    Follower,
+    FollowerAiInsight,
+    FollowerRecommendation,
+    Stream,
+    StreamStatus,
+)
 
 router = APIRouter(prefix="/api/followers")
 
@@ -177,6 +184,17 @@ class FollowerAi(BaseModel):
     reactivations: list[ReactivationOut]
 
 
+class CollabCandidate(BaseModel):
+    login: str
+    display_name: str | None
+    profile_image_url: str | None
+    broadcaster_type: str | None
+    stream_category: str | None
+    stream_language: str | None
+    shared_category: bool
+    followed_at: datetime
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -189,6 +207,7 @@ class FollowersOverview(BaseModel):
     loyal_subscribers: list[TopFollower]
     signals: Signals
     ai: FollowerAi
+    collab: list[CollabCandidate]
     recommendations: list[RecommendationOut]
 
 
@@ -349,6 +368,46 @@ def _loyal_subscribers(profiles: list[FollowerProfile]) -> list[TopFollower]:
     return [_top(p) for p in loyal[:LOYAL_LIMIT]]
 
 
+COLLAB_LIMIT = 24
+
+
+def _collab(db: DbSession, channel_id: int) -> list[CollabCandidate]:
+    """Streamer followers ranked as collab candidates: those whose category
+    overlaps yours come first (shared audience), then the rest by recency."""
+    my_categories = {
+        cat
+        for cat in db.scalars(
+            select(func.distinct(Stream.category))
+            .where(Stream.channel_id == channel_id)
+            .where(Stream.status == StreamStatus.READY)
+        )
+        if cat
+    }
+    streamers = db.scalars(
+        select(Follower)
+        .where(Follower.channel_id == channel_id)
+        .where(Follower.broadcaster_type.in_((AFFILIATE, PARTNER)))
+        .where(Follower.streamer_enriched_at.is_not(None))
+    )
+    candidates = [
+        CollabCandidate(
+            login=f.login,
+            display_name=f.display_name,
+            profile_image_url=f.profile_image_url,
+            broadcaster_type=f.broadcaster_type,
+            stream_category=f.stream_category,
+            stream_language=f.stream_language,
+            shared_category=(
+                f.stream_category in my_categories if f.stream_category else False
+            ),
+            followed_at=f.followed_at,
+        )
+        for f in streamers
+    ]
+    candidates.sort(key=lambda c: (c.shared_category, c.followed_at), reverse=True)
+    return candidates[:COLLAB_LIMIT]
+
+
 def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> FollowerAi:
     """Rule-based segments (always available) joined to the LLM's per-segment
     action, plus the audience bio summary and reactivation nudges (present only
@@ -466,5 +525,6 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         loyal_subscribers=_loyal_subscribers(profiles),
         signals=_signals(db, channel.id, now),
         ai=_ai(db, channel.id, profiles),
+        collab=_collab(db, channel.id),
         recommendations=_recommendations(db, channel.id),
     )

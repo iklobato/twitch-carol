@@ -41,6 +41,7 @@ class FakeTwitch:
         self.stream_info: dict | None = None  # helix /streams payload for the user
         self.followers: list[dict] = []  # helix /channels/followers backfill
         self.user_profiles: dict[str, dict] = {}  # helix /users?id=... enrichment
+        self.channel_infos: dict[str, dict] = {}  # helix /channels?broadcaster_id=...
         self.videos: list[dict] = []  # helix /videos backfill
         self.vips: list[dict] = []  # helix /channels/vips backfill
         self.goals: list[dict] = []  # helix /goals backfill
@@ -117,6 +118,10 @@ class FakeTwitch:
             return self._handle_users(request)
         if path == "/helix/streams":
             data = [self.stream_info] if self.stream_info else []
+            return httpx.Response(200, json={"data": data})
+        if path == "/helix/channels":
+            ids = request.url.params.get_list("broadcaster_id")
+            data = [self.channel_infos[i] for i in ids if i in self.channel_infos]
             return httpx.Response(200, json={"data": data})
         if path == "/helix/channels/followers":
             return httpx.Response(200, json={"data": self.followers, "pagination": {}})

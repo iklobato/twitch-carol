@@ -381,6 +381,17 @@ export type FollowerAi = {
   reactivations: Reactivation[]
 }
 
+export type CollabCandidate = {
+  login: string
+  display_name: string | null
+  profile_image_url: string | null
+  broadcaster_type: string | null
+  stream_category: string | null
+  stream_language: string | null
+  shared_category: boolean
+  followed_at: string
+}
+
 export type FollowersOverview = {
   kpis: FollowerKpis
   growth: GrowthBucket[]
@@ -393,6 +404,7 @@ export type FollowersOverview = {
   loyal_subscribers: TopFollower[]
   signals: FollowerSignals
   ai: FollowerAi
+  collab: CollabCandidate[]
   recommendations: Recommendation[]
 }
 
