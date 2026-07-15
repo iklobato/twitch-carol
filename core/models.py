@@ -111,6 +111,12 @@ class Follower(Base):
     broadcaster_type: Mapped[str | None] = mapped_column(String(16))
     account_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Streamer-only enrichment (affiliate/partner), from Get Channel Information.
+    stream_category: Mapped[str | None] = mapped_column(String(128))
+    stream_language: Mapped[str | None] = mapped_column(String(16))
+    streamer_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class PastBroadcast(Base):

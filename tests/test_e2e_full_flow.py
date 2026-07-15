@@ -281,6 +281,14 @@ def test_full_flow_login_processing_visualization(
             "created_at": "2018-05-01T00:00:00Z",
         }
     }
+    fake_twitch.channel_infos = {
+        "301": {
+            "broadcaster_id": "301",
+            "broadcaster_language": "pt",
+            "game_name": "Just Chatting",
+            "title": "bate-papo",
+        }
+    }
     fake_twitch.videos = [
         {
             "id": "v9",
@@ -313,6 +321,9 @@ def test_full_flow_login_processing_visualization(
     assert followers["kpis"]["partners"] == 1
     assert followers["recent"][0]["display_name"] == "Veterano"
     assert followers["notable"][0]["login"] == "veterano"
+    # streamer enrichment ran too: the partner shows up as a collab candidate
+    assert followers["collab"][0]["login"] == "veterano"
+    assert followers["collab"][0]["stream_category"] == "Just Chatting"
 
     # token refresh rotates through the fake as well
     channel.token_expires_at = datetime.now(UTC) - timedelta(minutes=1)

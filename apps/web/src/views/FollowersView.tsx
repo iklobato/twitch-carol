@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
 import type {
   CohortRow,
+  CollabCandidate,
   FollowerAi,
   FollowerProfile,
   FollowersOverview,
@@ -609,6 +610,61 @@ function AiSection({ ai }: { ai: FollowerAi }) {
   )
 }
 
+function CollabSection({ collab }: { collab: CollabCandidate[] }) {
+  if (collab.length === 0) return null
+  const shared = collab.filter((c) => c.shared_category).length
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Candidatos a collab</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        Streamers que te seguem, com o que transmitem.{' '}
+        {shared > 0 && (
+          <span className="text-emerald-400">
+            {shared} jogam a mesma categoria que você.
+          </span>
+        )}
+      </p>
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {collab.map((c) => (
+          <div
+            key={c.login}
+            className={`flex items-center gap-3 rounded-lg border p-3 ${c.shared_category ? 'border-emerald-800 bg-emerald-950/20' : 'border-zinc-800 bg-zinc-900'}`}
+          >
+            {c.profile_image_url ? (
+              <img
+                src={c.profile_image_url}
+                alt={c.login}
+                className="h-10 w-10 shrink-0 rounded-full"
+              />
+            ) : (
+              <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-800" />
+            )}
+            <div className="min-w-0 flex-1">
+              <a
+                href={`https://twitch.tv/${c.login}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate text-sm font-semibold text-purple-300 hover:underline"
+              >
+                {c.display_name ?? c.login}
+              </a>
+              <p className="truncate text-xs text-zinc-500">
+                {c.stream_category ?? 'categoria desconhecida'}
+                {c.stream_language && ` · ${c.stream_language}`}
+              </p>
+            </div>
+            {c.shared_category && (
+              <span className="shrink-0 rounded-full border border-emerald-700 px-2 py-0.5 text-[10px] text-emerald-300">
+                mesma categoria
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function FollowersView() {
   const [overview, setOverview] = useState<FollowersOverview | null>(null)
 
@@ -652,11 +708,7 @@ export default function FollowersView() {
             valueColumn="months"
           />
           <Cohorts cohorts={overview.cohorts} />
-          <ProfileGrid
-            title="Streamers que te seguem"
-            subtitle="Afiliados e parceiros na sua base: candidatos a collab."
-            profiles={overview.notable}
-          />
+          <CollabSection collab={overview.collab} />
           <ProfileGrid
             title="Seguidores recentes"
             subtitle="Quem chegou por último."

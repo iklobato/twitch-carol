@@ -137,3 +137,35 @@ def test_followers_funnel_value_and_loyalty(api_client, db) -> None:
 
     # one cohort row (all followed ~now), sizing the base
     assert sum(row["size"] for row in body["cohorts"]) == 3
+
+
+def test_followers_collab_ranks_shared_category_first(api_client, db) -> None:
+    from tests.factories import make_stream
+
+    channel = make_channel(db)
+    # the channel streams Valorant
+    make_stream(db, channel, category="Valorant")
+
+    # a streamer follower in the same category, one in another, one not enriched
+    same = add_follower(db, channel, "matchx", broadcaster_type="affiliate", enriched=True)
+    same.stream_category = "Valorant"
+    same.stream_language = "pt"
+    same.streamer_enriched_at = same.followed_at
+
+    other = add_follower(db, channel, "lolplayer", broadcaster_type="partner", enriched=True)
+    other.stream_category = "League of Legends"
+    other.streamer_enriched_at = other.followed_at
+
+    # affiliate but not streamer-enriched yet -> excluded from collab
+    add_follower(db, channel, "pending", broadcaster_type="affiliate", enriched=True)
+    db.flush()
+
+    login_as(api_client, channel)
+    collab = api_client.get("/api/followers").json()["collab"]
+
+    logins = [c["login"] for c in collab]
+    assert "pending" not in logins  # not streamer-enriched
+    assert logins[0] == "matchx"  # shared category ranks first
+    assert collab[0]["shared_category"] is True
+    other_row = next(c for c in collab if c["login"] == "lolplayer")
+    assert other_row["shared_category"] is False
