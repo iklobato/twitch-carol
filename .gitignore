@@ -26,5 +26,12 @@ chat-log.txt
 chat-log.csv
 .playwright-mcp/
 
+# Local agent config
+.claude/
+
+# Local screenshots
+/meu-canal-*.png
+/streamintel-*.png
+
 # Secrets
 .env
