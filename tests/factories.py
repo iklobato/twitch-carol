@@ -39,9 +39,11 @@ def add_follower(
     broadcaster_type: str | None = None,
     account_created_at: datetime | None = None,
     enriched: bool = False,
+    followed_at: datetime | None = None,
 ) -> Follower:
     unique = next(_sequence)
-    followed_at = datetime.now(UTC) - timedelta(minutes=followed_minutes_ago)
+    if followed_at is None:
+        followed_at = datetime.now(UTC) - timedelta(minutes=followed_minutes_ago)
     follower = Follower(
         channel_id=channel.id,
         twitch_user_id=unique,
