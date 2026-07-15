@@ -248,6 +248,7 @@ export type GoalOut = {
   current_amount: number
   target_amount: number
   pct: number
+  created_at: string | null
 }
 
 export type Community = {

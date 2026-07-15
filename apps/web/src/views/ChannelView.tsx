@@ -11,7 +11,7 @@ import {
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
-import type { ChannelOverview, GrowthPoint } from '../types'
+import type { ChannelOverview, GoalOut, GrowthPoint } from '../types'
 
 Chart.register(
   LineController,
@@ -138,6 +138,7 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: { legend: { labels: { color: '#d4d4d8' } } },
         scales: {
           x: { ticks: { color: '#71717a', maxTicksLimit: 12 }, grid: { color: '#27272a' } },
@@ -163,7 +164,9 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
     <div className="mb-6">
       <h3 className="mb-3 text-lg font-bold">Crescimento ao longo das lives</h3>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-        <canvas ref={canvasRef} className="max-h-72 w-full" />
+        <div className="h-72 w-full">
+          <canvas ref={canvasRef} />
+        </div>
       </div>
     </div>
   )
@@ -331,11 +334,105 @@ function SubscribersSection({ overview }: { overview: ChannelOverview }) {
   )
 }
 
-const GOAL_LABELS: Record<string, string> = {
-  follower: 'Seguidores',
-  subscription: 'Inscritos',
-  subscription_count: 'Inscritos',
-  new_subscription: 'Novos inscritos',
+// Twitch's five goal types. `sinceCreated` marks the ones whose current_amount
+// counts only what was gained after the goal was created (so a per-day pace is
+// meaningful); the totals include pre-goal history, where a pace would mislead.
+type GoalMeta = { label: string; unit: string; hint: string; sinceCreated: boolean }
+
+const GOAL_META: Record<string, GoalMeta> = {
+  follower: {
+    label: 'Seguidores',
+    unit: 'seguidores',
+    hint: 'Total de seguidores do canal.',
+    sinceCreated: false,
+  },
+  subscription: {
+    label: 'Inscrições (pontos)',
+    unit: 'pontos',
+    hint: 'Pontos de inscrição do canal. Tiers mais altos valem mais, então não é o número de inscritos.',
+    sinceCreated: false,
+  },
+  subscription_count: {
+    label: 'Inscritos',
+    unit: 'inscritos',
+    hint: 'Número de inscritos ativos (cabeças, não pontos).',
+    sinceCreated: false,
+  },
+  new_subscription: {
+    label: 'Novas inscrições (pontos)',
+    unit: 'pontos',
+    hint: 'Pontos de inscrição ganhos desde que a meta foi criada.',
+    sinceCreated: true,
+  },
+  new_subscription_count: {
+    label: 'Novos inscritos',
+    unit: 'inscritos',
+    hint: 'Inscritos ganhos desde que a meta foi criada.',
+    sinceCreated: true,
+  },
+}
+
+const MS_PER_DAY = 86_400_000
+
+function daysSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / MS_PER_DAY
+}
+
+function ageLabel(iso: string): string {
+  const days = Math.floor(daysSince(iso))
+  if (days < 1) return 'criada hoje'
+  return `ativa há ${days} dia${days > 1 ? 's' : ''}`
+}
+
+function paceLabel(goal: GoalOut, meta: GoalMeta | undefined): string | null {
+  if (!meta?.sinceCreated || goal.created_at === null) return null
+  if (goal.current_amount >= goal.target_amount) return null
+  const days = daysSince(goal.created_at)
+  if (days < 1) return null
+  const perDay = goal.current_amount / days
+  if (perDay <= 0) return 'sem progresso desde a criação'
+  const eta = Math.ceil((goal.target_amount - goal.current_amount) / perDay)
+  return `ritmo ${perDay.toFixed(1)}/dia · ~${eta} dia${eta > 1 ? 's' : ''} para a meta`
+}
+
+function GoalItem({ goal }: { goal: GoalOut }) {
+  const meta = GOAL_META[goal.goal_type]
+  const label = goal.description ?? meta?.label ?? goal.goal_type
+  const unit = meta?.unit ?? ''
+  const reached = goal.current_amount >= goal.target_amount
+  const remaining = Math.max(goal.target_amount - goal.current_amount, 0)
+  const pace = paceLabel(goal, meta)
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-2">
+        <span className="font-medium">{label}</span>
+        <span className="tabular-nums text-zinc-400">
+          {goal.current_amount.toLocaleString('pt-BR')}/
+          {goal.target_amount.toLocaleString('pt-BR')}
+          {unit && <span className="ml-1 text-zinc-600">{unit}</span>}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded bg-zinc-800">
+        <div
+          className={`h-full rounded ${reached ? 'bg-emerald-500' : 'bg-purple-500'}`}
+          style={{ width: `${Math.min(goal.pct, 100)}%` }}
+        />
+      </div>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
+        <span>{goal.pct}%</span>
+        {reached ? (
+          <span className="text-emerald-400">✓ meta alcançada</span>
+        ) : (
+          <span>
+            faltam {remaining.toLocaleString('pt-BR')} {unit}
+          </span>
+        )}
+        {goal.created_at && <span>· {ageLabel(goal.created_at)}</span>}
+        {pace && <span>· {pace}</span>}
+      </div>
+      {meta?.hint && <p className="mt-0.5 text-[11px] text-zinc-600">{meta.hint}</p>}
+    </div>
+  )
 }
 
 function CommunityHealth({ overview }: { overview: ChannelOverview }) {
@@ -350,23 +447,9 @@ function CommunityHealth({ overview }: { overview: ChannelOverview }) {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Metas
             </p>
-            <div className="space-y-3 text-sm">
+            <div className="space-y-4 text-sm">
               {goals.map((goal) => (
-                <div key={goal.goal_type + goal.description}>
-                  <div className="mb-1 flex justify-between">
-                    <span>{goal.description ?? GOAL_LABELS[goal.goal_type] ?? goal.goal_type}</span>
-                    <span className="text-zinc-400">
-                      {goal.current_amount.toLocaleString('pt-BR')}/
-                      {goal.target_amount.toLocaleString('pt-BR')}
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded bg-zinc-800">
-                    <div
-                      className="h-full rounded bg-purple-500"
-                      style={{ width: `${Math.min(goal.pct, 100)}%` }}
-                    />
-                  </div>
-                </div>
+                <GoalItem key={goal.goal_type + goal.description} goal={goal} />
               ))}
             </div>
           </div>

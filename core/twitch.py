@@ -299,6 +299,7 @@ class GoalRecord(BaseModel):
     description: str | None = None
     current_amount: int
     target_amount: int
+    created_at: datetime
 
 
 def get_vips(
