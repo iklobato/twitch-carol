@@ -13,7 +13,14 @@ import {
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
-import type { FollowerProfile, FollowersOverview, GrowthBucket } from '../types'
+import type {
+  CohortRow,
+  FollowerProfile,
+  FollowersOverview,
+  FunnelStage,
+  GrowthBucket,
+  TopFollower,
+} from '../types'
 
 Chart.register(
   LineController,
@@ -277,6 +284,154 @@ function Recommendations({ overview }: { overview: FollowersOverview }) {
   )
 }
 
+function usd(value: number): string {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
+}
+
+const STAGE_STYLE: Record<string, string> = {
+  seguidor: 'border-zinc-700 text-zinc-400',
+  engajado: 'border-sky-800 text-sky-300',
+  inscrito: 'border-purple-800 text-purple-300',
+  pagante: 'border-emerald-800 text-emerald-300',
+}
+
+function StageBadge({ stage }: { stage: string }) {
+  return (
+    <span
+      className={`rounded-full border px-2 py-0.5 text-[10px] ${STAGE_STYLE[stage] ?? 'border-zinc-700 text-zinc-400'}`}
+    >
+      {stage}
+    </span>
+  )
+}
+
+function Funnel({ funnel }: { funnel: FunnelStage[] }) {
+  if (funnel.length === 0) return null
+  const top = funnel[0].count || 1
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Funil de conversão</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        De seguidor a pagante. Cada etapa inclui as mais profundas.
+      </p>
+      <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        {funnel.map((stage) => {
+          const pct = Math.round((stage.count / top) * 100)
+          return (
+            <div key={stage.stage} className="flex items-center gap-3 text-sm">
+              <span className="w-40 shrink-0 text-zinc-300">{stage.label}</span>
+              <div className="h-4 flex-1 overflow-hidden rounded bg-zinc-800">
+                <div
+                  className="h-full rounded bg-gradient-to-r from-sky-600 to-emerald-500"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <span className="w-24 shrink-0 text-right tabular-nums text-zinc-400">
+                {stage.count.toLocaleString('pt-BR')} · {pct}%
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Cohorts({ cohorts }: { cohorts: CohortRow[] }) {
+  if (cohorts.length === 0) return null
+  const recent = cohorts.slice(-12).reverse()
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">Retenção por safra</h3>
+      <p className="mb-3 text-sm text-zinc-500">
+        Para cada mês em que ganhou seguidores, quantos depois deram chat, assinaram ou
+        pagaram.
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-zinc-800 bg-zinc-900">
+        <table className="w-full min-w-[32rem] text-sm">
+          <thead>
+            <tr className="border-b border-zinc-800 text-left text-xs uppercase tracking-wide text-zinc-500">
+              <th className="p-3">Mês</th>
+              <th className="p-3 text-right">Seguidores</th>
+              <th className="p-3 text-right">Deram chat</th>
+              <th className="p-3 text-right">Assinaram</th>
+              <th className="p-3 text-right">Pagaram</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((row) => (
+              <tr key={row.month} className="border-b border-zinc-800/50 last:border-0">
+                <td className="p-3 text-zinc-300">{row.month}</td>
+                <td className="p-3 text-right tabular-nums">{row.size}</td>
+                <td className="p-3 text-right tabular-nums text-sky-300">
+                  {row.chatted} <span className="text-zinc-600">({Math.round((row.chatted / row.size) * 100)}%)</span>
+                </td>
+                <td className="p-3 text-right tabular-nums text-purple-300">{row.subscribed}</td>
+                <td className="p-3 text-right tabular-nums text-emerald-300">{row.paid}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function FollowerTable({
+  title,
+  subtitle,
+  rows,
+  valueColumn,
+}: {
+  title: string
+  subtitle: string
+  rows: TopFollower[]
+  valueColumn: 'usd' | 'months'
+}) {
+  if (rows.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">{title}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{subtitle}</p>
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <div
+            key={row.login}
+            className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3"
+          >
+            <span className="w-6 shrink-0 text-sm font-bold tabular-nums text-zinc-600">
+              {index + 1}º
+            </span>
+            <a
+              href={`https://twitch.tv/${row.login}`}
+              target="_blank"
+              rel="noreferrer"
+              className="min-w-32 text-sm font-semibold text-purple-300 hover:underline"
+            >
+              {row.display_name ?? row.login}
+            </a>
+            <StageBadge stage={row.stage} />
+            <span className="ml-auto text-sm tabular-nums">
+              {valueColumn === 'usd' ? (
+                <span className="font-semibold text-emerald-400">{usd(row.estimated_usd)}</span>
+              ) : (
+                <span className="font-semibold text-purple-300">
+                  {row.sub_months} {row.sub_months === 1 ? 'mês' : 'meses'}
+                </span>
+              )}
+            </span>
+            <span className="w-full text-xs text-zinc-500 md:w-auto md:pl-2">
+              {row.messages.toLocaleString('pt-BR')} msgs · {row.streams_present} live
+              {row.streams_present === 1 ? '' : 's'}
+              {row.last_seen && <> · visto {formatDate(row.last_seen)}</>}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function FollowersView() {
   const [overview, setOverview] = useState<FollowersOverview | null>(null)
 
@@ -302,8 +457,22 @@ export default function FollowersView() {
         <>
           <Kpis overview={overview} />
           <Recommendations overview={overview} />
+          <Funnel funnel={overview.funnel} />
           <GrowthChart growth={overview.growth} />
           <Composition overview={overview} />
+          <FollowerTable
+            title="Quem mais contribuiu"
+            subtitle="Seguidores que mais trouxeram receita (bits, subs, gifts)."
+            rows={overview.top_value}
+            valueColumn="usd"
+          />
+          <FollowerTable
+            title="Assinantes mais leais"
+            subtitle="Maior tempo de inscrição contínua."
+            rows={overview.loyal_subscribers}
+            valueColumn="months"
+          />
+          <Cohorts cohorts={overview.cohorts} />
           <ProfileGrid
             title="Streamers que te seguem"
             subtitle="Afiliados e parceiros na sua base: candidatos a collab."

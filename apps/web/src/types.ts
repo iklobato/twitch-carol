@@ -317,12 +317,37 @@ export type FollowerComposition = {
   chatty: number
 }
 
+export type FunnelStage = { stage: string; label: string; count: number }
+
+export type CohortRow = {
+  month: string
+  size: number
+  chatted: number
+  subscribed: number
+  paid: number
+}
+
+export type TopFollower = {
+  login: string
+  display_name: string | null
+  stage: string
+  messages: number
+  streams_present: number
+  estimated_usd: number
+  sub_months: number
+  last_seen: string | null
+}
+
 export type FollowersOverview = {
   kpis: FollowerKpis
   growth: GrowthBucket[]
   recent: FollowerProfile[]
   notable: FollowerProfile[]
   composition: FollowerComposition
+  funnel: FunnelStage[]
+  cohorts: CohortRow[]
+  top_value: TopFollower[]
+  loyal_subscribers: TopFollower[]
   recommendations: Recommendation[]
 }
 

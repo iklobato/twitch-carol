@@ -188,6 +188,7 @@ def add_chat(
     author: str | None = None,
     text: str = "mensagem de teste",
     spread_seconds: int = 60,
+    badges: dict | None = None,
 ) -> list[ChatMessage]:
     messages = []
     for index in range(count):
@@ -202,6 +203,7 @@ def add_chat(
             author_id=author or f"author_{index % 7}",
             author_login=author or f"author_{index % 7}",
             text=text,
+            badges=badges,
         )
         db.add(message)
         messages.append(message)
@@ -236,13 +238,18 @@ def add_event(
     event_type: str = "channel.follow",
     offset_seconds: int = 30,
     amount: int | None = None,
+    login: str | None = None,
+    payload: dict | None = None,
 ) -> Event:
+    body = payload if payload is not None else {"mock": True}
+    if login is not None:
+        body = {**body, "user_login": login}
     event = Event(
         stream_id=stream.id,
         channel_id=stream.channel_id,
         occurred_at=stream.started_at + timedelta(seconds=offset_seconds),
         type=event_type,
-        payload={"mock": True},
+        payload=body,
         amount=amount,
     )
     db.add(event)

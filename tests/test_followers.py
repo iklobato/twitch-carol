@@ -103,3 +103,37 @@ def test_followers_empty(api_client, db) -> None:
 
 def test_followers_requires_session(api_client) -> None:
     assert api_client.get("/api/followers").status_code == 401
+
+
+def test_followers_funnel_value_and_loyalty(api_client, db) -> None:
+    from tests.factories import add_event, make_stream
+
+    channel = make_channel(db)
+    add_follower(db, channel, "whale", enriched=True)
+    add_follower(db, channel, "regular", enriched=True)
+    add_follower(db, channel, "lurker", enriched=True)
+    stream = make_stream(db, channel)
+    add_chat(db, stream, 5, author="whale")
+    add_chat(db, stream, 2, author="regular", badges={"subscriber": "12"})
+    add_event(db, stream, "channel.cheer", amount=2000, login="whale")  # $20
+    db.flush()
+
+    login_as(api_client, channel)
+    body = api_client.get("/api/followers").json()
+
+    # funnel is cumulative: 3 follow, 2 chatted, 1 subscribed (badge), 1 paid
+    stages = {s["stage"]: s["count"] for s in body["funnel"]}
+    assert stages["seguidor"] == 3
+    assert stages["engajado"] == 2
+    assert stages["pagante"] == 1
+
+    # whale tops the value table
+    assert body["top_value"][0]["login"] == "whale"
+    assert body["top_value"][0]["estimated_usd"] == 20.0
+
+    # regular has the deepest sub badge -> leads loyalty
+    assert body["loyal_subscribers"][0]["login"] == "regular"
+    assert body["loyal_subscribers"][0]["sub_months"] == 12
+
+    # one cohort row (all followed ~now), sizing the base
+    assert sum(row["size"] for row in body["cohorts"]) == 3
