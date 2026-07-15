@@ -11,6 +11,12 @@ from sqlalchemy import func, select
 
 from apps.api.deps import CurrentChannel, DbSession
 from core.follower_profiles import FollowerProfile, build_follower_profiles
+from core.follower_signals import (
+    follow_velocity,
+    raid_attribution,
+    suspicious_followers,
+    topic_to_follows,
+)
 from core.models import ChatMessage, Follower, FollowerRecommendation
 
 router = APIRouter(prefix="/api/followers")
@@ -117,6 +123,39 @@ class TopFollower(BaseModel):
     last_seen: datetime | None
 
 
+class RaidOut(BaseModel):
+    raider_login: str | None
+    viewers: int
+    at: datetime
+    follows_after: int
+
+
+class SuspiciousOut(BaseModel):
+    login: str
+    display_name: str | None
+    score: int
+    reasons: list[str]
+
+
+class VelocityDayOut(BaseModel):
+    day: str
+    follows: int
+    is_spike: bool
+
+
+class TopicFollowsOut(BaseModel):
+    topic: str
+    follows: int
+
+
+class Signals(BaseModel):
+    raids: list[RaidOut]
+    suspicious: list[SuspiciousOut]
+    suspicious_total: int
+    velocity: list[VelocityDayOut]
+    topic_follows: list[TopicFollowsOut]
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -127,6 +166,7 @@ class FollowersOverview(BaseModel):
     cohorts: list[CohortRow]
     top_value: list[TopFollower]
     loyal_subscribers: list[TopFollower]
+    signals: Signals
     recommendations: list[RecommendationOut]
 
 
@@ -287,6 +327,43 @@ def _loyal_subscribers(profiles: list[FollowerProfile]) -> list[TopFollower]:
     return [_top(p) for p in loyal[:LOYAL_LIMIT]]
 
 
+def _signals(db: DbSession, channel_id: int, now: datetime) -> Signals:
+    """Derived signals: raid attribution, fake-follow risk, follow velocity with
+    spikes, and topic-to-follow correlation."""
+    raids = raid_attribution(db, channel_id)
+    suspicious = suspicious_followers(db, channel_id, now)
+    velocity = follow_velocity(db, channel_id)
+    topics = topic_to_follows(db, channel_id)
+    return Signals(
+        raids=[
+            RaidOut(
+                raider_login=r.raider_login,
+                viewers=r.viewers,
+                at=r.at,
+                follows_after=r.follows_after,
+            )
+            for r in raids
+        ],
+        suspicious=[
+            SuspiciousOut(
+                login=s.login,
+                display_name=s.display_name,
+                score=s.score,
+                reasons=s.reasons,
+            )
+            for s in suspicious
+        ],
+        suspicious_total=len(suspicious),
+        velocity=[
+            VelocityDayOut(day=v.day, follows=v.follows, is_spike=v.is_spike)
+            for v in velocity
+        ],
+        topic_follows=[
+            TopicFollowsOut(topic=t.topic, follows=t.follows) for t in topics
+        ],
+    )
+
+
 def _chatter_logins(db: DbSession, channel_id: int) -> set[str]:
     return set(
         db.scalars(
@@ -333,5 +410,6 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         cohorts=_cohorts(profiles),
         top_value=_top_value(profiles),
         loyal_subscribers=_loyal_subscribers(profiles),
+        signals=_signals(db, channel.id, now),
         recommendations=_recommendations(db, channel.id),
     )

@@ -17,9 +17,11 @@ import type {
   CohortRow,
   FollowerProfile,
   FollowersOverview,
+  FollowerSignals,
   FunnelStage,
   GrowthBucket,
   TopFollower,
+  VelocityDay,
 } from '../types'
 
 Chart.register(
@@ -432,6 +434,102 @@ function FollowerTable({
   )
 }
 
+function VelocitySparkline({ velocity }: { velocity: VelocityDay[] }) {
+  if (velocity.length === 0) return null
+  const recent = velocity.slice(-60)
+  const max = Math.max(...recent.map((d) => d.follows), 1)
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        Velocidade de follows (barras vermelhas = picos anômalos)
+      </p>
+      <div className="flex h-24 items-end gap-0.5">
+        {recent.map((day) => (
+          <div
+            key={day.day}
+            title={`${day.day}: ${day.follows} follows${day.is_spike ? ' (pico)' : ''}`}
+            className={`flex-1 rounded-t ${day.is_spike ? 'bg-red-500' : 'bg-sky-600'}`}
+            style={{ height: `${Math.max((day.follows / max) * 100, 2)}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Signals({ signals }: { signals: FollowerSignals }) {
+  const { raids, suspicious, suspicious_total, velocity, topic_follows } = signals
+  const hasAny =
+    raids.length > 0 ||
+    suspicious.length > 0 ||
+    velocity.length > 0 ||
+    topic_follows.length > 0
+  if (!hasAny) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-3 text-lg font-bold">De onde vêm e o que é real</h3>
+      <div className="mb-3">
+        <VelocitySparkline velocity={velocity} />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {raids.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Raids que trouxeram seguidores
+            </p>
+            <div className="space-y-1.5 text-sm">
+              {raids.slice(0, 6).map((raid, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <span className="text-purple-300">
+                    {raid.raider_login ?? 'raid'} <span className="text-zinc-600">· {raid.viewers} viewers</span>
+                  </span>
+                  <span className="text-emerald-400">+{raid.follows_after} follows</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {topic_follows.length > 0 && (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Assuntos que geraram follows
+            </p>
+            <div className="space-y-1.5 text-sm">
+              {topic_follows.slice(0, 6).map((t, i) => (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">{t.topic}</span>
+                  <span className="shrink-0 text-emerald-400">+{t.follows}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {suspicious.length > 0 && (
+        <div className="mt-4 rounded-lg border border-red-900/50 bg-red-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">
+            Follows suspeitos ({suspicious_total})
+          </p>
+          <p className="mb-3 text-xs text-zinc-500">
+            Perfis com sinais de bot/fake (conta nova, sem foto/bio, seguiu logo após criar).
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {suspicious.slice(0, 18).map((s) => (
+              <span
+                key={s.login}
+                title={s.reasons.join(', ')}
+                className="rounded-full border border-red-800 px-3 py-1 text-xs text-red-200"
+              >
+                {s.display_name ?? s.login} <span className="text-red-400">· {s.score}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function FollowersView() {
   const [overview, setOverview] = useState<FollowersOverview | null>(null)
 
@@ -459,6 +557,7 @@ export default function FollowersView() {
           <Recommendations overview={overview} />
           <Funnel funnel={overview.funnel} />
           <GrowthChart growth={overview.growth} />
+          <Signals signals={overview.signals} />
           <Composition overview={overview} />
           <FollowerTable
             title="Quem mais contribuiu"
