@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from apps.api.deps import CurrentChannel, DbSession
+from core.follower_ai import KIND_BIO, KIND_REACTIVATION, KIND_SEGMENT, build_segments
 from core.follower_profiles import FollowerProfile, build_follower_profiles
 from core.follower_signals import (
     follow_velocity,
@@ -17,7 +18,7 @@ from core.follower_signals import (
     suspicious_followers,
     topic_to_follows,
 )
-from core.models import ChatMessage, Follower, FollowerRecommendation
+from core.models import ChatMessage, Follower, FollowerAiInsight, FollowerRecommendation
 
 router = APIRouter(prefix="/api/followers")
 
@@ -156,6 +157,26 @@ class Signals(BaseModel):
     topic_follows: list[TopicFollowsOut]
 
 
+class SegmentOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    count: int
+    examples: list[str]
+    action: str | None
+
+
+class ReactivationOut(BaseModel):
+    who: str
+    message: str
+
+
+class FollowerAi(BaseModel):
+    segments: list[SegmentOut]
+    audience_summary: str | None
+    reactivations: list[ReactivationOut]
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -167,6 +188,7 @@ class FollowersOverview(BaseModel):
     top_value: list[TopFollower]
     loyal_subscribers: list[TopFollower]
     signals: Signals
+    ai: FollowerAi
     recommendations: list[RecommendationOut]
 
 
@@ -327,6 +349,38 @@ def _loyal_subscribers(profiles: list[FollowerProfile]) -> list[TopFollower]:
     return [_top(p) for p in loyal[:LOYAL_LIMIT]]
 
 
+def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> FollowerAi:
+    """Rule-based segments (always available) joined to the LLM's per-segment
+    action, plus the audience bio summary and reactivation nudges (present only
+    after a live has been analyzed)."""
+    rows = list(
+        db.scalars(
+            select(FollowerAiInsight).where(FollowerAiInsight.channel_id == channel_id)
+        )
+    )
+    action_by_label = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
+    summary = next((r.content for r in rows if r.kind == KIND_BIO), None)
+    reactivations = [
+        ReactivationOut(who=r.title or "", message=r.content)
+        for r in rows
+        if r.kind == KIND_REACTIVATION and r.title
+    ]
+    segments = [
+        SegmentOut(
+            key=s.key,
+            label=s.label,
+            description=s.description,
+            count=s.count,
+            examples=s.examples,
+            action=action_by_label.get(s.label),
+        )
+        for s in build_segments(profiles)
+    ]
+    return FollowerAi(
+        segments=segments, audience_summary=summary, reactivations=reactivations
+    )
+
+
 def _signals(db: DbSession, channel_id: int, now: datetime) -> Signals:
     """Derived signals: raid attribution, fake-follow risk, follow velocity with
     spikes, and topic-to-follow correlation."""
@@ -411,5 +465,6 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         top_value=_top_value(profiles),
         loyal_subscribers=_loyal_subscribers(profiles),
         signals=_signals(db, channel.id, now),
+        ai=_ai(db, channel.id, profiles),
         recommendations=_recommendations(db, channel.id),
     )

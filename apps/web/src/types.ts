@@ -364,6 +364,23 @@ export type FollowerSignals = {
   topic_follows: TopicFollows[]
 }
 
+export type FollowerSegment = {
+  key: string
+  label: string
+  description: string
+  count: number
+  examples: string[]
+  action: string | null
+}
+
+export type Reactivation = { who: string; message: string }
+
+export type FollowerAi = {
+  segments: FollowerSegment[]
+  audience_summary: string | null
+  reactivations: Reactivation[]
+}
+
 export type FollowersOverview = {
   kpis: FollowerKpis
   growth: GrowthBucket[]
@@ -375,6 +392,7 @@ export type FollowersOverview = {
   top_value: TopFollower[]
   loyal_subscribers: TopFollower[]
   signals: FollowerSignals
+  ai: FollowerAi
   recommendations: Recommendation[]
 }
 

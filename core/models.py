@@ -354,6 +354,25 @@ class FollowerRecommendation(Base):
     )
 
 
+class FollowerAiInsight(Base):
+    """LLM output about the follower base, one row per generated item. `kind`
+    separates the three views (segment action, audience bio summary, a targeted
+    reactivation nudge). Regenerated as a set per channel."""
+
+    __tablename__ = "follower_ai_insights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(24))
+    title: Mapped[str | None] = mapped_column(String(128))
+    content: Mapped[str] = mapped_column(Text)
+    evidence: Mapped[dict] = mapped_column(JSONB)
+    model_used: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
