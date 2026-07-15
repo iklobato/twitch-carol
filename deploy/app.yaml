@@ -29,6 +29,9 @@ envs:
   - key: WHISPER_MODEL
     scope: RUN_TIME
     value: small
+  - key: AUDIO_RETENTION_DAYS # backlog depth / history knob (owner key applies the bucket rule)
+    scope: RUN_TIME
+    value: "365"
   - key: WHISPER_COMPUTE_TYPE
     scope: RUN_TIME
     value: int8
