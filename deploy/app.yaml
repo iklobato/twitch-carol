@@ -27,9 +27,12 @@ envs:
   - key: LLM_BASE_URL # OpenRouter (troca aqui pra usar Gradient/OpenAI/Groq)
     scope: RUN_TIME
     value: https://openrouter.ai/api/v1
-  - key: LLM_MODEL
+  - key: LLM_MODEL # default: resumos/picos/topicos
     scope: RUN_TIME
-    value: meta-llama/llama-3.3-70b-instruct
+    value: anthropic/claude-haiku-4.5
+  - key: LLM_MODEL_STRONG # tarefas de alto valor: recomendacoes + IA de seguidores
+    scope: RUN_TIME
+    value: anthropic/claude-sonnet-4.6
   - key: LLM_REQUIRE_PROVIDER_PARAMS # OpenRouter: garante json mode
     scope: RUN_TIME
     value: "true"

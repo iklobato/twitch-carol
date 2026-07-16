@@ -68,19 +68,24 @@ class OpenAICompatBackend:
     CHARS_PER_TOKEN = 4
     TIMEOUT_SECONDS = 120.0
 
-    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.model_name = model or settings.llm_model
         missing = [
             name
             for name, value in (
                 ("LLM_BASE_URL", settings.llm_base_url),
                 ("LLM_API_KEY", settings.llm_api_key),
-                ("LLM_MODEL", settings.llm_model),
+                ("LLM_MODEL", self.model_name),
             )
             if not value
         ]
         if missing:
             raise RuntimeError(f"openai-compatible backend needs {', '.join(missing)}")
-        self.model_name = settings.llm_model
         self._url = settings.llm_base_url.rstrip("/") + "/chat/completions"
         self._headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
         self._require_provider_params = settings.llm_require_provider_params
@@ -116,11 +121,16 @@ _BACKENDS: dict[str, Callable[[Settings], LLMBackend]] = {
 }
 
 
-def get_llm_backend() -> LLMBackend:
+def get_llm_backend(strong: bool = False) -> LLMBackend:
+    """The configured LLM backend. strong=True uses the stronger model
+    (llm_model_strong) for high-value tasks; falls back to the default model
+    when unset or when the backend isn't the openai-compatible one."""
     settings = get_settings()
     backend_class = _BACKENDS.get(settings.llm_backend)
     if backend_class is None:
         raise RuntimeError(f"Unknown LLM_BACKEND: {settings.llm_backend}")
+    if strong and settings.llm_backend == "openai" and settings.llm_model_strong:
+        return OpenAICompatBackend(settings, model=settings.llm_model_strong)
     return backend_class(settings)
 
 

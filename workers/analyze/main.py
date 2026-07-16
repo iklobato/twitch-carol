@@ -24,9 +24,10 @@ def main() -> None:
     setup_logging()
     logger.info("analyze worker starting")
     backend = get_llm_backend()
+    strong = get_llm_backend(strong=True)
 
     def handle(db: Session, stream: Stream) -> object:
-        return run_analysis(db, stream, backend)
+        return run_analysis(db, stream, backend, strong)
 
     run_worker(SPEC, handle)
 
