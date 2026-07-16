@@ -27,6 +27,10 @@ describe('parseHash', () => {
     expect(parseHash('#/channel')).toEqual({ view: 'channel' })
   })
 
+  it('abre a visão do financeiro', () => {
+    expect(parseHash('#/finance')).toEqual({ view: 'finance' })
+  })
+
   it('rota desconhecida cai na home', () => {
     expect(parseHash('#/qualquer/coisa')).toEqual({ view: 'home' })
   })

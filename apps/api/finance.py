@@ -1,15 +1,35 @@
 """Per-stream financial breakdown from captured money events (bits, subs,
 gifts): total raised, top contributors, and which topics earned the most.
-Values are estimates; empty until the channel monetizes."""
+Values are estimates; empty until the channel monetizes.
 
+Also exposes the account-wide `/api/finance` overview: every monetization
+signal Twitch OAuth exposes, scoped to an analysis period (30d / 90d / all).
+Money numbers are estimates; the subscriber/goal blocks are *current*
+snapshots (Twitch has no per-period revenue endpoint)."""
+
+import enum
 from collections import defaultdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from apps.api.channel import (
+    ContentBucket,
+    Engagement,
+    GoalOut,
+    RecommendationOut,
+    Subscribers,
+    TopContributor,
+    _content_revenue,
+    _engagement,
+    _goals,
+    _recommendations,
+    _subscribers,
+)
 from apps.api.dashboard import _cited_ids, _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
 from core.finance import (
@@ -21,12 +41,29 @@ from core.finance import (
     event_contributor,
     event_usd,
 )
-from core.models import Event, Insight, InsightType, Stream, TranscriptSegment
+from core.models import (
+    Event,
+    Insight,
+    InsightType,
+    Stream,
+    StreamStatus,
+    TranscriptSegment,
+)
 
 router = APIRouter(prefix="/api")
 
 TOP_CONTRIBUTORS = 10
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
+BY_STREAM_LIMIT = 50
+
+
+class Period(enum.StrEnum):
+    P30 = "30d"
+    P90 = "90d"
+    ALL = "all"
+
+
+PERIOD_DAYS = {Period.P30: 30, Period.P90: 90}
 
 
 class Contributor(BaseModel):
@@ -160,4 +197,190 @@ def stream_finance(
         money_events=len(events),
         top_contributors=contributors,
         by_topic=by_topic,
+    )
+
+
+# --- Account-wide finance overview (period-scoped) --------------------------
+
+
+class StreamRevenue(BaseModel):
+    stream_id: int
+    title: str | None
+    started_at: datetime
+    estimated_usd: float
+
+
+class FinanceOverview(BaseModel):
+    period: str
+    estimated_usd: float
+    # None when there is no comparison window (period=all) or nothing earned
+    # in the previous window to compare against.
+    delta_pct: float | None
+    total_bits: int
+    total_subs: int
+    total_gifts: int
+    money_events: int
+    top_contributors: list[TopContributor]
+    by_stream: list[StreamRevenue]
+    by_content: list[ContentBucket]
+    engagement: Engagement
+    # Subscriber tiers/leaderboard and goals are *current* Twitch snapshots, not
+    # period-scoped: Twitch exposes no historical revenue. subs_ended is the one
+    # period-scoped field (derived from subscription.end events in-window).
+    subscribers: Subscribers
+    goals: list[GoalOut]
+    recommendations: list[RecommendationOut]
+
+
+@dataclass(frozen=True)
+class _MoneyFold:
+    total_usd: float
+    bits: int
+    subs: int
+    gifts: int
+    count: int
+    per_login_usd: dict[str, float]
+    per_login_streams: dict[str, set[int]]
+    per_stream_usd: dict[int, float]
+
+
+def resolve_period_window(
+    period: Period, now: datetime
+) -> tuple[datetime | None, datetime | None]:
+    """(start, previous_start) for the analysis period. ALL -> (None, None):
+    the whole history with no comparison window."""
+    days = PERIOD_DAYS.get(period)
+    if days is None:
+        return None, None
+    return now - timedelta(days=days), now - timedelta(days=2 * days)
+
+
+def _ready_streams_since(
+    db: Session, channel_id: int, since: datetime | None
+) -> list[Stream]:
+    stmt = (
+        select(Stream)
+        .where(Stream.channel_id == channel_id)
+        .where(Stream.status == StreamStatus.READY)
+    )
+    if since is not None:
+        stmt = stmt.where(Stream.started_at >= since)
+    return list(db.scalars(stmt.order_by(Stream.started_at)))
+
+
+def _load_money_events_for(db: Session, stream_ids: list[int]) -> list[Event]:
+    if not stream_ids:
+        return []
+    return list(
+        db.scalars(
+            select(Event)
+            .where(Event.stream_id.in_(stream_ids))
+            .where(Event.type.in_(MONEY_EVENT_TYPES))
+            .order_by(Event.occurred_at)
+        )
+    )
+
+
+def _fold_money(events: list[Event]) -> _MoneyFold:
+    total_usd = 0.0
+    bits = subs = gifts = 0
+    per_login_usd: dict[str, float] = defaultdict(float)
+    per_login_streams: dict[str, set[int]] = defaultdict(set)
+    per_stream_usd: dict[int, float] = defaultdict(float)
+    for event in events:
+        value = event_usd(event)
+        total_usd += value
+        per_stream_usd[event.stream_id] += value
+        login = event_contributor(event)
+        if login:
+            per_login_usd[login] += value
+            per_login_streams[login].add(event.stream_id)
+        if event.type == CHEER:
+            bits += event.amount or 0
+        elif event.type in (SUBSCRIBE, RESUB):
+            subs += 1
+        elif event.type == GIFT:
+            gifts += event.amount or 0
+    return _MoneyFold(
+        total_usd=total_usd,
+        bits=bits,
+        subs=subs,
+        gifts=gifts,
+        count=len(events),
+        per_login_usd=per_login_usd,
+        per_login_streams=per_login_streams,
+        per_stream_usd=per_stream_usd,
+    )
+
+
+@router.get("/finance")
+def finance_overview(
+    channel: CurrentChannel, db: DbSession, period: Period = Period.P30
+) -> FinanceOverview:
+    start, prev_start = resolve_period_window(period, datetime.now(UTC))
+    streams = _ready_streams_since(db, channel.id, prev_start)
+
+    current = [s for s in streams if start is None or s.started_at >= start]
+    previous: list[Stream] = []
+    if start is not None and prev_start is not None:
+        previous = [s for s in streams if prev_start <= s.started_at < start]
+    current_ids = [s.id for s in current]
+    previous_ids = {s.id for s in previous}
+
+    events = _load_money_events_for(db, [s.id for s in streams])
+    current_set = set(current_ids)
+    current_fold = _fold_money([e for e in events if e.stream_id in current_set])
+    previous_fold = _fold_money([e for e in events if e.stream_id in previous_ids])
+
+    delta_pct: float | None = None
+    if start is not None and previous_fold.total_usd > 0:
+        delta_pct = round(
+            (current_fold.total_usd - previous_fold.total_usd)
+            / previous_fold.total_usd
+            * 100,
+            1,
+        )
+
+    ranked = sorted(
+        current_fold.per_login_usd.items(), key=lambda item: item[1], reverse=True
+    )[:TOP_CONTRIBUTORS]
+    contributors = [
+        TopContributor(
+            login=login,
+            estimated_usd=round(usd, 2),
+            streams=len(current_fold.per_login_streams[login]),
+        )
+        for login, usd in ranked
+    ]
+
+    meta = {s.id: s for s in current}
+    by_stream = sorted(
+        (
+            StreamRevenue(
+                stream_id=sid,
+                title=meta[sid].title,
+                started_at=meta[sid].started_at,
+                estimated_usd=round(usd, 2),
+            )
+            for sid, usd in current_fold.per_stream_usd.items()
+            if usd > 0
+        ),
+        key=lambda row: row.started_at,
+    )[:BY_STREAM_LIMIT]
+
+    return FinanceOverview(
+        period=period.value,
+        estimated_usd=round(current_fold.total_usd, 2),
+        delta_pct=delta_pct,
+        total_bits=current_fold.bits,
+        total_subs=current_fold.subs,
+        total_gifts=current_fold.gifts,
+        money_events=current_fold.count,
+        top_contributors=contributors,
+        by_stream=by_stream,
+        by_content=_content_revenue(db, channel.id, current_ids),
+        engagement=_engagement(db, current_ids),
+        subscribers=_subscribers(db, channel.id, current_ids),
+        goals=_goals(db, channel.id),
+        recommendations=_recommendations(db, channel.id),
     )

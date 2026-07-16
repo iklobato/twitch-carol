@@ -4,6 +4,7 @@ export type Route =
   | { view: 'home' }
   | { view: 'channel' }
   | { view: 'followers' }
+  | { view: 'finance' }
   | { view: 'stream'; streamId: number }
   | { view: 'search'; query: string }
 
@@ -14,6 +15,9 @@ export function parseHash(hash: string): Route {
   }
   if (clean === 'followers') {
     return { view: 'followers' }
+  }
+  if (clean === 'finance') {
+    return { view: 'finance' }
   }
   const streamMatch = clean.match(/^stream\/(\d+)/)
   if (streamMatch) {
