@@ -10,6 +10,7 @@ guest_conversation yet (kind and plumbing exist; see _is_guest_conversation).
 import io
 import logging
 import tempfile
+import time
 import wave
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -161,8 +162,14 @@ class RemoteTranscriber:
     worker stays light and long streams don't hog CPU."""
 
     TIMEOUT_SECONDS = 120.0
+    MAX_ATTEMPTS = 3
 
-    def __init__(self, settings: Settings, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        retry_backoff: float = 1.0,
+    ) -> None:
         missing = [
             name
             for name, value in (
@@ -177,31 +184,42 @@ class RemoteTranscriber:
         self._url = settings.transcribe_base_url.rstrip("/") + "/audio/transcriptions"
         self._headers = {"Authorization": f"Bearer {settings.transcribe_api_key}"}
         self._model = settings.transcribe_model
+        self._retry_backoff = retry_backoff
         self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
 
     def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]:
-        """Returns (start, end, text) relative to the given audio chunk."""
-        response = self._client.post(
-            self._url,
-            headers=self._headers,
-            files={"file": ("audio.wav", _encode_wav(audio, SAMPLE_RATE), "audio/wav")},
-            data={
-                "model": self._model,
-                "language": "pt",
-                "response_format": "verbose_json",
-                "temperature": "0",
-            },
-        )
-        if response.status_code != 200:
+        """Returns (start, end, text) relative to the given audio chunk.
+        Retries on 429/5xx with backoff: transcription is idempotent and gets
+        called once per speech chunk, so a transient throttle must not fail the
+        whole stream."""
+        wav = _encode_wav(audio, SAMPLE_RATE)
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            response = self._client.post(
+                self._url,
+                headers=self._headers,
+                files={"file": ("audio.wav", wav, "audio/wav")},
+                data={
+                    "model": self._model,
+                    "language": "pt",
+                    "response_format": "verbose_json",
+                    "temperature": "0",
+                },
+            )
+            if response.status_code == 200:
+                segments = response.json().get("segments", [])
+                return [
+                    (s["start"], s["end"], s["text"].strip())
+                    for s in segments
+                    if s.get("text", "").strip()
+                ]
+            retryable = response.status_code == 429 or response.status_code >= 500
+            if retryable and attempt < self.MAX_ATTEMPTS:
+                time.sleep(self._retry_backoff * attempt)
+                continue
             raise TranscriptionError(
                 f"transcription endpoint returned {response.status_code}"
             )
-        segments = response.json().get("segments", [])
-        return [
-            (s["start"], s["end"], s["text"].strip())
-            for s in segments
-            if s.get("text", "").strip()
-        ]
+        raise TranscriptionError("transcription retries exhausted")
 
 
 def get_transcriber() -> SpeechTranscriber:

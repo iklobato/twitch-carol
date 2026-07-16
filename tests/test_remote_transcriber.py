@@ -68,12 +68,48 @@ def test_missing_config_raises() -> None:
         RemoteTranscriber(_settings(transcribe_model=""))
 
 
-def test_non_200_raises_transcription_error() -> None:
+def test_retries_on_429_then_succeeds() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, json={"error": "slow down"})
+        return httpx.Response(
+            200, json={"segments": [{"start": 0, "end": 1, "text": "oi"}]}
+        )
+
     transcriber = RemoteTranscriber(
-        _settings(), client=_client(lambda r: httpx.Response(429, json={"error": "x"}))
+        _settings(), client=_client(handler), retry_backoff=0
+    )
+    out = transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+    assert out == [(0, 1, "oi")]
+    assert calls["n"] == 2  # first 429, retried once
+
+
+def test_exhausts_retries_then_raises() -> None:
+    transcriber = RemoteTranscriber(
+        _settings(),
+        client=_client(lambda r: httpx.Response(429, json={"error": "x"})),
+        retry_backoff=0,
     )
     with pytest.raises(TranscriptionError, match="429"):
         transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+
+
+def test_client_error_raises_without_retry() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(400, json={"error": "bad audio"})
+
+    transcriber = RemoteTranscriber(
+        _settings(), client=_client(handler), retry_backoff=0
+    )
+    with pytest.raises(TranscriptionError, match="400"):
+        transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+    assert calls["n"] == 1  # 4xx (non-429) not retried
 
 
 def test_encode_wav_is_valid_pcm16() -> None:
