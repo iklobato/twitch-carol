@@ -229,9 +229,16 @@ def _call_and_store(
     return str(parsed["content"]).strip()
 
 
+_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
 def _parse_json(response: str) -> dict | None:
+    # Some models (e.g. Anthropic via OpenRouter) wrap JSON in a markdown code
+    # fence despite response_format=json_object; unwrap before parsing.
+    fenced = _JSON_FENCE.match(response)
+    text = fenced.group(1) if fenced else response
     try:
-        parsed = json.loads(response)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         return None
     if not isinstance(parsed, dict):

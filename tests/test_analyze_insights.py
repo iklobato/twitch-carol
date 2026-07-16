@@ -6,7 +6,20 @@ from core.llm import TokenBudget
 from core.models import InsightType, Stream
 from workers.analyze import pipeline
 from workers.analyze.evidence import validated_evidence
-from workers.analyze.pipeline import AnalysisStats, PromptContext, _call_and_store
+from workers.analyze.pipeline import (
+    AnalysisStats,
+    PromptContext,
+    _call_and_store,
+    _parse_json,
+)
+
+
+def test_parse_json_unwraps_markdown_fence() -> None:
+    # Anthropic via OpenRouter fences JSON despite response_format=json_object.
+    assert _parse_json('```json\n{"content": "oi"}\n```') == {"content": "oi"}
+    assert _parse_json('```\n{"a": 1}\n```') == {"a": 1}
+    assert _parse_json('{"plain": true}') == {"plain": True}
+    assert _parse_json("not json at all") is None
 
 
 class ScriptedBackend:
