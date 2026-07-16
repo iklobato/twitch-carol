@@ -48,6 +48,18 @@ envs:
   - key: WHISPER_COMPUTE_TYPE
     scope: RUN_TIME
     value: int8
+  - key: TRANSCRIBE_BACKEND # remote = whisper via API, tira o whisper da CPU
+    scope: RUN_TIME
+    value: remote
+  - key: TRANSCRIBE_BASE_URL # OpenRouter (mesma chave do LLM); Groq se o limite doer em escala
+    scope: RUN_TIME
+    value: https://openrouter.ai/api/v1
+  - key: TRANSCRIBE_MODEL
+    scope: RUN_TIME
+    value: openai/whisper-large-v3-turbo
+  - key: TRANSCRIBE_API_KEY # = a chave OpenRouter (mesma do LLM_API_KEY)
+    scope: RUN_TIME
+    type: SECRET
   - key: SENTRY_ENVIRONMENT
     scope: RUN_TIME
     value: production

@@ -12,7 +12,7 @@ from core.logging_setup import setup_logging
 from core.models import Stream, StreamStatus
 from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE
 from core.worker_loop import WorkerSpec, run_worker
-from workers.transcribe.pipeline import Transcriber, process_stream
+from workers.transcribe.pipeline import get_transcriber, process_stream
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ SPEC = WorkerSpec(
 def main() -> None:
     setup_logging()
     logger.info("transcribe worker starting")
-    transcriber = Transcriber()
+    transcriber = get_transcriber()
 
     def handle(db: Session, stream: Stream) -> object:
         return process_stream(db, stream, transcriber)

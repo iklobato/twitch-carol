@@ -7,17 +7,22 @@ cheap CPU diarization is an open problem, so no region is marked
 guest_conversation yet (kind and plumbing exist; see _is_guest_conversation).
 """
 
+import io
 import logging
 import tempfile
+import time
+import wave
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
+import httpx
 import numpy as np
 from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
-from core.config import get_settings
+from core.config import Settings, get_settings
 from core.models import SegmentKind, Stream, TranscriptSegment
 from core.storage import get_audio_storage
 from workers.capture.collectors import AUDIO_SEGMENT_SECONDS
@@ -132,6 +137,98 @@ class Transcriber:
         return [(s.start, s.end, s.text.strip()) for s in segments if s.text.strip()]
 
 
+class SpeechTranscriber(Protocol):
+    def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]: ...
+
+
+class TranscriptionError(Exception):
+    pass
+
+
+def _encode_wav(audio: np.ndarray, rate: int) -> bytes:
+    pcm = (np.clip(audio, -1.0, 1.0) * 32767.0).astype("<i2")
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+class RemoteTranscriber:
+    """Sends each audio chunk to a remote OpenAI-compatible transcription
+    endpoint (Groq whisper-large-v3-turbo by default). No local model, so the
+    worker stays light and long streams don't hog CPU."""
+
+    TIMEOUT_SECONDS = 120.0
+    MAX_ATTEMPTS = 3
+
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        retry_backoff: float = 1.0,
+    ) -> None:
+        missing = [
+            name
+            for name, value in (
+                ("TRANSCRIBE_BASE_URL", settings.transcribe_base_url),
+                ("TRANSCRIBE_API_KEY", settings.transcribe_api_key),
+                ("TRANSCRIBE_MODEL", settings.transcribe_model),
+            )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(f"remote transcriber needs {', '.join(missing)}")
+        self._url = settings.transcribe_base_url.rstrip("/") + "/audio/transcriptions"
+        self._headers = {"Authorization": f"Bearer {settings.transcribe_api_key}"}
+        self._model = settings.transcribe_model
+        self._retry_backoff = retry_backoff
+        self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
+
+    def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]:
+        """Returns (start, end, text) relative to the given audio chunk.
+        Retries on 429/5xx with backoff: transcription is idempotent and gets
+        called once per speech chunk, so a transient throttle must not fail the
+        whole stream."""
+        wav = _encode_wav(audio, SAMPLE_RATE)
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            response = self._client.post(
+                self._url,
+                headers=self._headers,
+                files={"file": ("audio.wav", wav, "audio/wav")},
+                data={
+                    "model": self._model,
+                    "language": "pt",
+                    "response_format": "verbose_json",
+                    "temperature": "0",
+                },
+            )
+            if response.status_code == 200:
+                segments = response.json().get("segments", [])
+                return [
+                    (s["start"], s["end"], s["text"].strip())
+                    for s in segments
+                    if s.get("text", "").strip()
+                ]
+            retryable = response.status_code == 429 or response.status_code >= 500
+            if retryable and attempt < self.MAX_ATTEMPTS:
+                time.sleep(self._retry_backoff * attempt)
+                continue
+            raise TranscriptionError(
+                f"transcription endpoint returned {response.status_code}"
+            )
+        raise TranscriptionError("transcription retries exhausted")
+
+
+def get_transcriber() -> SpeechTranscriber:
+    settings = get_settings()
+    if settings.transcribe_backend == "remote":
+        return RemoteTranscriber(settings)
+    return Transcriber()
+
+
 def detect_speech_spans(audio: np.ndarray) -> list[tuple[float, float]]:
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
@@ -140,7 +237,7 @@ def detect_speech_spans(audio: np.ndarray) -> list[tuple[float, float]]:
 
 
 def process_stream(
-    db: Session, stream: Stream, transcriber: Transcriber
+    db: Session, stream: Stream, transcriber: SpeechTranscriber
 ) -> dict[str, int]:
     """Transcribes every stored audio segment of a stream into
     transcript_segments. Idempotent: reruns replace previous rows."""
@@ -184,7 +281,7 @@ def _absolute(stream: Stream, file_offset: float, seconds: float) -> datetime:
 def _persist_region(
     db: Session,
     stream: Stream,
-    transcriber: Transcriber,
+    transcriber: SpeechTranscriber,
     audio: np.ndarray,
     region: Region,
     file_offset: float,
