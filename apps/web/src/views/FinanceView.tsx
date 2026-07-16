@@ -52,7 +52,7 @@ function RevenueByStream({ finance }: { finance: FinanceOverview }) {
   if (finance.by_stream.length === 0) return null
   const max = Math.max(...finance.by_stream.map((row) => row.estimated_usd), 0.01)
   return (
-    <div className="mb-6">
+    <div>
       <h3 className="mb-3 text-lg font-bold">Receita por live</h3>
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm">
         {finance.by_stream.map((row) => (
@@ -84,7 +84,7 @@ function RevenueByStream({ finance }: { finance: FinanceOverview }) {
 function TopContributors({ finance }: { finance: FinanceOverview }) {
   if (finance.top_contributors.length === 0) return null
   return (
-    <div className="mb-6">
+    <div>
       <h3 className="mb-3 text-lg font-bold">Quem mais contribuiu</h3>
       <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm">
         {finance.top_contributors.map((contributor, index) => (
@@ -403,8 +403,10 @@ export default function FinanceView() {
             parte: a Twitch não divulga o repasse exato.
           </p>
           <KpiRow finance={finance} />
-          <RevenueByStream finance={finance} />
-          <TopContributors finance={finance} />
+          <div className="mb-6 grid items-start gap-4 md:grid-cols-2">
+            <RevenueByStream finance={finance} />
+            <TopContributors finance={finance} />
+          </div>
           <ContentRevenue finance={finance} />
           <Engagement finance={finance} />
           <Subscribers finance={finance} />
