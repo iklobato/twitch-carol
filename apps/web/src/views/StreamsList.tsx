@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, formatDate, formatTime, STATUS_LABELS } from '../api'
+import OverviewSection from '../components/OverviewSection'
 import type { QueueItem, StreamListItem } from '../types'
 
 function statusColor(status: string): string {
@@ -47,6 +48,7 @@ export default function StreamsList() {
 
   return (
     <div>
+      <OverviewSection streams={streams} />
       <h2 className="mb-4 text-xl font-bold">Suas lives</h2>
       <QueueBanner items={queue} />
       {streams.length === 0 && (
