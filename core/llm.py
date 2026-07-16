@@ -1,8 +1,8 @@
-"""LLM backends. Local CPU (llama.cpp) or DigitalOcean Gradient serverless
-inference (OpenAI-compatible HTTP), selected by LLM_BACKEND.
+"""LLM backends. Local CPU (llama.cpp) or a remote OpenAI-compatible endpoint
+(DO Gradient, OpenRouter, OpenAI, ...), selected by LLM_BACKEND.
 
 The local backend budgets with the model's real tokenizer; the remote one has
-no local tokenizer, so it approximates (see GradientBackend.count_tokens).
+no local tokenizer, so it approximates (see OpenAICompatBackend.count_tokens).
 """
 
 import logging
@@ -61,9 +61,9 @@ class LLMError(Exception):
     pass
 
 
-class GradientBackend:
-    """DigitalOcean Gradient serverless inference over its OpenAI-compatible
-    endpoint. No local model: requests go over HTTP with an app-level API key."""
+class OpenAICompatBackend:
+    """A remote OpenAI-compatible chat endpoint (DO Gradient, OpenRouter, OpenAI,
+    Groq, ...). No local model: requests go over HTTP with a Bearer API key."""
 
     CHARS_PER_TOKEN = 4
     TIMEOUT_SECONDS = 120.0
@@ -72,17 +72,18 @@ class GradientBackend:
         missing = [
             name
             for name, value in (
-                ("GRADIENT_ENDPOINT", settings.gradient_endpoint),
-                ("GRADIENT_API_KEY", settings.gradient_api_key),
-                ("GRADIENT_MODEL", settings.gradient_model),
+                ("LLM_BASE_URL", settings.llm_base_url),
+                ("LLM_API_KEY", settings.llm_api_key),
+                ("LLM_MODEL", settings.llm_model),
             )
             if not value
         ]
         if missing:
-            raise RuntimeError(f"gradient backend needs {', '.join(missing)}")
-        self.model_name = settings.gradient_model
-        self._url = settings.gradient_endpoint.rstrip("/") + "/chat/completions"
-        self._headers = {"Authorization": f"Bearer {settings.gradient_api_key}"}
+            raise RuntimeError(f"openai-compatible backend needs {', '.join(missing)}")
+        self.model_name = settings.llm_model
+        self._url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+        self._headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        self._require_provider_params = settings.llm_require_provider_params
         self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
 
     def count_tokens(self, text: str) -> int:
@@ -92,25 +93,26 @@ class GradientBackend:
         return max(1, -(-len(text) // self.CHARS_PER_TOKEN))
 
     def generate(self, prompt: str, max_tokens: int) -> str:
-        response = self._client.post(
-            self._url,
-            headers=self._headers,
-            json={
-                "model": self.model_name,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
-        )
+        body: dict[str, object] = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+        }
+        if self._require_provider_params:
+            # OpenRouter: only route to a provider that honors every requested
+            # param, so response_format json mode is actually applied.
+            body["provider"] = {"require_parameters": True}
+        response = self._client.post(self._url, headers=self._headers, json=body)
         if response.status_code != 200:
-            raise LLMError(f"Gradient inference returned {response.status_code}")
+            raise LLMError(f"LLM endpoint returned {response.status_code}")
         return response.json()["choices"][0]["message"]["content"]
 
 
 _BACKENDS: dict[str, Callable[[Settings], LLMBackend]] = {
     "local": LocalLlamaBackend,
-    "gradient": GradientBackend,
+    "openai": OpenAICompatBackend,
 }
 
 
