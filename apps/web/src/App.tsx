@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useRoute } from './router'
 import ChannelView from './views/ChannelView'
+import FinanceView from './views/FinanceView'
 import FollowersView from './views/FollowersView'
 import Landing from './views/Landing'
 import StreamReport from './views/StreamReport'
@@ -115,6 +116,9 @@ export default function App() {
             <a href="#/followers" className="text-sm text-zinc-400 hover:text-purple-300">
               Meus seguidores
             </a>
+            <a href="#/finance" className="text-sm text-zinc-400 hover:text-purple-300">
+              Financeiro
+            </a>
           </div>
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
@@ -130,6 +134,7 @@ export default function App() {
         {route.view === 'home' && <StreamsList />}
         {route.view === 'channel' && <ChannelView />}
         {route.view === 'followers' && <FollowersView />}
+        {route.view === 'finance' && <FinanceView />}
         {route.view === 'stream' && <StreamReport streamId={route.streamId} />}
         {route.view === 'search' && <SearchView query={route.query} />}
       </main>

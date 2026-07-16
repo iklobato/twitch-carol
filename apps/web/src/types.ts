@@ -287,6 +287,34 @@ export type ChannelOverview = {
   recommendations: Recommendation[]
 }
 
+export type FinancePeriod = '30d' | '90d' | 'all'
+
+export type StreamRevenue = {
+  stream_id: number
+  title: string | null
+  started_at: string
+  estimated_usd: number
+}
+
+export type FinanceOverview = {
+  period: string
+  estimated_usd: number
+  delta_pct: number | null
+  total_bits: number
+  total_subs: number
+  total_gifts: number
+  money_events: number
+  top_contributors: { login: string; estimated_usd: number; streams: number }[]
+  by_stream: StreamRevenue[]
+  by_content: ContentBucket[]
+  engagement: Engagement
+  // Snapshots of the current state, not the period (Twitch has no historical
+  // revenue): subscribers.total/tiers/top_bits and goals are "now".
+  subscribers: Subscribers
+  goals: GoalOut[]
+  recommendations: Recommendation[]
+}
+
 export type FollowerKpis = {
   total: number
   enriched: number
