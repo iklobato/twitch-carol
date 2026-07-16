@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     fernet_key: str = ""
     whisper_model: str = "small"
     whisper_compute_type: str = "int8"
+    # Transcription backend: "local" (faster-whisper on CPU) or "remote" (an
+    # OpenAI-compatible /audio/transcriptions endpoint, e.g. Groq large-v3-turbo).
+    transcribe_backend: str = "local"
+    transcribe_base_url: str = "https://api.groq.com/openai/v1"
+    transcribe_api_key: str = ""
+    transcribe_model: str = "whisper-large-v3-turbo"
     llm_backend: str = "local"
     llm_gguf_path: str = ""
     # Remote OpenAI-compatible inference (DO Gradient, OpenRouter, OpenAI, Groq...),

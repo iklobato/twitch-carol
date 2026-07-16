@@ -48,6 +48,18 @@ envs:
   - key: WHISPER_COMPUTE_TYPE
     scope: RUN_TIME
     value: int8
+  - key: TRANSCRIBE_BACKEND # remote = Groq (large-v3-turbo), tira o whisper da CPU
+    scope: RUN_TIME
+    value: remote
+  - key: TRANSCRIBE_BASE_URL
+    scope: RUN_TIME
+    value: https://api.groq.com/openai/v1
+  - key: TRANSCRIBE_MODEL
+    scope: RUN_TIME
+    value: whisper-large-v3-turbo
+  - key: TRANSCRIBE_API_KEY # chave Groq gsk_... (preencher no dashboard/doctl)
+    scope: RUN_TIME
+    type: SECRET
   - key: SENTRY_ENVIRONMENT
     scope: RUN_TIME
     value: production
