@@ -107,10 +107,16 @@ services:
     health_check:
       http_path: /healthz
     routes:
+      # preserve_path_prefix: App Platform strips the matched prefix by default,
+      # which would turn /api/me into /me (404). The API serves full paths.
       - path: /api
+        preserve_path_prefix: true
       - path: /auth
+        preserve_path_prefix: true
       - path: /eventsub
+        preserve_path_prefix: true
       - path: /healthz
+        preserve_path_prefix: true
 
 # --- Front estático ---
 static_sites:
