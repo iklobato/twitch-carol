@@ -385,15 +385,9 @@ def _subscribers(db: DbSession, channel_id: int, ready_ids: list[int]) -> Subscr
     )
 
 
-def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Community:
-    """Goals, VIPs, and how much of the audience actually chats (a low chat
-    rate means paying viewers are lurking, not engaged)."""
-    vips = list(
-        db.scalars(
-            select(Vip.login).where(Vip.channel_id == channel_id).order_by(Vip.login)
-        )
-    )
-    goals = [
+def _goals(db: DbSession, channel_id: int) -> list[GoalOut]:
+    """Current creator-goal snapshot (sub/follower/bits progress)."""
+    return [
         GoalOut(
             goal_type=goal.goal_type,
             description=goal.description,
@@ -410,10 +404,20 @@ def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Communit
             select(Goal).where(Goal.channel_id == channel_id).order_by(Goal.goal_type)
         )
     ]
+
+
+def _community(db: DbSession, channel_id: int, ready_ids: list[int]) -> Community:
+    """Goals, VIPs, and how much of the audience actually chats (a low chat
+    rate means paying viewers are lurking, not engaged)."""
+    vips = list(
+        db.scalars(
+            select(Vip.login).where(Vip.channel_id == channel_id).order_by(Vip.login)
+        )
+    )
     return Community(
         engaged_viewer_pct=_engaged_viewer_pct(db, ready_ids),
         vips=vips,
-        goals=goals,
+        goals=_goals(db, channel_id),
     )
 
 
