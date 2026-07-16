@@ -81,8 +81,16 @@ class PromptContext:
     segment_ids: set[int]
 
 
-def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisStats:
+def run_analysis(
+    db: Session,
+    stream: Stream,
+    backend: LLMBackend,
+    strong_backend: LLMBackend | None = None,
+) -> AnalysisStats:
     settings = get_settings()
+    # High-value tasks (recommendations, follower AI) use the stronger model;
+    # mechanical summaries use the default. Falls back to one model if unset.
+    strong = strong_backend or backend
     budget = TokenBudget(
         backend, settings.llm_max_input_tokens, settings.llm_max_output_tokens
     )
@@ -99,8 +107,8 @@ def run_analysis(db: Session, stream: Stream, backend: LLMBackend) -> AnalysisSt
         _final_summary(db, stream, backend, budget, block_summaries, stats)
         _rank_topics(db, stream, backend, budget, block_summaries, stats)
 
-    _recommend(db, stream, backend, budget, stats)
-    _recommend_channel(db, stream, backend, budget)
+    _recommend(db, stream, strong, budget, stats)
+    _recommend_channel(db, stream, strong, budget)
 
     db.flush()
     logger.info(
@@ -221,9 +229,16 @@ def _call_and_store(
     return str(parsed["content"]).strip()
 
 
+_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
 def _parse_json(response: str) -> dict | None:
+    # Some models (e.g. Anthropic via OpenRouter) wrap JSON in a markdown code
+    # fence despite response_format=json_object; unwrap before parsing.
+    fenced = _JSON_FENCE.match(response)
+    text = fenced.group(1) if fenced else response
     try:
-        parsed = json.loads(response)
+        parsed = json.loads(text)
     except json.JSONDecodeError:
         return None
     if not isinstance(parsed, dict):

@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = ""
+    # Stronger model for the high-value analysis tasks (recommendations, follower
+    # AI). Empty falls back to llm_model. Same base_url/api_key.
+    llm_model_strong: str = ""
     # OpenRouter only: force routing to a provider that honors every requested
     # param (so response_format json mode is actually applied). No-op elsewhere.
     llm_require_provider_params: bool = False

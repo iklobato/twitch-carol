@@ -69,6 +69,23 @@ def test_require_provider_params_adds_provider_routing() -> None:
     assert body["provider"] == {"require_parameters": True}
 
 
+def test_model_override_used_for_strong_tasks() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    backend = OpenAICompatBackend(
+        _settings(), client=_mock_client(handler), model="anthropic/claude-sonnet-4.6"
+    )
+    assert backend.model_name == "anthropic/claude-sonnet-4.6"
+    backend.generate("x", max_tokens=10)
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["model"] == "anthropic/claude-sonnet-4.6"
+
+
 def test_generate_raises_on_non_200() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"error": "rate limited"})
