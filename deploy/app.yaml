@@ -6,7 +6,8 @@
 #     (db_disable_prepared_statements=true).
 #   - Valkey: financialdata-valkey (nyc1) para fila + dedup EventSub.
 #   - Spaces: streamintel-audio (áudio + clipes).
-#   - LLM: Gradient serverless inference (gradient_* envs), não mais local.
+#   - LLM: endpoint OpenAI-compatível (OpenRouter/Gradient/OpenAI) via llm_* envs,
+#     não mais local. Hoje: OpenRouter.
 #
 # Segredos (type: SECRET) NÃO ficam neste arquivo: os valores são preenchidos no
 # dashboard do App Platform, copiados do droplet. Aqui só os nomes.
@@ -22,7 +23,16 @@ region: nyc
 envs:
   - key: LLM_BACKEND
     scope: RUN_AND_BUILD_TIME
-    value: gradient
+    value: openai
+  - key: LLM_BASE_URL # OpenRouter (troca aqui pra usar Gradient/OpenAI/Groq)
+    scope: RUN_TIME
+    value: https://openrouter.ai/api/v1
+  - key: LLM_MODEL
+    scope: RUN_TIME
+    value: meta-llama/llama-3.3-70b-instruct
+  - key: LLM_REQUIRE_PROVIDER_PARAMS # OpenRouter: garante json mode
+    scope: RUN_TIME
+    value: "true"
   - key: DB_DISABLE_PREPARED_STATEMENTS
     scope: RUN_TIME
     value: "true"
@@ -81,13 +91,7 @@ envs:
   - key: ADMIN_LOGINS
     scope: RUN_TIME
     type: SECRET
-  - key: GRADIENT_ENDPOINT
-    scope: RUN_TIME
-    type: SECRET
-  - key: GRADIENT_API_KEY
-    scope: RUN_TIME
-    type: SECRET
-  - key: GRADIENT_MODEL
+  - key: LLM_API_KEY # OpenRouter key sk-or-v1-... (preencher no dashboard/doctl)
     scope: RUN_TIME
     type: SECRET
 
@@ -163,7 +167,7 @@ workers:
       branch: main
       deploy_on_push: true
     run_command: python -m workers.analyze.main
-    instance_size_slug: apps-s-1vcpu-1gb # leve: LLM via Gradient
+    instance_size_slug: apps-s-1vcpu-1gb # leve: LLM remoto (OpenRouter)
     instance_count: 1
 
 # --- Migração antes de cada deploy (idempotente) ---

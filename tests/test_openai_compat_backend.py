@@ -1,4 +1,4 @@
-"""Gradient serverless-inference backend (OpenAI-compatible HTTP)."""
+"""Remote OpenAI-compatible LLM backend (Gradient/OpenRouter/OpenAI over HTTP)."""
 
 import json
 
@@ -6,15 +6,17 @@ import httpx
 import pytest
 
 from core.config import Settings
-from core.llm import GradientBackend, LLMError
+from core.llm import LLMError, OpenAICompatBackend
 
 
 def _settings(**over: object) -> Settings:
     values: dict[str, object] = {
-        "llm_backend": "gradient",
-        "gradient_endpoint": "https://inference.example.com/v1",
-        "gradient_api_key": "key-123",
-        "gradient_model": "qwen3-32b",
+        "llm_backend": "openai",
+        "llm_base_url": "https://openrouter.ai/api/v1",
+        "llm_api_key": "key-123",
+        "llm_model": "meta-llama/llama-3.3-70b-instruct",
+        # pinned so the base case doesn't inherit a real .env value
+        "llm_require_provider_params": False,
     }
     values.update(over)
     return Settings(**values)  # type: ignore[arg-type]  # dynamic kwargs into pydantic
@@ -35,7 +37,7 @@ def test_generate_posts_openai_shape_and_returns_content() -> None:
             200, json={"choices": [{"message": {"content": '{"ok": true}'}}]}
         )
 
-    backend = GradientBackend(_settings(), client=_mock_client(handler))
+    backend = OpenAICompatBackend(_settings(), client=_mock_client(handler))
     out = backend.generate("diga oi", max_tokens=100)
 
     assert out == '{"ok": true}'
@@ -43,22 +45,41 @@ def test_generate_posts_openai_shape_and_returns_content() -> None:
     assert isinstance(body, dict)
     assert str(seen["url"]).endswith("/v1/chat/completions")
     assert seen["auth"] == "Bearer key-123"
-    assert body["model"] == "qwen3-32b"
+    assert body["model"] == "meta-llama/llama-3.3-70b-instruct"
     assert body["max_tokens"] == 100
     assert body["messages"][0]["content"] == "diga oi"
+    assert body["response_format"] == {"type": "json_object"}
+    assert "provider" not in body  # flag off by default
+
+
+def test_require_provider_params_adds_provider_routing() -> None:
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    backend = OpenAICompatBackend(
+        _settings(llm_require_provider_params=True), client=_mock_client(handler)
+    )
+    backend.generate("x", max_tokens=10)
+
+    body = seen["body"]
+    assert isinstance(body, dict)
+    assert body["provider"] == {"require_parameters": True}
 
 
 def test_generate_raises_on_non_200() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"error": "rate limited"})
 
-    backend = GradientBackend(_settings(), client=_mock_client(handler))
+    backend = OpenAICompatBackend(_settings(), client=_mock_client(handler))
     with pytest.raises(LLMError, match="429"):
         backend.generate("x", max_tokens=10)
 
 
 def test_count_tokens_is_conservative_estimate() -> None:
-    backend = GradientBackend(
+    backend = OpenAICompatBackend(
         _settings(), client=_mock_client(lambda r: httpx.Response(200))
     )
     assert backend.count_tokens("") == 1  # never zero
@@ -67,7 +88,7 @@ def test_count_tokens_is_conservative_estimate() -> None:
 
 
 def test_missing_config_raises() -> None:
-    with pytest.raises(RuntimeError, match="GRADIENT_MODEL"):
-        GradientBackend(_settings(gradient_model=""))
-    with pytest.raises(RuntimeError, match="GRADIENT_API_KEY"):
-        GradientBackend(_settings(gradient_api_key=""))
+    with pytest.raises(RuntimeError, match="LLM_MODEL"):
+        OpenAICompatBackend(_settings(llm_model=""))
+    with pytest.raises(RuntimeError, match="LLM_API_KEY"):
+        OpenAICompatBackend(_settings(llm_api_key=""))
