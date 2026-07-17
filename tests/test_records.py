@@ -5,8 +5,9 @@ import pytest
 from sqlalchemy import select
 
 from core.finance import CHEER, GIFT, SUBSCRIBE
-from core.models import StreamRecord
+from core.models import StreamRecord, StreamStatus
 from core.records import (
+    MIN_LIVES_FOR_RECORDS,
     RecordMetric,
     add_record_facts,
     backfill_records,
@@ -14,6 +15,7 @@ from core.records import (
     records_held_by_stream,
     update_stream_records,
 )
+from tests.conftest import login_as
 from tests.factories import (
     add_chat,
     add_event,
@@ -128,3 +130,32 @@ def test_add_record_facts_lists_marks_and_fresh_break(db) -> None:
     assert any("Melhores marcas do canal" in fact for fact in facts)
     assert any("bateu o recorde" in fact for fact in facts)
     assert facts[0].startswith("[1]")
+
+
+def _ready_live_with_chat(db, channel, minutes_ago, msgs):
+    stream = make_stream(
+        db, channel, status=StreamStatus.READY, started_minutes_ago=minutes_ago
+    )
+    add_chat(db, stream, count=msgs)
+    return stream
+
+
+def test_badges_hidden_below_min_lives_then_shown(api_client, db) -> None:
+    channel = make_channel(db)
+    # one fewer than the minimum: a record exists but the badges stay hidden
+    for i in range(MIN_LIVES_FOR_RECORDS - 1):
+        _ready_live_with_chat(db, channel, minutes_ago=1000 - i * 100, msgs=5 + i)
+    backfill_records(db, channel.id)
+    db.flush()
+
+    login_as(api_client, channel)
+    items = api_client.get("/api/streams").json()
+    assert len(items) == MIN_LIVES_FOR_RECORDS - 1
+    assert all(item["records"] == [] for item in items)
+
+    # reaching the threshold reveals the badges
+    _ready_live_with_chat(db, channel, minutes_ago=50, msgs=999)
+    backfill_records(db, channel.id)
+    db.flush()
+    items = api_client.get("/api/streams").json()
+    assert any(item["records"] for item in items)
