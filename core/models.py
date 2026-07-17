@@ -390,6 +390,10 @@ class Job(Base):
     )
     attempts: Mapped[int] = mapped_column(default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Beaten by the worker while the job runs. A stopped heartbeat means the
+    # worker died (crash/OOM/redeploy), which is the only way to tell that apart
+    # from a job that is simply slow: a transcribe legitimately runs 90+ min.
+    last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

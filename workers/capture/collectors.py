@@ -28,12 +28,19 @@ from core.irc import (
 from core.models import Channel, ChatMessage, Stream, ViewerSample
 from core.queues import get_valkey
 from core.storage import audio_key, get_audio_storage
+from core.streams import mark_stream_offline
 from core.twitch import TwitchAuthError, get_stream_info
 
 logger = logging.getLogger(__name__)
 
 CHAT_FLUSH_INTERVAL_SECONDS = 2.0
 VIEWER_SAMPLE_INTERVAL_SECONDS = 60.0
+# Helix reporting the channel offline is the backstop for a lost stream.offline
+# webhook: without it a capture runs forever (the stream stays CAPTURING, the
+# dashboard shows a ghost live, and the next real live gets glued onto the stale
+# row because start_stream is idempotent per channel). Three consecutive polls
+# (~3 min) so a transient empty Helix response never kills a live capture.
+OFFLINE_SAMPLES_TO_END = 3
 SIM_POLL_BLOCK_MS = 1000
 AUDIO_SEGMENT_SECONDS = 600
 OPUS_BITRATE = "32k"
@@ -181,6 +188,8 @@ class ViewerSampler:
         self._twitch_user_id = channel.twitch_user_id
         self._login = channel.login
         self._title_recorded = False
+        self._offline_since: datetime | None = None
+        self._offline_samples = 0
         self.stats = {"samples": 0}
 
     async def run(self, stop: asyncio.Event) -> None:
@@ -201,7 +210,10 @@ class ViewerSampler:
     def _sample_once(self) -> None:
         count, title, category = self._read_source()
         if count is None:
+            self._note_offline()
             return
+        self._offline_since = None
+        self._offline_samples = 0
         with session_factory()() as db:
             db.add(
                 ViewerSample(
@@ -218,6 +230,31 @@ class ViewerSampler:
                     self._title_recorded = True
             db.commit()
         self.stats["samples"] += 1
+
+    def _note_offline(self) -> None:
+        """Helix says the channel is offline. The stream.offline webhook is not
+        guaranteed (it is lost whenever the callback is down), so after
+        OFFLINE_SAMPLES_TO_END consecutive offline polls we end the stream from
+        here. Goes through the same mark_stream_offline the webhook uses, so the
+        worker finalizes the session on its next poll exactly as it always does.
+        ended_at is the first offline poll, not now, so a capture that only
+        notices late still records the real end.
+        """
+        self._offline_samples += 1
+        if self._offline_since is None:
+            self._offline_since = datetime.now(UTC)
+        if self._offline_samples < OFFLINE_SAMPLES_TO_END:
+            return
+        with session_factory()() as db:
+            stream = db.get(Stream, self._stream_id)
+            if stream is None or stream.ended_at is not None:
+                return
+            mark_stream_offline(db, stream, self._offline_since)
+            db.commit()
+        logger.info(
+            "stream ended from Helix polling (stream.offline webhook missed)",
+            extra={"stream_id": self._stream_id, "channel_id": self._channel_id},
+        )
 
     def _read_source(self) -> tuple[int | None, str | None, str | None]:
         if get_settings().simulation:
