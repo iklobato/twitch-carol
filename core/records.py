@@ -30,6 +30,11 @@ from core.models import (
 FOLLOW = "channel.follow"
 RAID = "channel.raid"
 
+# Below this many analyzed lives there is too little history for a record to
+# mean anything (the newest live would just hold everything), so the badges are
+# hidden entirely.
+MIN_LIVES_FOR_RECORDS = 5
+
 
 class RecordMetric(enum.StrEnum):
     MESSAGES = "messages"
@@ -199,7 +204,8 @@ def _current_best(db: Session, channel_id: int) -> dict[str, tuple[int, float]]:
 
 def records_held_by_stream(db: Session, channel_id: int) -> dict[int, list[str]]:
     """stream_id -> labels of the metrics it currently holds the record for,
-    in metric order (for stable badge display)."""
+    in metric order (for stable badge display). The caller decides whether the
+    channel has enough history to show them (MIN_LIVES_FOR_RECORDS)."""
     best = _current_best(db, channel_id)
     held: dict[int, list[str]] = defaultdict(list)
     for metric in RecordMetric:

@@ -29,10 +29,11 @@ from core.models import (
     JobStatus,
     Peak,
     Stream,
+    StreamStatus,
     TranscriptSegment,
     ViewerSample,
 )
-from core.records import records_held_by_stream
+from core.records import MIN_LIVES_FOR_RECORDS, records_held_by_stream
 from core.schedule import HISTORY_LIMIT, estimate_next_live
 from core.text import meaningful_words, message_sentiment, strip_emotes, tokenize
 
@@ -107,7 +108,14 @@ def list_streams(channel: CurrentChannel, db: DbSession) -> list[StreamListItem]
         .where(Stream.channel_id == channel.id)
         .order_by(Stream.started_at.desc())
     ).all()
-    records = records_held_by_stream(db, channel.id)
+    # Records mean nothing with too little history (the newest live would just
+    # hold everything), so hide the badges until the channel has enough lives.
+    ready_lives = sum(1 for s in streams if s.status == StreamStatus.READY)
+    records = (
+        records_held_by_stream(db, channel.id)
+        if ready_lives >= MIN_LIVES_FOR_RECORDS
+        else {}
+    )
     return [
         StreamListItem(
             id=s.id,
