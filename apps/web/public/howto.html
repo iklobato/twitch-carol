@@ -84,6 +84,14 @@
   .shot .scroll img { display:block; width:100%; height:auto; }
   .shot .scroll::-webkit-scrollbar { width:10px; }
   .shot .scroll::-webkit-scrollbar-thumb { background:#2a2a30; border-radius:5px; }
+  .featlist { margin-top:24px; display:grid; gap:24px; }
+  .feat-b .fh { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:5px; }
+  .feat-b .fh .kick { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--violet-hi); }
+  .feat-b .fh h4 { margin:0; font-size:1.1rem; }
+  .feat-b .why { color:var(--muted); font-size:0.95rem; margin:0 0 11px; max-width:64ch; }
+  .feat-b .why b { color:var(--green-hi); font-weight:650; }
+  .feat-b .shot { margin-top:0; }
+  .feat-b .shot .scroll { max-height:460px; }
   .sh-h { font-weight:700; font-size:1rem; margin:0 0 12px; color:var(--app-ink); }
   .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
   .stat { border:1px solid var(--app-line); border-radius:10px; padding:11px; background:var(--app-card); }
@@ -224,6 +232,53 @@
     <div class="scroll"><img src="/previews/channel-money.png" width="1120" height="2448" loading="lazy" alt="Tela Meu canal: monetizacao por live, quem mais contribuiu, assuntos que mais monetizam, mais fieis, crescimento ao longo das lives e melhores dias pra transmitir." /></div>
   </div>
   <div class="cap">Print real: a visão do canal junta tudo. De onde vem a grana, quem sustenta, qual assunto paga e os melhores dias pra transmitir.</div>
+
+  <h3 style="margin-top:40px;font-size:1.3rem">Cada recurso do relatório, com print real e por que vale</h3>
+  <div class="featlist">
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Resumo da live</span><h4>A live inteira em um parágrafo</h4></div>
+      <p class="why">A IA resume a live e cita os momentos exatos (clicáveis). <b>Você entende o que rolou sem reassistir horas de VOD</b>, e cada frase aponta pra onde ela veio.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Resumo da live</span></div><div class="scroll"><img src="/previews/feat-resumo.png" width="1000" height="304" loading="lazy" alt="Resumo da live gerado por IA, com momentos citados e clicáveis." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">O que melhorar</span><h4>Uma seção só de ação</h4></div>
+      <p class="why">Retenção, onde a audiência caiu e as perguntas do chat que ficaram sem resposta, tudo junto. <b>Sai da live já sabendo o que ajustar na próxima</b>, com número, não achismo.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · O que melhorar</span></div><div class="scroll"><img src="/previews/feat-melhorar.png" width="1000" height="517" loading="lazy" alt="Seção O que melhorar: retenção, onde perdeu audiência, momentos pra clipar e perguntas sem resposta." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Onde você perdeu audiência</span><h4>A queda com a causa provável</h4></div>
+      <p class="why">Cada queda com o motivo (ad, troca de assunto), o que você falava na hora, o chat do momento e se a galera voltou. <b>Você para de esvaziar no mesmo ponto toda live.</b></p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Onde você perdeu audiência</span></div><div class="scroll"><img src="/previews/feat-perdeu.png" width="1000" height="390" loading="lazy" alt="Card mostrando uma queda de audiência com causa, fala do streamer, chat e recuperação." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Melhores momentos para clipar</span><h4>O corte pronto pra postar</h4></div>
+      <p class="why">Os picos de chat já com o offset no VOD pra achar o momento. <b>O que bombou ao vivo é o que mais rende cortado</b>, e você não precisa caçar na gravação.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Melhores momentos para clipar</span></div><div class="scroll"><img src="/previews/feat-clipar.png" width="1000" height="553" loading="lazy" alt="Sugestões de melhores momentos para clipar, com offset no VOD e intensidade do chat." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Assuntos da live</span><h4>Do que você falou, ranqueado</h4></div>
+      <p class="why">Os temas da live ordenados pelo quanto engajaram o chat. <b>Você descobre qual assunto prende a galera</b> e passa a fazer mais dele de propósito.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Assuntos da live</span></div><div class="scroll"><img src="/previews/feat-assuntos.png" width="1000" height="405" loading="lazy" alt="Assuntos da live ranqueados por engajamento do chat." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Sentimento do chat</span><h4>Como o público reagiu</h4></div>
+      <p class="why">O humor do chat ao longo da live e por pessoa. <b>Você vê na hora se a galera curtiu ou esfriou</b> em cada momento, e quem puxa a energia pra cima.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Sentimento do chat</span></div><div class="scroll"><img src="/previews/feat-sentimento.png" width="1000" height="256" loading="lazy" alt="Sentimento do chat: média, linha ao longo da live e por chatter." /></div></div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Presença ao longo da live</span><h4>Quem ficou, e quando</h4></div>
+      <p class="why">Quem estava no chat em cada trecho da live. <b>Mostra seus fiéis que ficam do início ao fim</b> e em que momento a galera chega ou vaza.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Presença ao longo da live</span></div><div class="scroll"><img src="/previews/feat-presenca.png" width="1000" height="250" loading="lazy" alt="Mapa de presença dos top chatters ao longo da live." /></div></div>
+    </div>
+
+  </div>
 </div></section>
 
 <!-- how it works -->
