@@ -11,6 +11,11 @@ Produção de referência: https://streamintel.cc
 
 ## Arquitetura
 
+Responsabilidade de cada componente da infra (com input/output, gatilhos e um
+diagrama de fluxo): [`ARCHITECTURE.md`](ARCHITECTURE.md). O layout de pastas
+abaixo é o do repositório; a descrição de prod aqui pode estar defasada, o
+`ARCHITECTURE.md` é a fonte da verdade do que roda hoje.
+
 ```
 apps/api           FastAPI: OAuth Twitch, webhook EventSub, API do dashboard
 apps/web           React + Vite + Tailwind + Chart.js (build servido pelo Caddy)
