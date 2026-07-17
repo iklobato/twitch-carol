@@ -12,6 +12,7 @@ from apps.api.deps import CurrentChannel, CurrentSession, DbSession
 from apps.api.eventsub import router as eventsub_router
 from apps.api.finance import router as finance_router
 from apps.api.followers import router as followers_router
+from apps.api.public import router as public_router
 from core.logging_setup import setup_logging
 from core.models import Channel
 
@@ -26,6 +27,7 @@ app.include_router(channel_router)
 app.include_router(actionable_router)
 app.include_router(finance_router)
 app.include_router(followers_router)
+app.include_router(public_router)
 app.include_router(admin_router)
 
 

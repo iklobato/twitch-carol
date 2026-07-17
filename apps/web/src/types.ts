@@ -455,3 +455,10 @@ export type QueueItem = {
   jobs_ahead: number | null
   eta_seconds: number | null
 }
+
+export type PlatformStats = {
+  chat_messages: number
+  streams_analyzed: number
+  hours_captured: number
+  segments_transcribed: number
+}
