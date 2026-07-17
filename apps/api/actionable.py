@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
-from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
+from core.analytics import (
+    Dip,
+    enrich_dips,
+    load_speech_segments,
+    load_viewer_samples,
+    retention_and_dips,
+)
 from core.models import ChatMessage, Peak, Stream, TranscriptSegment
 
 router = APIRouter(prefix="/api")
@@ -26,10 +32,18 @@ MAX_QUESTION_SAMPLES = 8
 
 class ViewerDip(BaseModel):
     at: datetime
+    offset_seconds: int
+    offset_label: str
     viewers_before: int
     viewers_after: int
+    viewers_delta: int
     pct_drop: float
     speech_context: str | None
+    scene: str | None
+    cause: str | None
+    recovered_to: int | None
+    recovered_in_minutes: float | None
+    chat_context: list[str]
 
 
 class Retention(BaseModel):
@@ -67,6 +81,24 @@ def _offset_label(seconds: int) -> str:
     if hours:
         return f"{hours}h{minutes:02d}m{secs:02d}s"
     return f"{minutes}m{secs:02d}s"
+
+
+def _dip_out(dip: Dip) -> ViewerDip:
+    return ViewerDip(
+        at=dip.at,
+        offset_seconds=dip.offset_seconds,
+        offset_label=_offset_label(dip.offset_seconds),
+        viewers_before=dip.viewers_before,
+        viewers_after=dip.viewers_after,
+        viewers_delta=dip.viewers_delta,
+        pct_drop=dip.pct_drop,
+        speech_context=dip.speech_context,
+        scene=dip.scene,
+        cause=dip.cause,
+        recovered_to=dip.recovered_to,
+        recovered_in_minutes=dip.recovered_in_minutes,
+        chat_context=list(dip.chat_context),
+    )
 
 
 def _clip_suggestions(db: Session, stream: Stream) -> list[ClipSuggestion]:
@@ -124,11 +156,12 @@ def stream_actionable(
     stream = _owned_stream(db, channel, stream_id)
     samples = load_viewer_samples(db, stream.id)
     speech = load_speech_segments(db, stream.id)
-    retention, dips = retention_and_dips(samples, speech, MAX_DIPS)
+    retention, dips = retention_and_dips(samples, MAX_DIPS)
+    dips = enrich_dips(db, stream, samples, dips)
     count, question_samples = _unanswered_questions(db, stream, speech)
     return ActionableOut(
         retention=Retention(**vars(retention)) if retention else None,
-        dips=[ViewerDip(**vars(dip)) for dip in dips],
+        dips=[_dip_out(dip) for dip in dips],
         clips=_clip_suggestions(db, stream),
         unanswered_questions_count=count,
         unanswered_questions=question_samples,

@@ -327,6 +327,24 @@ class Insight(Base):
     )
 
 
+class StreamRecord(Base):
+    """A live that beat the channel's prior best for one metric. The table is a
+    history of record-breaking lives; the current record is the max-value row
+    per (channel_id, metric)."""
+
+    __tablename__ = "stream_records"
+    __table_args__ = (
+        Index("ix_stream_records_channel_metric", "channel_id", "metric"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    metric: Mapped[str] = mapped_column(String(32))
+    value: Mapped[float] = mapped_column(Float)
+    achieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class ChannelRecommendation(Base):
     """Account-level monetization advice from the LLM, grounded in the numbered
     SQL facts it cited. Regenerated as a set, not per-stream like Insight."""

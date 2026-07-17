@@ -66,6 +66,9 @@ def test_build_segments_assigns_each_follower_once(db) -> None:
     assert "dormant" in keys
     # counts sum to the follower total (partition)
     assert sum(s.count for s in segments) == len(profiles)
+    # members list the full group (not capped), for the paginated UI
+    for s in segments:
+        assert len(s.members) == s.count
 
 
 def test_reactivation_targets_are_dormant_chatters(db) -> None:

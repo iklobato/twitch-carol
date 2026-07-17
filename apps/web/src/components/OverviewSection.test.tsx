@@ -86,6 +86,7 @@ const READY_STREAM: StreamListItem = {
   events: 50,
   followers: 48,
   peak_viewers: 512,
+  records: [],
 }
 
 afterEach(() => vi.unstubAllGlobals())

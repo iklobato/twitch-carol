@@ -32,6 +32,7 @@ from core.models import (
     TranscriptSegment,
     ViewerSample,
 )
+from core.records import records_held_by_stream
 from core.schedule import HISTORY_LIMIT, estimate_next_live
 from core.text import meaningful_words, message_sentiment, strip_emotes, tokenize
 
@@ -60,6 +61,7 @@ class StreamListItem(BaseModel):
     events: int
     followers: int
     peak_viewers: int
+    records: list[str]
 
 
 FOLLOW_EVENT_TYPE = "channel.follow"
@@ -105,6 +107,7 @@ def list_streams(channel: CurrentChannel, db: DbSession) -> list[StreamListItem]
         .where(Stream.channel_id == channel.id)
         .order_by(Stream.started_at.desc())
     ).all()
+    records = records_held_by_stream(db, channel.id)
     return [
         StreamListItem(
             id=s.id,
@@ -118,6 +121,7 @@ def list_streams(channel: CurrentChannel, db: DbSession) -> list[StreamListItem]
             events=event_stats.get(s.id, (0, 0))[0],
             followers=event_stats.get(s.id, (0, 0))[1],
             peak_viewers=viewer_peaks.get(s.id, 0),
+            records=records.get(s.id, []),
         )
         for s in streams
     ]
