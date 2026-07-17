@@ -110,13 +110,11 @@ def api_client(
 
     from apps.api.deps import get_db
     from apps.api.main import app
-    from core.queues import get_valkey
 
     def override_get_db() -> Iterator[Session]:
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_valkey] = lambda: fake_valkey
     # https base_url so secure session/oauth cookies round-trip (production
     # sets them secure when PUBLIC_BASE_URL is https)
     yield TestClient(app, base_url="https://testserver")

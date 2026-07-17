@@ -24,12 +24,16 @@ def get_valkey() -> redis.Redis:
     return redis.Redis.from_url(get_settings().valkey_url, decode_responses=True)
 
 
-def enqueue_job(db: Session, valkey: redis.Redis, job_type: str, stream_id: int) -> Job:
+def enqueue_job(db: Session, job_type: str, stream_id: int) -> Job:
+    """The jobs table IS the queue: workers poll it (see core.worker_loop).
+
+    There used to be a mirrored xadd to a Valkey stream here, kept "for
+    observability", but nothing ever read it: no consumer, and the Grafana
+    panels query this table. It was the last thing making production depend on
+    Valkey, so it is gone. QUEUE_KEYS stays for the local simulation harness.
+    """
     job = Job(type=job_type, stream_id=stream_id, status=JobStatus.QUEUED)
     db.add(job)
     db.flush()
-    valkey.xadd(
-        QUEUE_KEYS[job_type], {"job_id": str(job.id), "stream_id": str(stream_id)}
-    )
     logger.info("job enqueued", extra={"stream_id": stream_id, "job_type": job_type})
     return job

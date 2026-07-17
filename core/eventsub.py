@@ -9,13 +9,15 @@ import hmac
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
-import redis
+from sqlalchemy import delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session
 
 from core.config import get_settings
-from core.models import Channel
+from core.models import Channel, EventSubMessage
 from core.twitch import HELIX_URL, _http, app_headers
 
 logger = logging.getLogger(__name__)
@@ -57,11 +59,33 @@ def timestamp_is_fresh(timestamp: str, now: datetime | None = None) -> bool:
     return abs((reference - sent_at).total_seconds()) <= MESSAGE_MAX_AGE_SECONDS
 
 
-def claim_message(valkey: redis.Redis, message_id: str) -> bool:
-    """Returns False when this message id was already processed (Twitch retries)."""
-    return bool(
-        valkey.set(f"eventsub:msg:{message_id}", 1, nx=True, ex=DEDUP_TTL_SECONDS)
+def claim_message(db: Session, message_id: str) -> bool:
+    """Returns False when this message id was already processed (Twitch retries).
+
+    Postgres, not Valkey: this dedup was the app's only real use of Valkey in
+    production, and the cluster sits in another region. Private networking is
+    regional, so keeping it meant talking to a managed service over a public
+    host. The primary key makes the claim atomic exactly like SET NX did.
+
+    Committed immediately: a concurrent retry has to see the claim, which is the
+    whole point. Rows past the retry window are pruned here, so the table is a
+    fixed-size window and never a log that grows forever.
+    """
+    db.execute(
+        delete(EventSubMessage).where(
+            EventSubMessage.received_at
+            < datetime.now(UTC) - timedelta(seconds=DEDUP_TTL_SECONDS)
+        )
     )
+    # ON CONFLICT DO NOTHING returns no row when the id was already claimed.
+    claimed = db.execute(
+        pg_insert(EventSubMessage)
+        .values(message_id=message_id)
+        .on_conflict_do_nothing(index_elements=["message_id"])
+        .returning(EventSubMessage.message_id)
+    ).scalar_one_or_none()
+    db.commit()
+    return claimed is not None
 
 
 def _broadcaster_condition(broadcaster_id: str) -> dict[str, str]:

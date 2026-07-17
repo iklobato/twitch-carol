@@ -379,6 +379,22 @@ class FollowerAiInsight(Base):
     )
 
 
+class EventSubMessage(Base):
+    """Message ids already processed, so Twitch's retries are dropped.
+
+    A fixed-size window, not a log: rows older than the retry window are pruned
+    on write. The unique key is what makes the claim atomic, the same guarantee
+    Valkey's SET NX gave before this replaced it.
+    """
+
+    __tablename__ = "eventsub_messages"
+
+    message_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 class Job(Base):
     __tablename__ = "jobs"
 
