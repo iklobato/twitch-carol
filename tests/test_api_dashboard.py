@@ -62,6 +62,26 @@ def test_streams_list_fields_and_isolation(api_client, db) -> None:
     assert item["events"] == 2
     assert item["followers"] == 1
     assert item["peak_viewers"] == 80
+    assert item["day"] == stream.started_at.date().isoformat()
+
+
+def test_day_chatters_are_unique_across_lives(api_client, db) -> None:
+    mine = make_channel(db)
+    first = make_stream(db, mine, started_minutes_ago=90)
+    second = make_stream(db, mine, started_minutes_ago=30)
+    add_chat(db, first, 4, author="alice")
+    add_chat(db, first, 4, author="bob")
+    add_chat(db, second, 4, author="bob")  # same person, second live
+    add_chat(db, second, 4, author="carol")
+    other = make_channel(db)
+    add_chat(db, make_stream(db, other), 3, author="alice")  # different channel
+
+    login_as(api_client, mine)
+    by_day = api_client.get("/api/streams/day-chatters").json()
+
+    day = first.started_at.date().isoformat()
+    # 4 per-live chatters (alice, bob, bob, carol) dedupe to 3 unique for the day
+    assert by_day == {day: 3}
 
 
 def test_stream_report_numbers_and_comparison(api_client, db) -> None:

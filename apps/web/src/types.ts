@@ -22,6 +22,7 @@ export type StreamListItem = {
   followers: number
   peak_viewers: number
   records: string[]
+  day: string
 }
 
 export type NumberComparison = {

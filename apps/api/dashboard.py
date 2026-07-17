@@ -5,6 +5,7 @@ from collections import Counter
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -63,9 +64,19 @@ class StreamListItem(BaseModel):
     followers: int
     peak_viewers: int
     records: list[str]
+    # calendar day (YYYY-MM-DD) in the channel's own timezone, so the frontend
+    # groups lives by day with no browser-timezone drift.
+    day: str
 
 
 FOLLOW_EVENT_TYPE = "channel.follow"
+
+
+def _channel_zone(channel: Channel) -> ZoneInfo:
+    try:
+        return ZoneInfo(channel.timezone)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo("UTC")
 
 
 @router.get("/streams")
@@ -108,6 +119,7 @@ def list_streams(channel: CurrentChannel, db: DbSession) -> list[StreamListItem]
         .where(Stream.channel_id == channel.id)
         .order_by(Stream.started_at.desc())
     ).all()
+    zone = _channel_zone(channel)
     # Records mean nothing with too little history (the newest live would just
     # hold everything), so hide the badges until the channel has enough lives.
     ready_lives = sum(1 for s in streams if s.status == StreamStatus.READY)
@@ -130,9 +142,26 @@ def list_streams(channel: CurrentChannel, db: DbSession) -> list[StreamListItem]
             followers=event_stats.get(s.id, (0, 0))[1],
             peak_viewers=viewer_peaks.get(s.id, 0),
             records=records.get(s.id, []),
+            day=s.started_at.astimezone(zone).date().isoformat(),
         )
         for s in streams
     ]
+
+
+@router.get("/streams/day-chatters")
+def streams_day_chatters(channel: CurrentChannel, db: DbSession) -> dict[str, int]:
+    """Unique chatters per calendar day (channel timezone). Can't be summed from
+    the per-live counts, which double-count anyone active on more than one live."""
+    local_day = func.date(func.timezone(channel.timezone, Stream.started_at))
+    return {
+        row[0].isoformat(): row[1]
+        for row in db.execute(
+            select(local_day, func.count(func.distinct(ChatMessage.author_id)))
+            .join(ChatMessage, ChatMessage.stream_id == Stream.id)
+            .where(Stream.channel_id == channel.id)
+            .group_by(local_day)
+        )
+    }
 
 
 class NumberComparison(BaseModel):
