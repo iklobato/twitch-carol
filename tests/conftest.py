@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from core import crypto
@@ -12,8 +13,9 @@ from core.config import get_settings
 from core.db import chat_partition_ddl
 from core.models import Base
 
+TEST_DB_NAME = "stream_intel_test"
 TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL", "postgresql+psycopg://app:app@localhost:5433/stream_intel_test"
+    "TEST_DATABASE_URL", f"postgresql+psycopg://app:app@localhost:5433/{TEST_DB_NAME}"
 )
 ADMIN_DATABASE_URL = os.environ.get(
     "TEST_ADMIN_DATABASE_URL", "postgresql+psycopg://app:app@localhost:5433/app"
@@ -70,14 +72,30 @@ def fake_valkey() -> FakeValkey:
 def pg_engine() -> Iterator[Engine]:
     """Dedicated test database on the local compose Postgres. Schema from the
     model metadata plus chat partitions covering the test time window."""
+    admin = create_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
     try:
-        admin = create_engine(ADMIN_DATABASE_URL, isolation_level="AUTOCOMMIT")
-        with admin.connect() as conn:
-            conn.execute(text("DROP DATABASE IF EXISTS stream_intel_test"))
-            conn.execute(text("CREATE DATABASE stream_intel_test"))
+        connection = admin.connect()
+    except OperationalError:  # docker stack down: DB-backed tests are skipped
         admin.dispose()
-    except Exception:  # docker stack down: DB-backed tests are skipped
         pytest.skip("postgres (compose, localhost:5433) not available")
+
+    # Postgres answered, so from here on a failure is a real problem and must be
+    # loud. This used to be one blanket `except Exception -> skip`, which turned
+    # "a leftover connection is blocking the DROP" into a green run with silent
+    # skips: the suite reported success while whole files never ran.
+    with connection:
+        # A session left behind by a killed run holds the database and makes DROP
+        # fail. It is never a session worth keeping.
+        connection.execute(
+            text(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                "WHERE datname = :db AND pid <> pg_backend_pid()"
+            ),
+            {"db": TEST_DB_NAME},
+        )
+        connection.execute(text(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}"'))
+        connection.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
+    admin.dispose()
 
     engine = create_engine(TEST_DATABASE_URL)
     Base.metadata.create_all(engine)
