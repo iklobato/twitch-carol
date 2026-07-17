@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { PlatformStats } from '../types'
 
 // The logged-out landing. Self-contained markup + styles so it stays isolated
 // from the Tailwind dashboard (only mounted while signed out); CTAs go to the
@@ -118,6 +119,11 @@ const STYLE = `
   .si-landing .foot-inner { display: flex; flex-wrap: wrap; gap: 12px 26px; align-items: center; justify-content: space-between; font-size: 0.86rem; }
   .si-landing .foot-inner .mono { font-family: var(--mono); }
   .si-landing .fine { color: var(--muted-2); font-size: 0.78rem; margin-top: 14px; max-width: 70ch; }
+  .si-landing .statband { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center;
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 26px 0; }
+  .si-landing .statband .n { font-size: clamp(1.5rem, 3.2vw, 1.95rem); font-weight: 800; letter-spacing: -0.02em;
+    color: var(--ink); font-variant-numeric: tabular-nums; }
+  .si-landing .statband .l { margin-top: 4px; font-size: 0.8rem; color: var(--muted); text-wrap: balance; }
   @media (max-width: 940px) {
     .si-landing .hero-grid { grid-template-columns: 1fr; gap: 34px; }
     .si-landing .benefits { grid-template-columns: 1fr 1fr; }
@@ -129,6 +135,7 @@ const STYLE = `
     .si-landing .benefits { grid-template-columns: 1fr; }
     .si-landing .card.wide { grid-column: span 1; }
     .si-landing .trust { grid-template-columns: 1fr; }
+    .si-landing .statband { grid-template-columns: repeat(2, 1fr); gap: 16px; }
     .si-landing nav .brand small { display: none; }
     .si-landing header.hero { padding-top: 48px; }
   }
@@ -182,6 +189,12 @@ const BODY = `
     </div>
   </div>
 </header>
+<div class="wrap"><div class="statband" id="si-stats" style="display:none">
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="chat_messages">—</div><div class="l">mensagens de chat analisadas</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="streams_analyzed">—</div><div class="l">lives analisadas</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="hours_captured">—</div><div class="l">horas de transmissão capturadas</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="segments_transcribed">—</div><div class="l">trechos de fala transcritos</div></div>
+</div></div>
 <div class="strip"><div class="wrap"><span class="eyebrow green">O problema</span><p>A maioria dos streamers transmite <span class="hl">no escuro</span>: não sabe qual assunto paga as contas, quem são seus maiores apoiadores, nem por que a audiência sumiu no minuto 40.</p></div></div>
 <section id="beneficios">
   <div class="wrap">
@@ -265,23 +278,44 @@ export default function Landing() {
       cards.forEach((c) => io.observe(c))
     }
 
-    const el = document.querySelector<HTMLElement>('.si-landing [data-count]')
-    if (el) {
-      const target = parseFloat(el.getAttribute('data-count') || '0')
-      const fmt = (n: number) => 'US$ ' + n.toFixed(2).replace('.', ',')
+    const usd = (n: number) => 'US$ ' + n.toFixed(2).replace('.', ',')
+    const int = (n: number) => Math.round(n).toLocaleString('pt-BR')
+    const animate = (el: HTMLElement, target: number) => {
+      const fmt = el.getAttribute('data-fmt') === 'int' ? int : usd
       if (reduce) {
         el.textContent = fmt(target)
-      } else {
-        let start: number | null = null
-        const dur = 1400
-        const step = (ts: number) => {
-          if (start === null) start = ts
-          const p = Math.min((ts - start) / dur, 1)
-          el.textContent = fmt(target * (1 - Math.pow(1 - p, 3)))
-          if (p < 1) requestAnimationFrame(step)
-        }
-        requestAnimationFrame(step)
+        return
       }
+      let start: number | null = null
+      const dur = 1400
+      const step = (ts: number) => {
+        if (start === null) start = ts
+        const p = Math.min((ts - start) / dur, 1)
+        el.textContent = fmt(target * (1 - Math.pow(1 - p, 3)))
+        if (p < 1) requestAnimationFrame(step)
+      }
+      requestAnimationFrame(step)
+    }
+
+    // the hero panel's mock revenue animates on mount; real stats wait on the fetch
+    document
+      .querySelectorAll<HTMLElement>('.si-landing .panel [data-count]')
+      .forEach((el) => animate(el, parseFloat(el.getAttribute('data-count') || '0')))
+
+    const band = document.getElementById('si-stats')
+    if (band && typeof fetch === 'function') {
+      fetch('/api/stats')
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('stats'))))
+        .then((stats: PlatformStats) => {
+          band.style.display = 'grid'
+          band.querySelectorAll<HTMLElement>('[data-stat]').forEach((el) => {
+            const key = el.getAttribute('data-stat') as keyof PlatformStats | null
+            animate(el, key ? (stats[key] ?? 0) : 0)
+          })
+        })
+        .catch(() => {
+          /* stats unavailable: leave the band hidden */
+        })
     }
   }, [])
 

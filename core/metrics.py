@@ -7,10 +7,50 @@ from statistics import mean
 from sqlalchemy import Integer, func, select
 from sqlalchemy.orm import Session
 
-from core.models import ChatMessage, Event, Stream, StreamStatus, ViewerSample
+from core.models import (
+    ChatMessage,
+    Event,
+    Stream,
+    StreamStatus,
+    TranscriptSegment,
+    ViewerSample,
+)
 
 BUCKET_SECONDS = 60
 COMPARISON_WINDOW = 10
+SECONDS_PER_HOUR = 3600
+
+
+def platform_stats(db: Session) -> dict[str, int]:
+    """Platform-wide totals for the public landing stats. Broad by design:
+    every chat message captured, every analyzed (ready) live, the wall-clock
+    hours of every captured live that ended, and every transcribed segment."""
+    chat_messages = db.scalar(select(func.count()).select_from(ChatMessage)) or 0
+    streams_analyzed = (
+        db.scalar(
+            select(func.count())
+            .select_from(Stream)
+            .where(Stream.status == StreamStatus.READY)
+        )
+        or 0
+    )
+    seconds = db.scalar(
+        select(
+            func.coalesce(
+                func.sum(func.extract("epoch", Stream.ended_at - Stream.started_at)),
+                0,
+            )
+        ).where(Stream.ended_at.is_not(None))
+    )
+    segments_transcribed = (
+        db.scalar(select(func.count()).select_from(TranscriptSegment)) or 0
+    )
+    return {
+        "chat_messages": int(chat_messages),
+        "streams_analyzed": int(streams_analyzed),
+        "hours_captured": int(float(seconds or 0) // SECONDS_PER_HOUR),
+        "segments_transcribed": int(segments_transcribed),
+    }
 
 
 def chat_rate_buckets(db: Session, stream_id: int) -> list[tuple[datetime, int]]:
