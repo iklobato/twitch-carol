@@ -16,6 +16,9 @@ COPY alembic.ini ./
 COPY core/ core/
 COPY apps/__init__.py apps/__init__.py
 COPY apps/api/ apps/api/
+# The API serves the /howto page (App Platform static sites can't do
+# extensionless URLs); apps/web is not in this image, so ship just that file.
+COPY apps/web/public/howto.html apps/api/howto.html
 COPY workers/ workers/
 COPY migrations/ migrations/
 COPY scripts/ scripts/
