@@ -39,12 +39,19 @@ MIN_SEGMENT_SIZE = 1
 
 
 @dataclass
+class SegmentMember:
+    login: str
+    display_name: str | None
+
+
+@dataclass
 class Segment:
     key: str
     label: str
     description: str
     count: int
     examples: list[str]
+    members: list[SegmentMember]
 
 
 def _is_streamer(p: FollowerProfile, now: datetime) -> bool:
@@ -115,6 +122,10 @@ def build_segments(
                 description=description,
                 count=len(group),
                 examples=[p.display_name or p.login for p in group[:SEGMENT_EXAMPLES]],
+                members=[
+                    SegmentMember(login=p.login, display_name=p.display_name)
+                    for p in group
+                ],
             )
         )
     return segments

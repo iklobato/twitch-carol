@@ -21,6 +21,7 @@ export type StreamListItem = {
   events: number
   followers: number
   peak_viewers: number
+  records: string[]
 }
 
 export type NumberComparison = {
@@ -146,10 +147,18 @@ export type CommunityOut = {
 
 export type ViewerDip = {
   at: string
+  offset_seconds: number
+  offset_label: string
   viewers_before: number
   viewers_after: number
+  viewers_delta: number
   pct_drop: number
   speech_context: string | null
+  scene: string | null
+  cause: string | null
+  recovered_to: number | null
+  recovered_in_minutes: number | null
+  chat_context: string[]
 }
 
 export type Retention = {
@@ -392,12 +401,14 @@ export type FollowerSignals = {
   topic_follows: TopicFollows[]
 }
 
+export type SegmentMember = { login: string; display_name: string | null }
+
 export type FollowerSegment = {
   key: string
   label: string
   description: string
   count: number
-  examples: string[]
+  members: SegmentMember[]
   action: string | null
 }
 

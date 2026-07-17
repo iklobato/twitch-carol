@@ -22,6 +22,7 @@ import type {
   FollowerSignals,
   FunnelStage,
   GrowthBucket,
+  SegmentMember,
   TopFollower,
   VelocityDay,
 } from '../types'
@@ -43,6 +44,10 @@ const TYPE_BADGE: Record<string, string> = {
   affiliate: 'Afiliado',
   partner: 'Parceiro',
 }
+
+// Recent-window caps for the two time-series views (labeled when they truncate).
+const VELOCITY_RECENT_DAYS = 60
+const COHORT_RECENT_MONTHS = 12
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -343,10 +348,13 @@ function Funnel({ funnel }: { funnel: FunnelStage[] }) {
 
 function Cohorts({ cohorts }: { cohorts: CohortRow[] }) {
   if (cohorts.length === 0) return null
-  const recent = cohorts.slice(-12).reverse()
+  const recent = cohorts.slice(-COHORT_RECENT_MONTHS).reverse()
+  const capped = cohorts.length > COHORT_RECENT_MONTHS
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Retenção por safra</h3>
+      <h3 className="mb-1 text-lg font-bold">
+        Retenção por safra{capped ? ` · últimos ${COHORT_RECENT_MONTHS} meses` : ''}
+      </h3>
       <p className="mb-3 text-sm text-zinc-500">
         Para cada mês em que ganhou seguidores, quantos depois deram chat, assinaram ou
         pagaram.
@@ -438,12 +446,14 @@ function FollowerTable({
 
 function VelocitySparkline({ velocity }: { velocity: VelocityDay[] }) {
   if (velocity.length === 0) return null
-  const recent = velocity.slice(-60)
+  const recent = velocity.slice(-VELOCITY_RECENT_DAYS)
   const max = Math.max(...recent.map((d) => d.follows), 1)
+  const capped = velocity.length > VELOCITY_RECENT_DAYS
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Velocidade de follows (barras vermelhas = picos anômalos)
+        Velocidade de follows{capped ? ` · últimos ${VELOCITY_RECENT_DAYS} dias` : ''} (barras
+        vermelhas = picos anômalos)
       </p>
       <div className="flex h-24 items-end gap-0.5">
         {recent.map((day) => (
@@ -541,6 +551,56 @@ const SEGMENT_COLOR: Record<string, string> = {
   lurkers: 'border-zinc-800 bg-zinc-900',
 }
 
+const MEMBERS_PER_PAGE = 5
+
+function MemberList({ members }: { members: SegmentMember[] }) {
+  const [page, setPage] = useState(0)
+  const pages = Math.ceil(members.length / MEMBERS_PER_PAGE)
+  const start = page * MEMBERS_PER_PAGE
+  const slice = members.slice(start, start + MEMBERS_PER_PAGE)
+  return (
+    <div className="mb-2">
+      <ul className="mb-1 space-y-0.5 text-xs">
+        {slice.map((member) => (
+          <li key={member.login}>
+            <a
+              href={`https://twitch.tv/${member.login}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-zinc-400 hover:text-purple-300 hover:underline"
+            >
+              {member.display_name ?? member.login}
+            </a>
+          </li>
+        ))}
+      </ul>
+      {pages > 1 && (
+        <div className="flex items-center gap-2 text-[11px] text-zinc-600">
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="rounded border border-zinc-800 px-1.5 py-0.5 hover:text-zinc-300 disabled:opacity-30"
+          >
+            ‹
+          </button>
+          <span className="tabular-nums">
+            {start + 1}–{start + slice.length} de {members.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pages - 1, p + 1))}
+            disabled={page >= pages - 1}
+            className="rounded border border-zinc-800 px-1.5 py-0.5 hover:text-zinc-300 disabled:opacity-30"
+          >
+            ›
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AiSection({ ai }: { ai: FollowerAi }) {
   const { segments, audience_summary, reactivations } = ai
   if (segments.length === 0 && !audience_summary && reactivations.length === 0)
@@ -576,11 +636,7 @@ function AiSection({ ai }: { ai: FollowerAi }) {
                 </span>
               </div>
               <p className="mb-2 text-xs text-zinc-500">{seg.description}</p>
-              {seg.examples.length > 0 && (
-                <p className="mb-2 truncate text-xs text-zinc-600">
-                  ex: {seg.examples.join(', ')}
-                </p>
-              )}
+              {seg.members.length > 0 && <MemberList members={seg.members} />}
               {seg.action && (
                 <p className="rounded bg-black/30 p-2 text-sm text-zinc-200">
                   → {seg.action}

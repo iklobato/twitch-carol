@@ -1,5 +1,5 @@
 import { formatTime } from '../api'
-import type { ActionableOut } from '../types'
+import type { ActionableOut, ViewerDip } from '../types'
 
 function Retention({ actionable }: { actionable: ActionableOut }) {
   const retention = actionable.retention
@@ -26,6 +26,34 @@ function Retention({ actionable }: { actionable: ActionableOut }) {
   )
 }
 
+function DipContext({ dip }: { dip: ViewerDip }) {
+  return (
+    <div className="mt-1 space-y-0.5 text-xs text-zinc-500">
+      {dip.cause && <p className="text-amber-400/90">provável causa: {dip.cause}</p>}
+      {dip.speech_context && (
+        <p>
+          você falava: "{dip.speech_context.slice(0, 80)}
+          {dip.speech_context.length > 80 ? '…' : ''}"
+        </p>
+      )}
+      {!dip.speech_context && dip.scene && <p>no ar: {dip.scene}</p>}
+      {dip.chat_context.length > 0 && (
+        <p className="text-zinc-600">
+          chat: {dip.chat_context.map((line) => line.slice(0, 60)).join(' · ')}
+        </p>
+      )}
+      {dip.recovered_to !== null ? (
+        <p className="text-emerald-500/80">
+          voltou a {dip.recovered_to} viewers
+          {dip.recovered_in_minutes !== null && ` em ${dip.recovered_in_minutes} min`}
+        </p>
+      ) : (
+        <p className="text-zinc-600">não recuperou nos minutos seguintes</p>
+      )}
+    </div>
+  )
+}
+
 function Dips({ actionable }: { actionable: ActionableOut }) {
   if (actionable.dips.length === 0) return null
   return (
@@ -33,23 +61,22 @@ function Dips({ actionable }: { actionable: ActionableOut }) {
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-400">
         Onde você perdeu audiência
       </p>
-      <div className="space-y-2 text-sm">
+      <div className="space-y-3 text-sm">
         {actionable.dips.map((dip) => (
           <div key={dip.at}>
-            <span className="tabular-nums text-zinc-400">{formatTime(dip.at)}</span> ·{' '}
+            <span className="tabular-nums text-zinc-400">{formatTime(dip.at)}</span>{' '}
+            <span className="font-mono text-[11px] text-zinc-600">({dip.offset_label})</span> ·{' '}
             <span className="text-red-400">−{dip.pct_drop}%</span>{' '}
             <span className="text-zinc-500">
-              ({dip.viewers_before} → {dip.viewers_after} viewers)
+              ({dip.viewers_before} → {dip.viewers_after} viewers, {dip.viewers_delta})
             </span>
-            {dip.speech_context && (
-              <p className="text-xs text-zinc-500">
-                você falava: "{dip.speech_context.slice(0, 80)}
-                {dip.speech_context.length > 80 ? '…' : ''}"
-              </p>
-            )}
+            <DipContext dip={dip} />
           </div>
         ))}
       </div>
+      <p className="mt-2 text-[11px] text-zinc-600">
+        O tempo entre parênteses é o offset no VOD, para achar o momento.
+      </p>
     </div>
   )
 }

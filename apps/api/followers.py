@@ -164,12 +164,17 @@ class Signals(BaseModel):
     topic_follows: list[TopicFollowsOut]
 
 
+class SegmentMemberOut(BaseModel):
+    login: str
+    display_name: str | None
+
+
 class SegmentOut(BaseModel):
     key: str
     label: str
     description: str
     count: int
-    examples: list[str]
+    members: list[SegmentMemberOut]
     action: str | None
 
 
@@ -430,7 +435,10 @@ def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> Foll
             label=s.label,
             description=s.description,
             count=s.count,
-            examples=s.examples,
+            members=[
+                SegmentMemberOut(login=m.login, display_name=m.display_name)
+                for m in s.members
+            ],
             action=action_by_label.get(s.label),
         )
         for s in build_segments(profiles)

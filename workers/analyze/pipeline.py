@@ -16,7 +16,12 @@ from statistics import median
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from core.analytics import load_speech_segments, load_viewer_samples, retention_and_dips
+from core.analytics import (
+    dip_cause,
+    load_speech_segments,
+    load_viewer_samples,
+    retention_and_dips,
+)
 from core.config import get_settings
 from core.follower_ai import generate_follower_ai
 from core.follower_intel import build_follower_facts, generate_follower_recommendations
@@ -32,6 +37,7 @@ from core.models import (
     TranscriptSegment,
 )
 from core.monetization import build_monetization_facts, generate_channel_recommendations
+from core.records import RecordMetric, add_record_facts, update_stream_records
 from workers.analyze.evidence import validated_evidence
 from workers.analyze.peaks import compute_and_store_peaks
 
@@ -97,6 +103,7 @@ def run_analysis(
     stats = AnalysisStats()
 
     db.execute(delete(Insight).where(Insight.stream_id == stream.id))
+    broke_records = update_stream_records(db, stream)
     peaks = compute_and_store_peaks(db, stream)
 
     for peak in peaks:
@@ -108,7 +115,7 @@ def run_analysis(
         _rank_topics(db, stream, backend, budget, block_summaries, stats)
 
     _recommend(db, stream, strong, budget, stats)
-    _recommend_channel(db, stream, strong, budget)
+    _recommend_channel(db, stream, strong, budget, broke_records)
 
     db.flush()
     logger.info(
@@ -124,10 +131,14 @@ def run_analysis(
 
 
 def _recommend_channel(
-    db: Session, stream: Stream, backend: LLMBackend, budget: TokenBudget
+    db: Session,
+    stream: Stream,
+    backend: LLMBackend,
+    budget: TokenBudget,
+    broke_records: list[RecordMetric],
 ) -> None:
     """Refresh the account-level monetization recommendations after each stream
-    is analyzed, grounded in the channel's SQL facts."""
+    is analyzed, grounded in the channel's SQL facts (records included)."""
     ready_ids = list(
         db.scalars(
             select(Stream.id)
@@ -136,6 +147,7 @@ def _recommend_channel(
         )
     )
     facts = build_monetization_facts(db, stream.channel_id, ready_ids)
+    add_record_facts(db, stream.channel_id, broke_records, facts)
     generate_channel_recommendations(db, stream.channel_id, facts, backend, budget)
     follower_facts = build_follower_facts(db, stream.channel_id)
     generate_follower_recommendations(
@@ -567,7 +579,7 @@ def _recommend(
 
     speech = load_speech_segments(db, stream.id)
     retention, dips = retention_and_dips(
-        load_viewer_samples(db, stream.id), speech, RECOMMEND_MAX
+        load_viewer_samples(db, stream.id), RECOMMEND_MAX
     )
     peaks = db.scalars(
         select(Peak)
@@ -595,9 +607,11 @@ def _recommend(
         if segment is not None:
             number = len(lines) + 1
             fact_segment[number] = segment.id
+            cause = dip_cause(db, stream.id, dip.at)
+            cause_text = f", logo após {cause}," if cause else ""
             lines.append(
                 f"[{number}] QUEDA às {dip.at:%H:%M}: perdeu {dip.pct_drop}% da "
-                f"audiência enquanto você falava '{segment.text}'"
+                f"audiência{cause_text} enquanto você falava '{segment.text}'"
             )
     if retention is not None:
         lines.append(_retention_line(db, stream, retention.retained_pct))

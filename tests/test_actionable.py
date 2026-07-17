@@ -4,9 +4,11 @@ and unanswered chat questions."""
 import pytest
 
 from apps.api.actionable import _offset_label
+from core.models import SegmentKind
 from tests.conftest import login_as
 from tests.factories import (
     add_chat,
+    add_event,
     add_peak,
     add_segment,
     add_viewer_samples,
@@ -58,6 +60,61 @@ def test_dip_carries_speech_context(api_client, db) -> None:
     login_as(api_client, channel)
     dips = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"]
     assert dips[0]["speech_context"] == "vou ler os termos de uso agora"
+
+
+def test_dip_context_cause_recovery_offset_and_chat(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=5)
+    # biggest drop is at minute 1 (100 -> 40); recovers to 60 at minute 4
+    add_viewer_samples(db, stream, [60, 100, 40, 40, 60])
+    add_event(
+        db, stream, event_type="channel.ad_break.begin", offset_seconds=30, amount=90
+    )
+    add_chat(
+        db, stream, count=2, offset_seconds=60, text="cadê o jogo", spread_seconds=5
+    )
+    db.flush()
+
+    login_as(api_client, channel)
+    dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
+
+    assert dip["cause"] == "anúncio de 90s"
+    assert dip["viewers_delta"] == -60
+    assert dip["offset_label"] == "1m00s"
+    assert dip["recovered_to"] == 60
+    assert dip["recovered_in_minutes"] == 3.0
+    assert any("cadê o jogo" in line for line in dip["chat_context"])
+
+
+def test_dip_scene_when_music_plays_instead_of_speech(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=4)
+    add_viewer_samples(db, stream, [60, 100, 40, 40])
+    add_segment(db, stream, 60, text=None, kind=SegmentKind.MUSIC, duration_seconds=59)
+    db.flush()
+
+    login_as(api_client, channel)
+    dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
+    assert dip["speech_context"] is None
+    assert dip["scene"] == "tocando música"
+
+
+def test_dip_category_change_is_a_cause(api_client, db) -> None:
+    channel = make_channel(db)
+    stream = make_stream(db, channel, duration_minutes=4)
+    add_viewer_samples(db, stream, [60, 100, 40, 40])
+    add_event(
+        db,
+        stream,
+        event_type="channel.update",
+        offset_seconds=45,
+        payload={"category_name": "Just Chatting"},
+    )
+    db.flush()
+
+    login_as(api_client, channel)
+    dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
+    assert dip["cause"] == "troca para Just Chatting"
 
 
 def test_clip_suggestions_from_peaks(api_client, db) -> None:
