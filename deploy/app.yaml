@@ -136,6 +136,11 @@ services:
         preserve_path_prefix: true
       - path: /healthz
         preserve_path_prefix: true
+      # /howto (no .html): App Platform static sites can't do extensionless
+      # URLs, so the API serves this page. Screenshots live under /previews so
+      # they stay outside this prefix and keep being served by the static site.
+      - path: /howto
+        preserve_path_prefix: true
 
 # --- Front estático ---
 static_sites:
