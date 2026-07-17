@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 
 from core.models import Channel, Event, Stream, StreamStatus
-from core.queues import JOB_TRANSCRIBE, enqueue_job, get_valkey
+from core.queues import JOB_TRANSCRIBE, enqueue_job
 from workers.capture.collectors import (
     VIEWER_SAMPLE_INTERVAL_SECONDS,
     AudioRecorder,
@@ -59,7 +59,7 @@ class CaptureSession:
                 db, stream, self._chat.stats, self._viewers.stats, self._audio.stats
             )
             stream.status = StreamStatus.QUEUED_TRANSCRIPTION
-            enqueue_job(db, get_valkey(), JOB_TRANSCRIBE, stream.id)
+            enqueue_job(db, JOB_TRANSCRIBE, stream.id)
             db.commit()
         logger.info(
             "capture session finalized",

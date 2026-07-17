@@ -185,7 +185,7 @@ def _run_live(api_client, fake_twitch: FakeTwitch, db, channel: Channel) -> Stre
     )
     stream.status = StreamStatus.QUEUED_TRANSCRIPTION
 
-    enqueue_job(db, core.worker_loop.get_valkey(), JOB_TRANSCRIBE, stream.id)
+    enqueue_job(db, JOB_TRANSCRIBE, stream.id)
     db.commit()
     return stream
 
@@ -259,7 +259,6 @@ def test_full_flow_login_processing_visualization(
     import workers.capture.collectors as collectors
 
     monkeypatch.setattr(collectors, "session_factory", lambda: bound)
-    monkeypatch.setattr(core.worker_loop, "get_valkey", lambda: fake_valkey)
 
     # ---- phase 1: login (oauth code flow against FakeTwitch) --------------
     # Helix serves follower + VOD history; connect backfills both.

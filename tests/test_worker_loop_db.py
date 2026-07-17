@@ -3,12 +3,10 @@ retry and permanent failure."""
 
 from datetime import UTC, datetime
 
-import pytest
 from sqlalchemy import select
 
-from core import worker_loop
 from core.models import Job, JobStatus, StreamStatus
-from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE, QUEUE_KEYS
+from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE
 from core.worker_loop import MAX_ATTEMPTS, WorkerSpec, _run_job, pick_next_job
 from tests.factories import add_job, make_channel, make_stream
 
@@ -18,12 +16,6 @@ SPEC = WorkerSpec(
     done_status=StreamStatus.QUEUED_ANALYSIS,
     next_job_type=JOB_ANALYZE,
 )
-
-
-@pytest.fixture
-def valkey_patch(monkeypatch: pytest.MonkeyPatch, fake_valkey):
-    monkeypatch.setattr(worker_loop, "get_valkey", lambda: fake_valkey)
-    return fake_valkey
 
 
 def test_pick_next_job_prefers_most_urgent_channel(db) -> None:
@@ -50,7 +42,7 @@ def test_pick_next_job_none_when_empty(db) -> None:
     assert pick_next_job(db, JOB_TRANSCRIBE, datetime.now(UTC)) is None
 
 
-def test_run_job_success_transitions_and_chains_next_job(db, valkey_patch) -> None:
+def test_run_job_success_transitions_and_chains_next_job(db) -> None:
     channel = make_channel(db)
     stream = make_stream(db, channel, StreamStatus.QUEUED_TRANSCRIPTION)
     job = add_job(db, stream, JOB_TRANSCRIBE)
@@ -72,12 +64,9 @@ def test_run_job_success_transitions_and_chains_next_job(db, valkey_patch) -> No
         select(Job).where(Job.stream_id == stream.id).where(Job.type == JOB_ANALYZE)
     ).all()
     assert len(chained) == 1
-    assert valkey_patch.streams[QUEUE_KEYS[JOB_ANALYZE]][0]["stream_id"] == str(
-        stream.id
-    )
 
 
-def test_run_job_failure_requeues_then_fails_permanently(db, valkey_patch) -> None:
+def test_run_job_failure_requeues_then_fails_permanently(db) -> None:
     channel = make_channel(db)
     stream = make_stream(db, channel, StreamStatus.QUEUED_TRANSCRIPTION)
     job = add_job(db, stream, JOB_TRANSCRIBE)
@@ -104,7 +93,7 @@ def test_run_job_failure_requeues_then_fails_permanently(db, valkey_patch) -> No
     )
 
 
-def test_run_job_with_missing_stream_fails_cleanly(db, valkey_patch) -> None:
+def test_run_job_with_missing_stream_fails_cleanly(db) -> None:
     channel = make_channel(db)
     stream = make_stream(db, channel)
     job = add_job(db, stream, JOB_TRANSCRIBE)

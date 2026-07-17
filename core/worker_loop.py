@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.db import session_factory
 from core.models import Channel, Job, JobStatus, Stream, StreamStatus
-from core.queues import enqueue_job, get_valkey
+from core.queues import enqueue_job
 from core.schedule import HISTORY_LIMIT, estimate_next_live
 
 logger = logging.getLogger(__name__)
@@ -196,7 +196,7 @@ def _run_job(db: Session, spec: WorkerSpec, job: Job, handler: JobHandler) -> No
     job.finished_at = datetime.now(UTC)
     stream.status = spec.done_status
     if spec.next_job_type is not None:
-        enqueue_job(db, get_valkey(), spec.next_job_type, stream.id)
+        enqueue_job(db, spec.next_job_type, stream.id)
     db.commit()
     logger.info(
         "%s done: %s",

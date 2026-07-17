@@ -5,10 +5,8 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Annotated
 
-import redis
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,19 +26,16 @@ from core.eventsub import (
     verify_signature,
 )
 from core.models import Channel, Event, Follower
-from core.queues import get_valkey
 from core.streams import get_active_stream, mark_stream_offline, start_stream
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/eventsub")
 
-Valkey = Annotated[redis.Redis, Depends(get_valkey)]
-
 
 @router.post("/callback")
 async def eventsub_callback(
-    request: Request, db: DbSession, valkey: Valkey
+    request: Request, db: DbSession
 ) -> Response:
     secret = get_settings().twitch_eventsub_secret
     if not secret:
@@ -73,7 +68,7 @@ async def eventsub_callback(
             status_code=400, detail=f"Unknown message type: {message_type}"
         )
 
-    if not claim_message(valkey, message_id):
+    if not claim_message(db, message_id):
         return Response(status_code=204)
 
     occurred_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
