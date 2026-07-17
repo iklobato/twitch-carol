@@ -87,6 +87,7 @@ const READY_STREAM: StreamListItem = {
   followers: 48,
   peak_viewers: 512,
   records: [],
+  day: '2026-07-08',
 }
 
 afterEach(() => vi.unstubAllGlobals())
