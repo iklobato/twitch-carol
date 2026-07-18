@@ -29,6 +29,10 @@
   .brand { display:flex; align-items:center; gap:10px; font-weight:800; }
   .brand .mark { width:24px; height:24px; border-radius:6px; background:linear-gradient(150deg,var(--violet),#6f3fd6); box-shadow:0 0 16px rgba(145,70,255,0.5); display:grid; place-items:center; }
   .brand .mark::after { content:""; width:8px; height:8px; border-radius:50%; background:#fff; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .langsw { font-family:var(--mono); font-size:0.72rem; display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .langsw a { padding:5px 11px; color:var(--muted); text-decoration:none; }
+  .langsw a.on { background:var(--violet); color:#150b2b; font-weight:700; }
 
   .btn { display:inline-flex; align-items:center; gap:9px; font-weight:700; padding:14px 26px; border-radius:12px; text-decoration:none; color:#150b2b;
     background:linear-gradient(135deg,var(--violet-hi),var(--violet)); box-shadow:0 8px 30px rgba(145,70,255,0.4); transition:transform .15s ease, box-shadow .2s ease; }
@@ -225,7 +229,10 @@
 <div class="aura"></div>
 
 <header class="top"><div class="wrap">
-  <div class="brand"><span class="mark"></span> Stream Intel</div>
+  <div class="topbar">
+    <div class="brand"><span class="mark"></span> Stream Intel</div>
+    <span class="langsw"><a href="?lang=pt" class="on">PT</a><a href="?lang=en">EN</a></span>
+  </div>
   <span class="eyebrow" style="display:block;margin-top:20px">Como funciona · e quanto vale pra você</span>
   <h1>Você já faz o trabalho pesado. Falta saber <span class="hl">qual parte dele paga</span>.</h1>
   <p class="sub">O Stream Intel escuta o que você fala na live e te mostra qual assunto engaja o chat e gera receita. Aí você repete o que funciona, em vez de torcer pra dar certo.</p>
