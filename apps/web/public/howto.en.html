@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stream Intel — How it works and what it's worth to you</title>
+<style>
+  :root {
+    --bg:#0b0a12; --bg-2:#100e1b; --bg-3:#15121f;
+    --line:rgba(169,112,255,0.16); --line-strong:rgba(169,112,255,0.3);
+    --ink:#f4f1fb; --muted:#a7a2c6; --muted-2:#7a749a;
+    --violet:#a970ff; --violet-hi:#cbaaff; --green:#34d399; --green-hi:#6ee7b7; --red:#fb7185;
+    /* app tones, to make the panel previews read like the real product */
+    --app-bg:#09090b; --app-card:#18181b; --app-card2:#1e1e22; --app-line:#2a2a30; --app-ink:#e6e6ea; --app-muted:#a1a1aa;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --maxw:940px;
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.62; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+  .aura { position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:radial-gradient(55% 40% at 12% -5%, rgba(145,70,255,0.22), transparent 60%), radial-gradient(45% 35% at 100% 0%, rgba(52,211,153,0.1), transparent 55%); }
+  .wrap { position:relative; z-index:1; max-width:var(--maxw); margin:0 auto; padding:0 22px; }
+  a { color:var(--violet-hi); }
+  .eyebrow { font-family:var(--mono); font-size:0.72rem; letter-spacing:0.16em; text-transform:uppercase; color:var(--violet-hi); }
+  .eyebrow.green { color:var(--green-hi); }
+
+  .brand { display:flex; align-items:center; gap:10px; font-weight:800; }
+  .brand .mark { width:24px; height:24px; border-radius:6px; background:linear-gradient(150deg,var(--violet),#6f3fd6); box-shadow:0 0 16px rgba(145,70,255,0.5); display:grid; place-items:center; }
+  .brand .mark::after { content:""; width:8px; height:8px; border-radius:50%; background:#fff; }
+  .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .langsw { font-family:var(--mono); font-size:0.72rem; display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .langsw a { padding:5px 11px; color:var(--muted); text-decoration:none; }
+  .langsw a.on { background:var(--violet); color:#150b2b; font-weight:700; }
+
+  .btn { display:inline-flex; align-items:center; gap:9px; font-weight:700; padding:14px 26px; border-radius:12px; text-decoration:none; color:#150b2b;
+    background:linear-gradient(135deg,var(--violet-hi),var(--violet)); box-shadow:0 8px 30px rgba(145,70,255,0.4); transition:transform .15s ease, box-shadow .2s ease; }
+  .btn:hover { transform:translateY(-2px); box-shadow:0 12px 40px rgba(145,70,255,0.55); }
+  .btn svg { width:18px; height:20px; fill:#150b2b; }
+
+  header.top { padding:56px 0 30px; border-bottom:1px solid var(--line); }
+  h1 { font-size:clamp(2rem,4.8vw,3.1rem); letter-spacing:-0.025em; line-height:1.05; margin:16px 0 0; font-weight:850; text-wrap:balance; }
+  h1 .hl { color:var(--green-hi); }
+  .sub { color:var(--muted); font-size:1.14rem; margin:16px 0 0; max-width:58ch; }
+  .top .cta-row { margin-top:26px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .top .note { font-family:var(--mono); font-size:0.74rem; color:var(--muted-2); }
+
+  /* "works even without affiliate" honesty strip */
+  .honesty-top { margin-top:22px; display:flex; gap:12px; flex-wrap:wrap; }
+  .honesty-top .h { flex:1 1 240px; border:1px solid var(--line); border-radius:12px; padding:13px 15px; background:var(--bg-2); font-size:0.9rem; }
+  .honesty-top .h b { color:var(--ink); }
+  .honesty-top .h.free { border-color:rgba(52,211,153,0.3); }
+  .honesty-top .h .tag { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase; padding:2px 7px; border-radius:5px; }
+  .honesty-top .h.free .tag { color:var(--green-hi); background:rgba(52,211,153,0.1); }
+  .honesty-top .h.aff .tag { color:var(--violet-hi); background:rgba(169,112,255,0.1); }
+
+  section { padding:46px 0; border-bottom:1px solid var(--line); }
+  h2 { font-size:clamp(1.6rem,3.6vw,2.2rem); letter-spacing:-0.02em; margin:10px 0 0; font-weight:820; line-height:1.1; text-wrap:balance; }
+  .lead { color:var(--muted); font-size:1.06rem; margin-top:14px; max-width:64ch; }
+  p { margin:14px 0 0; }
+
+  /* example card (differentiator) */
+  .ex { margin-top:22px; border:1px solid var(--line-strong); border-radius:16px; overflow:hidden; background:linear-gradient(180deg,var(--bg-2),#0c0b15); box-shadow:0 24px 60px -34px rgba(145,70,255,0.5); }
+  .ex .hd { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; border-bottom:1px solid var(--line); background:rgba(169,112,255,0.06); }
+  .ex .hd .who { font-family:var(--mono); font-size:0.76rem; color:var(--muted); }
+  .ex .hd .badge { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.1em; color:var(--green-hi); border:1px solid rgba(52,211,153,0.3); border-radius:6px; padding:3px 8px; }
+  .ex .bd { padding:18px; }
+  .block { display:grid; grid-template-columns:1fr auto; gap:6px 14px; align-items:center; padding:11px 0; border-bottom:1px dashed var(--line); }
+  .block:last-of-type { border-bottom:0; }
+  .block .lab { font-weight:600; }
+  .block .lab small { display:block; color:var(--muted-2); font-weight:400; font-family:var(--mono); font-size:0.72rem; margin-top:2px; }
+  .block .val { font-family:var(--mono); font-size:0.86rem; text-align:right; font-variant-numeric:tabular-nums; }
+  .val.good { color:var(--green-hi); }
+  .val.bad { color:var(--red); }
+  .verdict { margin-top:14px; display:flex; gap:11px; align-items:flex-start; border:1px solid var(--line-strong); border-radius:12px; padding:13px 15px; background:linear-gradient(180deg,rgba(169,112,255,0.12),rgba(169,112,255,0.03)); }
+  .verdict .ai { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.1em; color:var(--violet-hi); border:1px solid var(--line-strong); border-radius:6px; padding:3px 7px; white-space:nowrap; margin-top:2px; }
+  .verdict p { margin:0; font-size:0.95rem; }
+
+  /* ---- real-panel previews (styled like the product) ---- */
+  .shot { margin-top:20px; border:1px solid var(--app-line); border-radius:14px; overflow:hidden; background:var(--app-bg); box-shadow:0 26px 70px -36px rgba(0,0,0,0.8); }
+  .shot .bar { display:flex; align-items:center; gap:7px; padding:9px 13px; border-bottom:1px solid var(--app-line); background:#101013; }
+  .shot .bar i { width:9px; height:9px; border-radius:50%; background:#2a2a30; display:inline-block; }
+  .shot .bar .url { font-family:var(--mono); font-size:0.7rem; color:#71717a; margin-left:8px; }
+  .shot .body { padding:16px; color:var(--app-ink); font-size:0.9rem; }
+  .shot .cap { font-family:var(--mono); font-size:0.72rem; color:var(--muted-2); margin-top:8px; }
+  .featlist { margin-top:24px; display:grid; grid-template-columns:minmax(0,1fr); gap:24px; }
+  .feat-b { min-width:0; }
+  .feat-b .fh { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:5px; }
+  .feat-b .fh .kick { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--violet-hi); }
+  .feat-b .fh h4 { margin:0; font-size:1.1rem; }
+  .feat-b .why { color:var(--muted); font-size:0.95rem; margin:0 0 11px; max-width:64ch; }
+  .feat-b .why b { color:var(--green-hi); font-weight:650; }
+  .feat-b .shot { margin-top:0; }
+
+  /* inline HTML mockups of report sections (crisp, no raster images) */
+  .m-lab { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.09em; text-transform:uppercase; color:var(--app-muted); }
+  .chips { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:10px; }
+  .chip { border:1px solid var(--app-line); border-radius:8px; padding:6px 9px; font-size:0.78rem; color:var(--app-muted); background:var(--app-card); }
+  .chip b { color:var(--violet-hi); font-family:var(--mono); margin-right:6px; }
+  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .mcard { border:1px solid var(--app-line); border-radius:10px; padding:12px; background:var(--app-card); }
+  .mcard.red { border-color:rgba(251,113,133,0.35); }
+  .mcard.orange { border-color:rgba(251,146,60,0.35); }
+  .mcard .t { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--violet-hi); }
+  .mcard.red .t { color:var(--red); }
+  .mcard.orange .t { color:#fdba74; }
+  .mcard.blue .t { color:#38bdf8; }
+  .mcard .big { font-size:1.05rem; font-weight:800; margin-top:6px; color:var(--app-ink); }
+  .mcard .sub { color:var(--app-muted); font-size:0.8rem; margin-top:5px; }
+  .mcard .say { color:var(--app-ink); font-size:0.82rem; margin-top:7px; }
+  .mcard .good { color:var(--green-hi); }
+  .mcard .bad { color:var(--red); font-family:var(--mono); }
+  .clipbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:9px; }
+  .clipbar .off { font-family:var(--mono); background:rgba(251,146,60,0.15); color:#fdba74; border-radius:6px; padding:3px 8px; font-size:0.8rem; }
+  .clipbar .win { color:var(--app-ink); font-size:0.9rem; }
+  .clipbar .mul { color:var(--green-hi); font-family:var(--mono); font-size:0.82rem; }
+  .trow { display:grid; grid-template-columns:22px 1fr 96px; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--app-line); }
+  .trow:last-child { border-bottom:0; }
+  .trow .rk { font-family:var(--mono); color:var(--app-muted); font-size:0.78rem; }
+  .trow .nm2 { color:var(--app-ink); font-size:0.88rem; }
+  .trow .nm2 small { display:block; color:var(--app-muted); font-size:0.72rem; margin-top:1px; }
+  .trow .tk { height:7px; border-radius:4px; background:var(--app-card2); overflow:hidden; }
+  .trow .tk .fl { display:block; height:100%; background:#a970ff; border-radius:4px; }
+  .sent-meter { height:9px; border-radius:5px; margin:11px 0 6px; position:relative;
+    background:linear-gradient(90deg,#fb7185,#3f3f46 45%,#3f3f46 55%,#34d399); }
+  .sent-meter .dot { position:absolute; top:50%; width:13px; height:13px; border-radius:50%; background:#fff; border:2px solid #34d399; transform:translate(-50%,-50%); }
+  .sent-scale { display:flex; justify-content:space-between; font-size:0.68rem; color:var(--app-muted); }
+  .sent-chips { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
+  .sent-chips span { font-size:0.76rem; color:var(--app-muted); border:1px solid var(--app-line); border-radius:7px; padding:4px 8px; }
+  .sent-chips b { color:var(--green-hi); font-family:var(--mono); }
+  .heat { display:grid; gap:6px; margin-top:11px; }
+  .heatrow { display:grid; grid-template-columns:92px 1fr; align-items:center; gap:9px; }
+  .heatrow .who2 { color:var(--app-ink); font-size:0.76rem; }
+  .heatcells { display:grid; grid-template-columns:repeat(14,minmax(0,1fr)); gap:3px; }
+  .heatcells i { height:12px; border-radius:2px; background:#a970ff; display:block; }
+  .heatcells i.o0 { opacity:0.12; } .heatcells i.o1 { opacity:0.3; } .heatcells i.o2 { opacity:0.5; }
+  .heatcells i.o3 { opacity:0.72; } .heatcells i.o4 { opacity:0.95; }
+  .heat-x { display:flex; justify-content:space-between; font-size:0.68rem; color:var(--app-muted); margin-top:7px; }
+  .sh-h { font-weight:700; font-size:1rem; margin:0 0 12px; color:var(--app-ink); }
+  .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
+  .stat { border:1px solid var(--app-line); border-radius:10px; padding:11px; background:var(--app-card); }
+  .stat.rev { border-color:rgba(52,211,153,0.3); }
+  .stat .k { font-size:0.66rem; color:#8b8b94; }
+  .stat .v { font-size:1.15rem; font-weight:800; margin-top:3px; font-variant-numeric:tabular-nums; }
+  .stat.rev .v { color:var(--green-hi); }
+  .list { margin-top:12px; display:grid; gap:7px; }
+  .li { display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid var(--app-line); border-radius:9px; padding:9px 11px; background:var(--app-card); font-size:0.85rem; }
+  .li .who { color:#c4b5fd; }
+  .li .who .pos { color:#71717a; margin-right:8px; font-family:var(--mono); }
+  .li .who .meta { color:#71717a; font-size:0.76rem; margin-left:7px; }
+  .li .amt { color:var(--green-hi); font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .barrow { display:flex; align-items:center; gap:10px; font-size:0.85rem; margin-top:9px; }
+  .barrow .nm { width:150px; flex-shrink:0; color:var(--app-ink); }
+  .barrow .track { flex:1; height:9px; border-radius:5px; background:var(--app-card2); overflow:hidden; }
+  .barrow .fill { height:100%; border-radius:5px; background:#34d399; }
+  .barrow .pv { width:88px; text-align:right; color:var(--green-hi); font-family:var(--mono); font-size:0.8rem; }
+  .rec { border:1px solid rgba(169,112,255,0.35); border-radius:11px; padding:13px; background:rgba(169,112,255,0.06); }
+  .rec .badge { font-family:var(--mono); font-size:0.58rem; letter-spacing:0.1em; color:#c4b5fd; border:1px solid rgba(169,112,255,0.4); border-radius:5px; padding:2px 6px; }
+  .rec p { margin:9px 0 0; font-size:0.9rem; }
+  .rec .cite { margin-top:8px; font-family:var(--mono); font-size:0.74rem; color:#8b8b94; border-left:2px solid rgba(52,211,153,0.4); padding-left:9px; }
+
+  /* steps */
+  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:26px; counter-reset:s; }
+  .step { border:1px solid var(--line); border-radius:14px; padding:20px; background:var(--bg-2); }
+  .step .n { counter-increment:s; font-family:var(--mono); font-weight:700; width:38px; height:38px; border-radius:10px; display:grid; place-items:center; background:rgba(169,112,255,0.12); border:1px solid var(--line-strong); color:var(--violet-hi); }
+  .step .n::before { content:counter(s,decimal-leading-zero); }
+  .step h4 { margin:14px 0 0; font-size:1.05rem; }
+  .step p { color:var(--muted); font-size:0.9rem; margin-top:7px; }
+
+  /* feature list (no emoji: mono kicker instead) */
+  .feats { margin-top:24px; display:grid; gap:12px; }
+  .f { border:1px solid var(--line); border-radius:13px; padding:16px 18px; background:var(--bg-2); }
+  .f .kick { font-family:var(--mono); font-size:0.64rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--violet-hi); }
+  .f h4 { margin:5px 0 0; font-size:1.06rem; }
+  .f .pro { color:var(--muted); margin-top:6px; font-size:0.94rem; }
+  .f .demo { margin-top:9px; font-family:var(--mono); font-size:0.8rem; color:var(--green-hi); border-left:2px solid rgba(52,211,153,0.4); padding-left:10px; }
+
+  /* ROI */
+  .roi { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:24px; }
+  .roi .r { border:1px solid var(--line); border-radius:14px; padding:20px; background:var(--bg-3); }
+  .roi .r .big { font-size:1.5rem; font-weight:800; color:var(--green-hi); letter-spacing:-0.01em; }
+  .roi .r .k { font-family:var(--mono); font-size:0.68rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted-2); margin-top:4px; }
+  .roi .r .d { color:var(--muted); font-size:0.88rem; margin-top:8px; }
+  .honest { margin-top:18px; border:1px solid var(--line-strong); border-left:3px solid var(--green); border-radius:12px; padding:15px 17px; background:rgba(52,211,153,0.05); font-size:0.96rem; }
+  .honest b { color:var(--green-hi); }
+
+  .trust { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
+  .trust .t { border:1px solid var(--line); border-radius:13px; padding:16px; background:var(--bg-2); }
+  .trust .t .k { font-weight:700; }
+  .trust .t .k .ic { color:var(--green-hi); margin-right:8px; }
+  .trust .t .d { color:var(--muted); font-size:0.88rem; margin-top:5px; }
+
+  /* FAQ */
+  .faq { margin-top:22px; display:grid; gap:10px; }
+  .faq details { border:1px solid var(--line); border-radius:12px; background:var(--bg-2); overflow:hidden; }
+  .faq summary { cursor:pointer; padding:15px 18px; font-weight:650; list-style:none; display:flex; justify-content:space-between; align-items:center; gap:12px; }
+  .faq summary::-webkit-details-marker { display:none; }
+  .faq summary::after { content:"+"; color:var(--violet-hi); font-family:var(--mono); font-size:1.2rem; }
+  .faq details[open] summary::after { content:"\\2212"; }
+  .faq .a { padding:0 18px 16px; color:var(--muted); font-size:0.95rem; }
+
+  .beta { border:1px solid var(--line-strong); border-radius:18px; padding:26px; margin-top:24px; background:radial-gradient(80% 130% at 20% -20%, rgba(145,70,255,0.2), transparent 60%), var(--bg-2); }
+  .beta ul { margin:12px 0 0; padding-left:20px; color:var(--muted); }
+  .beta li { margin:6px 0; }
+  .beta li b { color:var(--ink); }
+
+  .final { text-align:center; padding:56px 0 30px; }
+  .final h2 { font-size:clamp(1.8rem,4.6vw,2.7rem); }
+  .final p { color:var(--muted); max-width:46ch; margin:14px auto 0; }
+  .final .btn { margin-top:24px; padding:17px 32px; font-size:1.06rem; }
+  .cta-inline { margin-top:30px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  .cta-inline .note { font-family:var(--mono); font-size:0.74rem; color:var(--muted-2); }
+
+  footer { border-top:1px solid var(--line); padding:24px 0 60px; color:var(--muted-2); font-size:0.82rem; }
+  .fine { font-size:0.76rem; max-width:78ch; margin-top:8px; }
+
+  @media (max-width:640px) {
+    .steps, .roi, .stat-row { grid-template-columns:1fr 1fr; }
+    .trust { grid-template-columns:1fr; }
+    .block { grid-template-columns:1fr; }
+    .block .val { text-align:left; }
+    .barrow .nm { width:110px; }
+  }
+  @media (prefers-reduced-motion:reduce){ html{scroll-behavior:auto;} .btn{transition:none;} }
+</style>
+</head>
+<body>
+<div class="aura"></div>
+
+<header class="top"><div class="wrap">
+  <div class="topbar">
+    <div class="brand"><span class="mark"></span> Stream Intel</div>
+    <span class="langsw"><a href="?lang=pt">PT</a><a href="?lang=en" class="on">EN</a></span>
+  </div>
+  <span class="eyebrow" style="display:block;margin-top:20px">How it works · and what it's worth to you</span>
+  <h1>You already do the hard work. You just don't know <span class="hl">which part of it pays</span>.</h1>
+  <p class="sub">Stream Intel listens to what you say on stream and shows you which topic gets the chat going and brings in money. So you do more of what works, instead of hoping it does.</p>
+  <div class="cta-row">
+    <a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Connect with Twitch</a>
+    <span class="note">Free in beta · read-only · 1 click</span>
+  </div>
+
+  <div class="honesty-top">
+    <div class="h free"><span class="tag">Works without affiliate</span><br><b>From day 1:</b> your followers, audience, which topic gets the chat going, best days and times, and the report for each stream.</div>
+    <div class="h aff"><span class="tag">When you monetize</span><br><b>Unlocks:</b> estimated revenue from bits and subs, who contributed most, tier mix and the bits leaderboard (data Twitch only gives to affiliates/partners).</div>
+  </div>
+</div></header>
+
+<!-- THE differentiator -->
+<section><div class="wrap">
+  <span class="eyebrow green">What only Stream Intel does</span>
+  <h2>It matches what you SAY with what engages and what pays.</h2>
+  <p class="lead">In a 3-hour stream, not every minute pays the same. We transcribe what you say, mark the chat peaks, and match each bit/sub that came in with the moment it came in. The result is simple: you see, by topic, what pulled people in and what pulled money in.</p>
+
+  <div class="ex">
+    <div class="hd"><span class="who">Example · Tuesday stream, 3h, 45 viewers at peak</span><span class="badge">ILLUSTRATIVE</span></div>
+    <div class="bd">
+      <div class="block"><div class="lab">Reacting to clips <small>40 min</small></div><div class="val good">chat 2.8x · $6 in bits</div></div>
+      <div class="block"><div class="lab">Talking to chat <small>1h</small></div><div class="val good">chat 1.7x · 2 subs ($5)</div></div>
+      <div class="block"><div class="lab">Playing in silence <small>1h20</small></div><div class="val bad">chat below average · $0</div></div>
+      <div class="verdict"><span class="ai">AI</span><p>Your best moments come from reacting to clips and talking to chat. That's where almost all the interaction and all the bits came from. Do more of those blocks and cut the silent gameplay.</p></div>
+    </div>
+  </div>
+  <p style="color:var(--muted-2);font-size:0.82rem">The numbers are small on purpose: it's the kind of real number a growing channel sees. The gain isn't magic, it's about not spending hours on what doesn't engage.</p>
+  <div class="cta-inline"><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> See this on your channel</a><span class="note">Free in beta · read-only · 1 click</span></div>
+</div></section>
+
+<!-- panel previews -->
+<section><div class="wrap">
+  <span class="eyebrow">Inside the dashboard</span>
+  <h2>This is what you open after connecting.</h2>
+  <p class="lead">The product screens, here as real HTML (not a screenshot), with example numbers from a growing channel. Starting with the money view of "My channel":</p>
+
+  <div class="shot">
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Monetization</span></div>
+    <div class="body">
+      <div class="sh-h">Monetization (all streams)</div>
+      <div class="stat-row">
+        <div class="stat rev"><div class="k">Estimated earnings</div><div class="v">$44.50</div></div>
+        <div class="stat"><div class="k">Bits</div><div class="v">2,700</div></div>
+        <div class="stat"><div class="k">Subscriptions</div><div class="v">1</div></div>
+        <div class="stat"><div class="k">Gifted subs</div><div class="v">5</div></div>
+      </div>
+      <div class="list">
+        <div class="li"><span class="who"><span class="pos">1st</span>viewer_11<span class="meta">in 1 stream</span></span><span class="amt">$22.50</span></div>
+        <div class="li"><span class="who"><span class="pos">2nd</span>loyal_carl<span class="meta">in 5 streams</span></span><span class="amt">$17.00</span></div>
+        <div class="li"><span class="who"><span class="pos">3rd</span>loyal_ana<span class="meta">in 1 stream</span></span><span class="amt">$5.00</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="cap">Who contributed most, summed per person across all your streams.</div>
+
+  <div class="shot">
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Content that converts</span></div>
+    <div class="body">
+      <div class="sh-h">Content that converts</div>
+      <div class="barrow"><span class="nm">Just Chatting</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="pv">$91.50/h</span></div>
+      <div class="barrow"><span class="nm">Software &amp; Dev</span><span class="track"><span class="fill" style="width:12%"></span></span><span class="pv">$2.33/h</span></div>
+      <div style="color:#8b8b94;font-size:0.8rem;margin-top:11px">Revenue per hour streamed, by category. Do more of what pays most per hour.</div>
+    </div>
+  </div>
+  <div class="cap">The same short "just chatting" stream paid 39x more per hour than the long gameplay ones.</div>
+
+  <div class="shot">
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · How to earn more (AI)</span></div>
+    <div class="body">
+      <div class="sh-h">How to earn more (AI)</div>
+      <div class="rec">
+        <span class="badge">AI</span>
+        <p>Make the most of the 51% of revenue that comes from viewer_11: create an exclusive perk (emote, VIP room) for them and your other big supporters, and shout them out live.</p>
+        <div class="cite">↳ Your biggest contributor (viewer_11) is 51% of your revenue.</div>
+      </div>
+    </div>
+  </div>
+  <div class="cap">Every recommendation cites the number from your channel behind it. If there's no real data, the AI doesn't make it up.</div>
+
+  <h3 style="margin-top:40px;font-size:1.3rem">Every part of the report, and why it's worth it</h3>
+  <div class="featlist">
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Live summary</span><h4>The whole stream in one paragraph</h4></div>
+      <p class="why">The AI sums up the stream and cites the exact moments (clickable). <b>You get what happened without rewatching hours of VOD</b>, and every sentence points to where it came from.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Live summary</span></div>
+        <div class="body"><div class="rec"><span class="badge">AI</span>
+          <p>Stream focused on shipping the API to production. The certificate error was fixed with Caddy and the site went live over HTTPS. A raid at 21:18 brought the chat peak. Ended with the automatic backup working.</p>
+          <div class="chips">
+            <div class="chip"><b>21:10</b>"first step is to create the droplet"</div>
+            <div class="chip"><b>21:15</b>"there we go, site's live over https"</div>
+            <div class="chip"><b>21:18</b>"a raid came in! welcome"</div>
+            <div class="chip"><b>21:25</b>"more tomorrow, thanks a lot"</div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">What to improve</span><h4>One section, all action</h4></div>
+      <p class="why">Retention, where the audience dropped, and the chat questions that went unanswered, all together. <b>You leave the stream already knowing what to fix next time</b>, with numbers, not guesses.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · What to improve</span></div>
+        <div class="body"><div class="sh-h">What to improve</div>
+          <div class="mgrid">
+            <div class="mcard"><div class="t">Retention</div><div class="big"><span class="good">49%</span> of peak</div><div class="sub">held 89 of 180 peak viewers</div></div>
+            <div class="mcard red"><div class="t">Where you lost audience</div><div class="big"><span class="bad">-54%</span> at 21:18</div><div class="sub">right after an ad break</div></div>
+            <div class="mcard orange"><div class="t">Best moment to clip</div><div class="big">21:18–21:20</div><div class="sub">chat 5.5x normal · offset 9m52s</div></div>
+            <div class="mcard blue"><div class="t">Unanswered questions</div><div class="big">27</div><div class="sub">asked while you weren't talking</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Where you lost audience</span><h4>The drop with its likely cause</h4></div>
+      <p class="why">Each drop with the reason (ad, topic change), what you were saying at the time, the chat then, and whether people came back. <b>You stop emptying out at the same point every stream.</b></p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Where you lost audience</span></div>
+        <div class="body"><div class="mcard red">
+          <div class="t">Where you lost audience</div>
+          <div class="big">21:18 · <span class="bad">-54.4%</span> <span style="font-weight:400;color:var(--app-muted);font-size:0.82rem">(180 → 82 viewers)</span></div>
+          <div class="say">you were saying: "a raid came in! welcome everyone from the partner channel, we're shipping the api and..."</div>
+          <div class="sub">chat: "how much does that droplet cost?" · "what a lesson" · "this caddy is magic"</div>
+          <div class="say"><span class="good">came back to 180 viewers in 1 min</span></div>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Best moments to clip</span><h4>The clip ready to post</h4></div>
+      <p class="why">The chat peaks already with the VOD offset to find the moment. <b>What blew up live is what pays off most as a clip</b>, and you don't have to hunt through the recording.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Best moments to clip</span></div>
+        <div class="body"><div class="mcard orange">
+          <div class="t">Best moments to clip</div>
+          <div class="clipbar"><span class="off">9m52s</span><span class="win">21:18–21:20</span><span class="mul">chat 5.5x normal</span></div>
+          <div class="sub">the offset (9m52s) is where the moment is in the VOD, to find it fast</div>
+        </div></div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Stream topics</span><h4>What you talked about, ranked</h4></div>
+      <p class="why">The stream's topics ordered by how much they engaged the chat. <b>You find out which topic holds the crowd</b> and start doing more of it on purpose.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Stream topics</span></div>
+        <div class="body"><div class="sh-h">Stream topics</div>
+          <div class="trow"><span class="rk">1st</span><span class="nm2">Deploying the API on Digital Ocean<small>setting up the API deploy</small></span><span class="tk"><span class="fl" style="width:100%"></span></span></div>
+          <div class="trow"><span class="rk">2nd</span><span class="nm2">Shipping the API to production<small>putting the API live</small></span><span class="tk"><span class="fl" style="width:78%"></span></span></div>
+          <div class="trow"><span class="rk">3rd</span><span class="nm2">Automatic backup<small>database backup</small></span><span class="tk"><span class="fl" style="width:54%"></span></span></div>
+          <div class="trow"><span class="rk">4th</span><span class="nm2">Deploy and DNS<small>reviewing the deploy and DNS</small></span><span class="tk"><span class="fl" style="width:41%"></span></span></div>
+          <div class="trow"><span class="rk">5th</span><span class="nm2">Caddy<small>certificate fixed with Caddy</small></span><span class="tk"><span class="fl" style="width:33%"></span></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Chat sentiment</span><h4>How the crowd reacted</h4></div>
+      <p class="why">The chat's mood across the stream and per person. <b>You see right away if people liked it or cooled off</b> at each moment, and who lifts the energy.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Chat sentiment</span></div>
+        <div class="body"><div class="m-lab">Chat sentiment · avg <span style="color:var(--green-hi)">+0.62 (positive)</span></div>
+          <div class="sent-meter"><span class="dot" style="left:81%"></span></div>
+          <div class="sent-scale"><span>negative</span><span>neutral</span><span>positive</span></div>
+          <div class="sent-chips">
+            <span>viewer_24 <b>+0.58</b></span><span>viewer_11 <b>+0.64</b></span><span>viewer_03 <b>+0.64</b></span><span>viewer_15 <b>+0.63</b></span><span>viewer_04 <b>+0.61</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="feat-b">
+      <div class="fh"><span class="kick">Presence across the stream</span><h4>Who stayed, and when</h4></div>
+      <p class="why">Who was in chat during each part of the stream. <b>It shows the regulars who stay start to finish</b> and when people show up or drop off.</p>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Stream report · Presence across the stream</span></div>
+        <div class="body"><div class="m-lab">Presence across the stream (top chatters)</div>
+          <div class="heat">
+            <div class="heatrow"><span class="who2">viewer_11</span><div class="heatcells"><i class="o3"></i><i class="o2"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o4"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o3"></i><i class="o2"></i><i class="o3"></i><i class="o2"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_04</span><div class="heatcells"><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_15</span><div class="heatcells"><i class="o1"></i><i class="o2"></i><i class="o1"></i><i class="o0"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_24</span><div class="heatcells"><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_20</span><div class="heatcells"><i class="o1"></i><i class="o0"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o3"></i><i class="o4"></i><i class="o4"></i><i class="o2"></i><i class="o1"></i><i class="o0"></i><i class="o1"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_10</span><div class="heatcells"><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o3"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o1"></i><i class="o2"></i></div></div>
+          </div>
+          <div class="heat-x"><span>21:08</span><span>21:27</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div class="cta-inline"><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Generate my first report</a><span class="note">Connect and your next stream becomes a report</span></div>
+</div></section>
+
+<!-- how it works -->
+<section><div class="wrap">
+  <span class="eyebrow">How it works under the hood</span>
+  <h2>Three steps. One click to start.</h2>
+  <div class="steps">
+    <div class="step"><div class="n"></div><h4>Connect</h4><p>One click with Twitch, read-only permissions. We never post or change anything on your channel.</p></div>
+    <div class="step"><div class="n"></div><h4>We capture and analyze</h4><p>Chat, speech (transcribed), viewers and every bit/sub/hype become numbers automatically, while you stream.</p></div>
+    <div class="step"><div class="n"></div><h4>You decide with clarity</h4><p>Open the "My channel" dashboard and see, in minutes, what to repeat and what to cut to earn more.</p></div>
+  </div>
+  <p style="color:var(--muted)">Every number comes from SQL over the raw data. The AI only writes the recommendations, and it must cite the number behind it. Nothing is made up.</p>
+</div></section>
+
+<!-- features -->
+<section><div class="wrap">
+  <span class="eyebrow">Everything you see</span>
+  <h2>Every feature, with a real example from a small channel.</h2>
+  <div class="feats">
+    <div class="f"><div class="kick">01 · Monetization</div><h4>See every cent</h4><div class="pro">Where your money comes from, who contributes and which topic pays.</div><div class="demo">"$58 this month. 1 person (your top supporter) was 40% of it."</div></div>
+    <div class="f"><div class="kick">02 · Content</div><h4>Do more of what pays</h4><div class="pro">How much each type of content pays per hour streamed.</div><div class="demo">"Reacting to clips: $9/h. Solo gameplay: $1/h."</div></div>
+    <div class="f"><div class="kick">03 · Day 1</div><h4>Real data on the first click</h4><div class="pro">Connect and you already have followers with history and past streams.</div><div class="demo">"Your 41 followers right away, with the date each one followed."</div></div>
+    <div class="f"><div class="kick">04 · Engagement</div><h4>The mechanics that pull money</h4><div class="pro">Hype trains, channel-point rewards and the effect of ads.</div><div class="demo">"Your ad at minute 40 dropped 18% of viewers."</div></div>
+    <div class="f"><div class="kick">05 · Community</div><h4>Know who holds up the channel</h4><div class="pro">Regulars, VIPs, goals and who actually talks in chat.</div><div class="demo">"Only 5% of your viewers write. Follower goal: 68%."</div></div>
+    <div class="f"><div class="kick">06 · Subs and bits</div><h4>Health of recurring revenue</h4><div class="pro">Tier mix, churn and top donors (when affiliate).</div><div class="demo">"12 active subs, 90% tier 1. 1 canceled this month."</div></div>
+    <div class="f"><div class="kick">07 · AI</div><h4>The next step, with YOUR number</h4><div class="pro">Recommendations citing your data. Zero guessing.</div><div class="demo">"Your top supporter is 40% of revenue: create a perk for them."</div></div>
+    <div class="f"><div class="kick">08 · Every stream</div><h4>Automatic report</h4><div class="pro">Peaks explained, best moments to clip and times.</div><div class="demo">"Chat doubled when you reacted to the clip at 21:10. Good cut."</div></div>
+    <div class="f"><div class="kick">09 · What to improve</div><h4>Where the audience dropped</h4><div class="pro">Retention, the drops with their likely cause and what you were saying.</div><div class="demo">"18:07: dropped 58% right after the ad break. You were wrapping up."</div></div>
+    <div class="f"><div class="kick">10 · Followers</div><h4>Know and win back your base</h4><div class="pro">Personas, who went quiet, fake follows and followers who are streamers to collab with.</div><div class="demo">"40% of your base never talked in chat. 3 affiliates follow you: collab candidates."</div></div>
+    <div class="f"><div class="kick">11 · Community</div><h4>Chat from the inside</h4><div class="pro">Sentiment, word cloud, emotes and a ranking of who took part.</div><div class="demo">"Average sentiment +0.61. Top chatter: viewer_24, there the whole stream."</div></div>
+    <div class="f"><div class="kick">12 · Records</div><h4>Your best numbers</h4><div class="pro">All-time records per stream: messages, peak viewers, revenue and more.</div><div class="demo">"New best stream for messages: 2,422, beating your previous record."</div></div>
+    <div class="f"><div class="kick">13 · Search</div><h4>Find anything that was said</h4><div class="pro">Search the chat and your transcribed speech across all streams, in seconds.</div><div class="demo">"Search 'dependency injection': found in 3 streams, with the exact moment."</div></div>
+  </div>
+</div></section>
+
+<!-- value / ROI -->
+<section><div class="wrap">
+  <span class="eyebrow green">What it's worth to you</span>
+  <h2>It's not about making you rich. It's about stopping the waste.</h2>
+  <p class="lead">The same audience, the same stream time, earning more, because you start doing more of what already works and less of what empties out.</p>
+
+  <div class="roi">
+    <div class="r"><div class="big">Your last stream</div><div class="k">the question that matters</div><div class="d">How many of its hours actually earned bits or subs? Today you guess. The dashboard answers with a number.</div></div>
+    <div class="r"><div class="big">5 minutes</div><div class="k">to decide</div><div class="d">Instead of "I think it worked", you open the dashboard and know. Every content choice becomes data-based.</div></div>
+    <div class="r"><div class="big">1 click</div><div class="k">to start</div><div class="d">Nothing to install, no spreadsheet. Connect Twitch and in minutes you see your numbers.</div></div>
+  </div>
+
+  <div class="honest">
+    <b>The honest math:</b> if in a 3h stream one part earns almost nothing and you swap it for more of what converts, the same stream earns more without you streaming a single extra minute. We don't promise magic numbers: the dollar values are estimates and revenue depends on you monetizing (affiliate). What we guarantee is you stop deciding in the dark.
+  </div>
+  <div class="cta-inline"><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Stop deciding in the dark</a><span class="note">Free in beta · read-only</span></div>
+</div></section>
+
+<!-- trust -->
+<section><div class="wrap">
+  <span class="eyebrow">Why trust us</span>
+  <h2>Honest with your data and your money.</h2>
+  <div class="trust">
+    <div class="t"><div class="k"><span class="ic">◆</span>Read-only</div><div class="d">We never post, edit or change anything on your channel. Ever.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Encrypted</div><div class="d">Your Twitch tokens are stored encrypted at rest.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Numbers from the database</div><div class="d">The metrics come from SQL, never from an AI text "guessing" values.</div></div>
+    <div class="t"><div class="k"><span class="ic">◆</span>Estimates labeled</div><div class="d">Every dollar value is marked as an estimate: Twitch doesn't share the exact split.</div></div>
+  </div>
+</div></section>
+
+<!-- FAQ -->
+<section><div class="wrap">
+  <span class="eyebrow">Frequently asked</span>
+  <h2>What every streamer asks before connecting.</h2>
+  <div class="faq">
+    <details><summary>Does this break Twitch's rules?</summary><div class="a">No. The connection is Twitch's official login (OAuth) with read-only permissions. It's the same mechanism other tools use. We never act on your channel.</div></details>
+    <details><summary>Will it lag or mess with my stream?</summary><div class="a">No. Nothing runs on your PC or in OBS. Collection and analysis happen on our server, in parallel. You stream normally.</div></details>
+    <details><summary>Do you sell or share my data?</summary><div class="a">No. Your data is yours, used only to build your dashboard. Access tokens are encrypted and you can disconnect whenever you want.</div></details>
+    <details><summary>Do I need to be an affiliate or partner?</summary><div class="a">Not to start. Without affiliate you already see followers, audience, which topic engages and best times. The bits and subs numbers only show up after you monetize, because that's when Twitch releases that data.</div></details>
+    <details><summary>How much does it cost?</summary><div class="a">During the beta, nothing. You get in free and even help decide what we build first.</div></details>
+    <details><summary>Does it work for a small channel?</summary><div class="a">Yes, and that's where it helps most: with little margin for error, knowing which topic pulls chat and money makes a real difference in your next stream.</div></details>
+  </div>
+</div></section>
+
+<!-- beta -->
+<section><div class="wrap">
+  <span class="eyebrow green">You're invited</span>
+  <h2>Join as a beta tester, before launch.</h2>
+  <div class="beta">
+    <p style="margin-top:0;color:var(--muted)">You're on a short list of streamers with early access. In practice:</p>
+    <ul>
+      <li><b>Free access</b> for the whole beta.</li>
+      <li><b>Your feedback shapes the product:</b> what you ask for, we build.</li>
+      <li><b>You get in first,</b> before we open to everyone.</li>
+    </ul>
+    <div class="cta-inline"><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Join the beta now</a><span class="note">1 click with Twitch · read-only</span></div>
+  </div>
+</div></section>
+
+<div class="final"><div class="wrap">
+  <span class="eyebrow">Ready to stop guessing?</span>
+  <h2>Find out which of your topics pays most.</h2>
+  <p>Connect your Twitch account and see, in minutes, what to repeat next stream.</p>
+  <div><a class="btn" href="https://streamintel.cc/auth/login"><svg viewBox="0 0 24 24"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg> Connect with Twitch</a></div>
+</div></div>
+
+<footer><div class="wrap">
+  <div class="brand"><span class="mark"></span> Stream Intel · streamintel.cc</div>
+  <p class="fine">The previews and example numbers on this page are illustrative and represent a small, growing channel, not a promise of results. Dollar values are estimates of your share and labeled as such. Subscriber data and the bits leaderboard depend on affiliate/partner status on Twitch. Stream Intel is not affiliated with Twitch.</p>
+</div></footer>
+</body>
+</html>
