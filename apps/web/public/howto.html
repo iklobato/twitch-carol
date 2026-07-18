@@ -80,10 +80,6 @@
   .shot .bar .url { font-family:var(--mono); font-size:0.7rem; color:#71717a; margin-left:8px; }
   .shot .body { padding:16px; color:var(--app-ink); font-size:0.9rem; }
   .shot .cap { font-family:var(--mono); font-size:0.72rem; color:var(--muted-2); margin-top:8px; }
-  .shot .scroll { max-height:520px; overflow-y:auto; background:#0a0a0c; border-top:1px solid var(--app-line); }
-  .shot .scroll img { display:block; width:100%; height:auto; }
-  .shot .scroll::-webkit-scrollbar { width:10px; }
-  .shot .scroll::-webkit-scrollbar-thumb { background:#2a2a30; border-radius:5px; }
   .featlist { margin-top:24px; display:grid; gap:24px; }
   .feat-b .fh { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:5px; }
   .feat-b .fh .kick { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--violet-hi); }
@@ -91,7 +87,51 @@
   .feat-b .why { color:var(--muted); font-size:0.95rem; margin:0 0 11px; max-width:64ch; }
   .feat-b .why b { color:var(--green-hi); font-weight:650; }
   .feat-b .shot { margin-top:0; }
-  .feat-b .shot .scroll { max-height:460px; }
+
+  /* inline HTML mockups of report sections (crisp, no raster images) */
+  .m-lab { font-family:var(--mono); font-size:0.62rem; letter-spacing:0.09em; text-transform:uppercase; color:var(--app-muted); }
+  .chips { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:10px; }
+  .chip { border:1px solid var(--app-line); border-radius:8px; padding:6px 9px; font-size:0.78rem; color:var(--app-muted); background:var(--app-card); }
+  .chip b { color:var(--violet-hi); font-family:var(--mono); margin-right:6px; }
+  .mgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .mcard { border:1px solid var(--app-line); border-radius:10px; padding:12px; background:var(--app-card); }
+  .mcard.red { border-color:rgba(251,113,133,0.35); }
+  .mcard.orange { border-color:rgba(251,146,60,0.35); }
+  .mcard .t { font-family:var(--mono); font-size:0.6rem; letter-spacing:0.08em; text-transform:uppercase; color:var(--violet-hi); }
+  .mcard.red .t { color:var(--red); }
+  .mcard.orange .t { color:#fdba74; }
+  .mcard.blue .t { color:#38bdf8; }
+  .mcard .big { font-size:1.05rem; font-weight:800; margin-top:6px; color:var(--app-ink); }
+  .mcard .sub { color:var(--app-muted); font-size:0.8rem; margin-top:5px; }
+  .mcard .say { color:var(--app-ink); font-size:0.82rem; margin-top:7px; }
+  .mcard .good { color:var(--green-hi); }
+  .mcard .bad { color:var(--red); font-family:var(--mono); }
+  .clipbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:9px; }
+  .clipbar .off { font-family:var(--mono); background:rgba(251,146,60,0.15); color:#fdba74; border-radius:6px; padding:3px 8px; font-size:0.8rem; }
+  .clipbar .win { color:var(--app-ink); font-size:0.9rem; }
+  .clipbar .mul { color:var(--green-hi); font-family:var(--mono); font-size:0.82rem; }
+  .trow { display:grid; grid-template-columns:22px 1fr 96px; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--app-line); }
+  .trow:last-child { border-bottom:0; }
+  .trow .rk { font-family:var(--mono); color:var(--app-muted); font-size:0.78rem; }
+  .trow .nm2 { color:var(--app-ink); font-size:0.88rem; }
+  .trow .nm2 small { display:block; color:var(--app-muted); font-size:0.72rem; margin-top:1px; }
+  .trow .tk { height:7px; border-radius:4px; background:var(--app-card2); overflow:hidden; }
+  .trow .tk .fl { display:block; height:100%; background:#a970ff; border-radius:4px; }
+  .sent-meter { height:9px; border-radius:5px; margin:11px 0 6px; position:relative;
+    background:linear-gradient(90deg,#fb7185,#3f3f46 45%,#3f3f46 55%,#34d399); }
+  .sent-meter .dot { position:absolute; top:50%; width:13px; height:13px; border-radius:50%; background:#fff; border:2px solid #34d399; transform:translate(-50%,-50%); }
+  .sent-scale { display:flex; justify-content:space-between; font-size:0.68rem; color:var(--app-muted); }
+  .sent-chips { display:flex; gap:7px; flex-wrap:wrap; margin-top:12px; }
+  .sent-chips span { font-size:0.76rem; color:var(--app-muted); border:1px solid var(--app-line); border-radius:7px; padding:4px 8px; }
+  .sent-chips b { color:var(--green-hi); font-family:var(--mono); }
+  .heat { display:grid; gap:6px; margin-top:11px; }
+  .heatrow { display:grid; grid-template-columns:92px 1fr; align-items:center; gap:9px; }
+  .heatrow .who2 { color:var(--app-ink); font-size:0.76rem; }
+  .heatcells { display:grid; grid-template-columns:repeat(14,1fr); gap:3px; }
+  .heatcells i { height:12px; border-radius:2px; background:#a970ff; display:block; }
+  .heatcells i.o0 { opacity:0.12; } .heatcells i.o1 { opacity:0.3; } .heatcells i.o2 { opacity:0.5; }
+  .heatcells i.o3 { opacity:0.72; } .heatcells i.o4 { opacity:0.95; }
+  .heat-x { display:flex; justify-content:space-between; font-size:0.68rem; color:var(--app-muted); margin-top:7px; }
   .sh-h { font-weight:700; font-size:1rem; margin:0 0 12px; color:var(--app-ink); }
   .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:9px; }
   .stat { border:1px solid var(--app-line); border-radius:10px; padding:11px; background:var(--app-card); }
@@ -219,63 +259,155 @@
 <section><div class="wrap">
   <span class="eyebrow">O painel por dentro</span>
   <h2>É isto que você abre depois de conectar.</h2>
-  <p class="lead">Screenshots reais do produto (um canal em crescimento). Role dentro de cada quadro pra ver a tela inteira.</p>
+  <p class="lead">As telas do produto, aqui em HTML de verdade (não é print), com números de exemplo de um canal em crescimento. Começando pela visão de dinheiro do "Meu canal":</p>
 
   <div class="shot">
-    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/stream/… · Relatório de uma live</span></div>
-    <div class="scroll"><img src="/previews/stream-report.png" width="1120" height="2213" loading="lazy" alt="Relatório de uma live: linha do tempo de mensagens e viewers, retenção, onde a audiência caiu e por quê, perguntas do chat sem resposta, sentimento, nuvem de palavras e quem participou." /></div>
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Monetização</span></div>
+    <div class="body">
+      <div class="sh-h">Monetização (todas as lives)</div>
+      <div class="stat-row">
+        <div class="stat rev"><div class="k">Arrecadado (estimado)</div><div class="v">US$ 44,50</div></div>
+        <div class="stat"><div class="k">Bits</div><div class="v">2.700</div></div>
+        <div class="stat"><div class="k">Assinaturas</div><div class="v">1</div></div>
+        <div class="stat"><div class="k">Subs presenteados</div><div class="v">5</div></div>
+      </div>
+      <div class="list">
+        <div class="li"><span class="who"><span class="pos">1º</span>viewer_11<span class="meta">em 1 live</span></span><span class="amt">US$ 22,50</span></div>
+        <div class="li"><span class="who"><span class="pos">2º</span>fiel_carlos<span class="meta">em 5 lives</span></span><span class="amt">US$ 17,00</span></div>
+        <div class="li"><span class="who"><span class="pos">3º</span>fiel_ana<span class="meta">em 1 live</span></span><span class="amt">US$ 5,00</span></div>
+      </div>
+    </div>
   </div>
-  <div class="cap">Print real: cada live vira um relatório. Linha do tempo, retenção, onde você perdeu audiência (e a causa), perguntas sem resposta e a comunidade toda.</div>
+  <div class="cap">Quem mais contribuiu, somado por pessoa ao longo de todas as lives.</div>
 
   <div class="shot">
-    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Meu canal</span></div>
-    <div class="scroll"><img src="/previews/channel-money.png" width="1120" height="2448" loading="lazy" alt="Tela Meu canal: monetizacao por live, quem mais contribuiu, assuntos que mais monetizam, mais fieis, crescimento ao longo das lives e melhores dias pra transmitir." /></div>
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Conteúdo que converte</span></div>
+    <div class="body">
+      <div class="sh-h">Conteúdo que converte</div>
+      <div class="barrow"><span class="nm">Just Chatting</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="pv">US$ 91,50/h</span></div>
+      <div class="barrow"><span class="nm">Software &amp; Dev</span><span class="track"><span class="fill" style="width:12%"></span></span><span class="pv">US$ 2,33/h</span></div>
+      <div style="color:#8b8b94;font-size:0.8rem;margin-top:11px">Receita por hora transmitida, por categoria. Faça mais do que rende mais por hora.</div>
+    </div>
   </div>
-  <div class="cap">Print real: a visão do canal junta tudo. De onde vem a grana, quem sustenta, qual assunto paga e os melhores dias pra transmitir.</div>
+  <div class="cap">A mesma live curta de "só bater papo" pagou 39x mais por hora que as longas de gameplay.</div>
 
-  <h3 style="margin-top:40px;font-size:1.3rem">Cada recurso do relatório, com print real e por que vale</h3>
+  <div class="shot">
+    <div class="bar"><i></i><i></i><i></i><span class="url">streamintel.cc/#/channel · Como ganhar mais (IA)</span></div>
+    <div class="body">
+      <div class="sh-h">Como ganhar mais (IA)</div>
+      <div class="rec">
+        <span class="badge">IA</span>
+        <p>Aproveite os 51% da receita que vêm do viewer_11: crie um perk exclusivo (emote, sala VIP) pra ele e pros outros grandes apoiadores, e reconheça essa galera ao vivo.</p>
+        <div class="cite">↳ Seu maior contribuinte (viewer_11) representa 51% da receita.</div>
+      </div>
+    </div>
+  </div>
+  <div class="cap">Cada recomendação cita o número do seu canal que a embasa. Se não houver dado real, a IA não inventa.</div>
+
+  <h3 style="margin-top:40px;font-size:1.3rem">Cada recurso do relatório, e por que vale</h3>
   <div class="featlist">
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Resumo da live</span><h4>A live inteira em um parágrafo</h4></div>
       <p class="why">A IA resume a live e cita os momentos exatos (clicáveis). <b>Você entende o que rolou sem reassistir horas de VOD</b>, e cada frase aponta pra onde ela veio.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Resumo da live</span></div><div class="scroll"><img src="/previews/feat-resumo.png" width="1000" height="304" loading="lazy" alt="Resumo da live gerado por IA, com momentos citados e clicáveis." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Resumo da live</span></div>
+        <div class="body"><div class="rec"><span class="badge">IA</span>
+          <p>Live focada em subir a API em produção. O erro de certificado foi resolvido com o Caddy e o site ficou no ar com HTTPS. Uma raid às 21h18 trouxe o pico de chat. Encerrou com o backup automático funcionando.</p>
+          <div class="chips">
+            <div class="chip"><b>21:10</b>"primeiro passo é criar o droplet"</div>
+            <div class="chip"><b>21:15</b>"agora sim, site no ar com https"</div>
+            <div class="chip"><b>21:18</b>"chegou uma raid! bem-vindos"</div>
+            <div class="chip"><b>21:25</b>"amanhã tem mais, valeu demais"</div>
+          </div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">O que melhorar</span><h4>Uma seção só de ação</h4></div>
       <p class="why">Retenção, onde a audiência caiu e as perguntas do chat que ficaram sem resposta, tudo junto. <b>Sai da live já sabendo o que ajustar na próxima</b>, com número, não achismo.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · O que melhorar</span></div><div class="scroll"><img src="/previews/feat-melhorar.png" width="1000" height="517" loading="lazy" alt="Seção O que melhorar: retenção, onde perdeu audiência, momentos pra clipar e perguntas sem resposta." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · O que melhorar</span></div>
+        <div class="body"><div class="sh-h">O que melhorar</div>
+          <div class="mgrid">
+            <div class="mcard"><div class="t">Retenção</div><div class="big"><span class="good">49%</span> do pico</div><div class="sub">segurou 89 dos 180 viewers do pico</div></div>
+            <div class="mcard red"><div class="t">Onde você perdeu audiência</div><div class="big"><span class="bad">-54%</span> às 21:18</div><div class="sub">logo após um ad break</div></div>
+            <div class="mcard orange"><div class="t">Melhor momento pra clipar</div><div class="big">21:18–21:20</div><div class="sub">chat 5,5x o normal · offset 9m52s</div></div>
+            <div class="mcard blue"><div class="t">Perguntas sem resposta</div><div class="big">27</div><div class="sub">feitas enquanto você não falava</div></div>
+          </div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Onde você perdeu audiência</span><h4>A queda com a causa provável</h4></div>
       <p class="why">Cada queda com o motivo (ad, troca de assunto), o que você falava na hora, o chat do momento e se a galera voltou. <b>Você para de esvaziar no mesmo ponto toda live.</b></p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Onde você perdeu audiência</span></div><div class="scroll"><img src="/previews/feat-perdeu.png" width="1000" height="390" loading="lazy" alt="Card mostrando uma queda de audiência com causa, fala do streamer, chat e recuperação." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Onde você perdeu audiência</span></div>
+        <div class="body"><div class="mcard red">
+          <div class="t">Onde você perdeu audiência</div>
+          <div class="big">21:18 · <span class="bad">-54,4%</span> <span style="font-weight:400;color:var(--app-muted);font-size:0.82rem">(180 → 82 viewers)</span></div>
+          <div class="say">você falava: "chegou uma raid! bem-vindos pessoal do canal parceiro, estamos subindo a api e..."</div>
+          <div class="sub">chat: "qual o custo desse droplet?" · "que aula" · "esse caddy é mágico"</div>
+          <div class="say"><span class="good">voltou a 180 viewers em 1 min</span></div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Melhores momentos para clipar</span><h4>O corte pronto pra postar</h4></div>
       <p class="why">Os picos de chat já com o offset no VOD pra achar o momento. <b>O que bombou ao vivo é o que mais rende cortado</b>, e você não precisa caçar na gravação.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Melhores momentos para clipar</span></div><div class="scroll"><img src="/previews/feat-clipar.png" width="1000" height="553" loading="lazy" alt="Sugestões de melhores momentos para clipar, com offset no VOD e intensidade do chat." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Melhores momentos para clipar</span></div>
+        <div class="body"><div class="mcard orange">
+          <div class="t">Melhores momentos para clipar</div>
+          <div class="clipbar"><span class="off">9m52s</span><span class="win">21:18–21:20</span><span class="mul">chat 5,5x o normal</span></div>
+          <div class="sub">o offset (9m52s) é onde o momento está no VOD, pra achar rápido</div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Assuntos da live</span><h4>Do que você falou, ranqueado</h4></div>
       <p class="why">Os temas da live ordenados pelo quanto engajaram o chat. <b>Você descobre qual assunto prende a galera</b> e passa a fazer mais dele de propósito.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Assuntos da live</span></div><div class="scroll"><img src="/previews/feat-assuntos.png" width="1000" height="405" loading="lazy" alt="Assuntos da live ranqueados por engajamento do chat." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Assuntos da live</span></div>
+        <div class="body"><div class="sh-h">Assuntos da live</div>
+          <div class="trow"><span class="rk">1º</span><span class="nm2">Deploy da API na Digital Ocean<small>configurando o deploy da API</small></span><span class="tk"><span class="fl" style="width:100%"></span></span></div>
+          <div class="trow"><span class="rk">2º</span><span class="nm2">Subindo API em produção<small>colocando a API no ar</small></span><span class="tk"><span class="fl" style="width:78%"></span></span></div>
+          <div class="trow"><span class="rk">3º</span><span class="nm2">Backup automático<small>backup do banco de dados</small></span><span class="tk"><span class="fl" style="width:54%"></span></span></div>
+          <div class="trow"><span class="rk">4º</span><span class="nm2">Deploy e DNS<small>revisando o deploy e o DNS</small></span><span class="tk"><span class="fl" style="width:41%"></span></span></div>
+          <div class="trow"><span class="rk">5º</span><span class="nm2">Caddy<small>certificado resolvido com Caddy</small></span><span class="tk"><span class="fl" style="width:33%"></span></span></div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Sentimento do chat</span><h4>Como o público reagiu</h4></div>
       <p class="why">O humor do chat ao longo da live e por pessoa. <b>Você vê na hora se a galera curtiu ou esfriou</b> em cada momento, e quem puxa a energia pra cima.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Sentimento do chat</span></div><div class="scroll"><img src="/previews/feat-sentimento.png" width="1000" height="256" loading="lazy" alt="Sentimento do chat: média, linha ao longo da live e por chatter." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Sentimento do chat</span></div>
+        <div class="body"><div class="m-lab">Sentimento do chat · média <span style="color:var(--green-hi)">+0,62 (positivo)</span></div>
+          <div class="sent-meter"><span class="dot" style="left:81%"></span></div>
+          <div class="sent-scale"><span>negativo</span><span>neutro</span><span>positivo</span></div>
+          <div class="sent-chips">
+            <span>viewer_24 <b>+0,58</b></span><span>viewer_11 <b>+0,64</b></span><span>viewer_03 <b>+0,64</b></span><span>viewer_15 <b>+0,63</b></span><span>viewer_04 <b>+0,61</b></span>
+          </div>
+        </div></div>
+      </div>
     </div>
 
     <div class="feat-b">
       <div class="fh"><span class="kick">Presença ao longo da live</span><h4>Quem ficou, e quando</h4></div>
       <p class="why">Quem estava no chat em cada trecho da live. <b>Mostra seus fiéis que ficam do início ao fim</b> e em que momento a galera chega ou vaza.</p>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Presença ao longo da live</span></div><div class="scroll"><img src="/previews/feat-presenca.png" width="1000" height="250" loading="lazy" alt="Mapa de presença dos top chatters ao longo da live." /></div></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i><span class="url">Relatório da live · Presença ao longo da live</span></div>
+        <div class="body"><div class="m-lab">Presença ao longo da live (top chatters)</div>
+          <div class="heat">
+            <div class="heatrow"><span class="who2">viewer_11</span><div class="heatcells"><i class="o3"></i><i class="o2"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o4"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o3"></i><i class="o2"></i><i class="o3"></i><i class="o2"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_04</span><div class="heatcells"><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_15</span><div class="heatcells"><i class="o1"></i><i class="o2"></i><i class="o1"></i><i class="o0"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_24</span><div class="heatcells"><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o4"></i><i class="o4"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_20</span><div class="heatcells"><i class="o1"></i><i class="o0"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o3"></i><i class="o4"></i><i class="o4"></i><i class="o2"></i><i class="o1"></i><i class="o0"></i><i class="o1"></i><i class="o1"></i></div></div>
+            <div class="heatrow"><span class="who2">viewer_10</span><div class="heatcells"><i class="o2"></i><i class="o2"></i><i class="o1"></i><i class="o1"></i><i class="o2"></i><i class="o2"></i><i class="o3"></i><i class="o4"></i><i class="o3"></i><i class="o3"></i><i class="o2"></i><i class="o1"></i><i class="o1"></i><i class="o2"></i></div></div>
+          </div>
+          <div class="heat-x"><span>21:08</span><span>21:27</span></div>
+        </div></div>
+      </div>
     </div>
 
   </div>
