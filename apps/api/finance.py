@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -41,8 +41,14 @@ from core.finance import (
     event_contributor,
     event_usd,
 )
+from core.integrations.streamelements import StreamElementsError
+from core.integrations.tips import (
+    set_streamelements_credentials,
+    sync_streamelements_tips,
+)
 from core.models import (
     Event,
+    ExternalTip,
     Insight,
     InsightType,
     Stream,
@@ -213,6 +219,13 @@ class StreamRevenue(BaseModel):
 class FinanceOverview(BaseModel):
     period: str
     estimated_usd: float
+    # External tips (StreamElements, ...) in-window. tips_usd sums the raw tip
+    # amounts (currency conversion is a follow-up); total_revenue_usd is the
+    # consolidated Twitch estimate + tips, the number a streamer actually cares
+    # about.
+    tips_usd: float
+    tips_count: int
+    total_revenue_usd: float
     # None when there is no comparison window (period=all) or nothing earned
     # in the previous window to compare against.
     delta_pct: float | None
@@ -368,9 +381,13 @@ def finance_overview(
         key=lambda row: row.started_at,
     )[:BY_STREAM_LIMIT]
 
+    tips_usd, tips_count = _tips_in_window(db, channel.id, start)
     return FinanceOverview(
         period=period.value,
         estimated_usd=round(current_fold.total_usd, 2),
+        tips_usd=round(tips_usd, 2),
+        tips_count=tips_count,
+        total_revenue_usd=round(current_fold.total_usd + tips_usd, 2),
         delta_pct=delta_pct,
         total_bits=current_fold.bits,
         total_subs=current_fold.subs,
@@ -384,3 +401,37 @@ def finance_overview(
         goals=_goals(db, channel.id),
         recommendations=_recommendations(db, channel.id),
     )
+
+
+def _tips_in_window(
+    db: Session, channel_id: int, start: datetime | None
+) -> tuple[float, int]:
+    stmt = select(
+        func.coalesce(func.sum(ExternalTip.amount), 0.0), func.count(ExternalTip.id)
+    ).where(ExternalTip.channel_id == channel_id)
+    if start is not None:
+        stmt = stmt.where(ExternalTip.tipped_at >= start)
+    total, count = db.execute(stmt).one()
+    return float(total), int(count)
+
+
+class StreamElementsConnect(BaseModel):
+    account_id: str
+    jwt: str
+
+
+class StreamElementsResult(BaseModel):
+    synced: int
+
+
+@router.post("/finance/integrations/streamelements")
+def connect_streamelements(
+    body: StreamElementsConnect, channel: CurrentChannel, db: DbSession
+) -> StreamElementsResult:
+    """Store the channel's StreamElements creds (JWT encrypted) and pull tips."""
+    set_streamelements_credentials(db, channel, body.account_id, body.jwt)
+    try:
+        synced = sync_streamelements_tips(db, channel)
+    except StreamElementsError as err:
+        raise HTTPException(status_code=502, detail=f"StreamElements: {err}") from err
+    return StreamElementsResult(synced=synced)
