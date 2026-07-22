@@ -61,6 +61,15 @@ router = APIRouter(prefix="/api")
 TOP_CONTRIBUTORS = 10
 TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 BY_STREAM_LIMIT = 50
+TOP_MOMENTS = 10
+
+
+def _event_kind(event: Event) -> str:
+    if event.type == CHEER:
+        return "bits"
+    if event.type == GIFT:
+        return "gift"
+    return "sub"  # SUBSCRIBE / RESUB
 
 
 class Period(enum.StrEnum):
@@ -85,6 +94,17 @@ class TopicRevenue(BaseModel):
     events: int
 
 
+class MomentRevenue(BaseModel):
+    """A single money event tied to what was happening: 'the $X sub came when you
+    were on topic Y at HH:MM'. offset_seconds is from the stream start."""
+
+    offset_seconds: int
+    estimated_usd: float
+    kind: str  # bits | sub | gift
+    contributor: str | None
+    topic: str | None
+
+
 class FinanceOut(BaseModel):
     estimated_usd: float
     total_bits: int
@@ -93,6 +113,7 @@ class FinanceOut(BaseModel):
     money_events: int
     top_contributors: list[Contributor]
     by_topic: list[TopicRevenue]
+    top_moments: list[MomentRevenue]
 
 
 def _load_money_events(db: Session, stream_id: int) -> list[Event]:
@@ -181,8 +202,9 @@ def stream_finance(
         for login, usd in top
     ]
 
+    windows = _topic_windows(db, stream)
     by_topic: list[TopicRevenue] = []
-    for name, start, end in _topic_windows(db, stream):
+    for name, start, end in windows:
         in_window = [e for e in events if start <= e.occurred_at < end]
         if not in_window:
             continue
@@ -195,6 +217,24 @@ def stream_finance(
         )
     by_topic.sort(key=lambda topic: topic.estimated_usd, reverse=True)
 
+    def _topic_at(moment: datetime) -> str | None:
+        return next(
+            (name for name, start, end in windows if start <= moment < end), None
+        )
+
+    moments = [
+        MomentRevenue(
+            offset_seconds=int((event.occurred_at - stream.started_at).total_seconds()),
+            estimated_usd=round(event_usd(event), 2),
+            kind=_event_kind(event),
+            contributor=event_contributor(event),
+            topic=_topic_at(event.occurred_at),
+        )
+        for event in events
+        if event_usd(event) > 0
+    ]
+    moments.sort(key=lambda moment: moment.estimated_usd, reverse=True)
+
     return FinanceOut(
         estimated_usd=round(total_usd, 2),
         total_bits=total_bits,
@@ -203,6 +243,7 @@ def stream_finance(
         money_events=len(events),
         top_contributors=contributors,
         by_topic=by_topic,
+        top_moments=moments[:TOP_MOMENTS],
     )
 
 
@@ -226,6 +267,9 @@ class FinanceOverview(BaseModel):
     tips_usd: float
     tips_count: int
     total_revenue_usd: float
+    # Efficiency: consolidated revenue per hour actually streamed in-window.
+    streamed_hours: float
+    revenue_per_hour_usd: float
     # None when there is no comparison window (period=all) or nothing earned
     # in the previous window to compare against.
     delta_pct: float | None
@@ -382,12 +426,25 @@ def finance_overview(
     )[:BY_STREAM_LIMIT]
 
     tips_usd, tips_count = _tips_in_window(db, channel.id, start)
+    total_revenue = current_fold.total_usd + tips_usd
+    streamed_hours = (
+        sum(
+            (s.ended_at - s.started_at).total_seconds()
+            for s in current
+            if s.ended_at is not None
+        )
+        / 3600
+    )
     return FinanceOverview(
         period=period.value,
         estimated_usd=round(current_fold.total_usd, 2),
         tips_usd=round(tips_usd, 2),
         tips_count=tips_count,
-        total_revenue_usd=round(current_fold.total_usd + tips_usd, 2),
+        total_revenue_usd=round(total_revenue, 2),
+        streamed_hours=round(streamed_hours, 1),
+        revenue_per_hour_usd=(
+            round(total_revenue / streamed_hours, 2) if streamed_hours > 0 else 0.0
+        ),
         delta_pct=delta_pct,
         total_bits=current_fold.bits,
         total_subs=current_fold.subs,
