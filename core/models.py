@@ -16,6 +16,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
@@ -84,6 +85,12 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # StreamElements connector (external tips): account id + encrypted JWT.
+    streamelements_account_id: Mapped[str | None] = mapped_column(String(64))
+    streamelements_jwt_encrypted: Mapped[bytes | None]
+    streamelements_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -395,6 +402,26 @@ class FollowerAiInsight(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class ExternalTip(Base):
+    """A tip/donation from an off-Twitch source (StreamElements, ...), so the
+    finance view can show total revenue, not just the Twitch slice."""
+
+    __tablename__ = "external_tips"
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_external_tips_source_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(64))
+    amount: Mapped[float]
+    currency: Mapped[str] = mapped_column(String(8))
+    tipper: Mapped[str | None] = mapped_column(String(128))
+    message: Mapped[str | None] = mapped_column(Text)
+    tipped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class TwitchClip(Base):
