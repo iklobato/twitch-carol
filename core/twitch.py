@@ -41,8 +41,6 @@ OAUTH_SCOPES = [
     "channel:read:vips",
     "moderator:read:followers",
     "clips:edit",
-    "channel:read:charity",
-    "analytics:read:extensions",
 ]
 
 
