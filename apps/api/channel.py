@@ -157,6 +157,11 @@ class Subscribers(BaseModel):
     tiers: list[TierCount]
     gifted_pct: float
     subs_ended: int
+    # In-window sub flow. churn_pct = ended / (active at window start); None when
+    # there were no active subs to churn from.
+    subs_gained: int
+    net_subs: int
+    churn_pct: float | None
     top_bits: list[BitsLeaderOut]
 
 
@@ -358,6 +363,7 @@ def _subscribers(db: DbSession, channel_id: int, ready_ids: list[int]) -> Subscr
         )
     )
     subs_ended = 0
+    subs_gained = 0
     if ready_ids:
         subs_ended = int(
             db.scalar(
@@ -367,6 +373,27 @@ def _subscribers(db: DbSession, channel_id: int, ready_ids: list[int]) -> Subscr
             )
             or 0
         )
+        new_subs = int(
+            db.scalar(
+                select(func.count()).where(
+                    Event.stream_id.in_(ready_ids), Event.type == SUBSCRIBE
+                )
+            )
+            or 0
+        )
+        gifted_subs = int(
+            db.scalar(
+                select(func.coalesce(func.sum(Event.amount), 0)).where(
+                    Event.stream_id.in_(ready_ids), Event.type == GIFT
+                )
+            )
+            or 0
+        )
+        subs_gained = new_subs + gifted_subs
+    active_at_start = total - subs_gained + subs_ended
+    churn_pct = (
+        round(subs_ended / active_at_start * 100, 1) if active_at_start > 0 else None
+    )
     top_bits = [
         BitsLeaderOut(login=login, score=score)
         for login, score in db.execute(
@@ -381,6 +408,9 @@ def _subscribers(db: DbSession, channel_id: int, ready_ids: list[int]) -> Subscr
         tiers=tiers,
         gifted_pct=round((gifted or 0) / total * 100, 1) if total else 0.0,
         subs_ended=subs_ended,
+        subs_gained=subs_gained,
+        net_subs=subs_gained - subs_ended,
+        churn_pct=churn_pct,
         top_bits=top_bits,
     )
 
