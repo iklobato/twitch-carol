@@ -40,6 +40,7 @@ OAUTH_SCOPES = [
     "channel:read:subscriptions",
     "channel:read:vips",
     "moderator:read:followers",
+    "clips:edit",
 ]
 
 
@@ -135,6 +136,37 @@ def get_user(access_token: str, client: httpx.Client | None = None) -> TwitchUse
     if not data:
         raise TwitchAuthError("Twitch /users returned no user for the token")
     return TwitchUser.model_validate(data[0])
+
+
+class CreatedClip(BaseModel):
+    id: str
+    edit_url: str
+
+
+def create_clip(
+    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
+) -> CreatedClip:
+    """Clip the broadcaster's current live moment (Twitch grabs ~the last 90s).
+    Needs the clips:edit scope and the broadcaster to be live; there is no API to
+    clip a past timestamp or upload a video, so best moments must be clipped as
+    they happen."""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Client-Id": get_settings().twitch_client_id,
+    }
+    with _http(client) as http:
+        response = http.post(
+            f"{HELIX_URL}/clips",
+            headers=headers,
+            params={"broadcaster_id": str(broadcaster_id)},
+        )
+    # Create Clip returns 202 Accepted while the clip is being finalized.
+    if response.status_code not in (200, 202):
+        raise TwitchAuthError(f"Twitch create clip returned {response.status_code}")
+    data = response.json().get("data", [])
+    if not data:
+        raise TwitchAuthError("Twitch create clip returned no clip")
+    return CreatedClip.model_validate(data[0])
 
 
 class _AppTokenCache:

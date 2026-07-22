@@ -6,6 +6,7 @@ from apps.api.admin import is_admin_login
 from apps.api.admin import router as admin_router
 from apps.api.auth import router as auth_router
 from apps.api.channel import router as channel_router
+from apps.api.clips import router as clips_router
 from apps.api.community import router as community_router
 from apps.api.dashboard import router as dashboard_router
 from apps.api.deps import CurrentChannel, CurrentSession, DbSession
@@ -25,6 +26,7 @@ app.include_router(eventsub_router)
 app.include_router(dashboard_router)
 app.include_router(community_router)
 app.include_router(channel_router)
+app.include_router(clips_router)
 app.include_router(actionable_router)
 app.include_router(finance_router)
 app.include_router(followers_router)

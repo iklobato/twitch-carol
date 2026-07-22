@@ -11,10 +11,12 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
+from core.channels import ensure_fresh_token
 from core.config import get_settings
 from core.db import ensure_chat_partition, session_factory
 from core.irc import (
@@ -25,11 +27,12 @@ from core.irc import (
     backoff_delays,
     parse_privmsg,
 )
-from core.models import Channel, ChatMessage, Stream, ViewerSample
+from core.models import Channel, ChatMessage, Stream, TwitchClip, ViewerSample
 from core.queues import get_valkey
 from core.storage import audio_key, get_audio_storage
 from core.streams import mark_stream_offline
-from core.twitch import TwitchAuthError, get_stream_info
+from core.twitch import TwitchAuthError, create_clip, get_stream_info
+from workers.capture.clip_detector import ClipDetector
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +54,11 @@ class ChatCollector:
         self._stream_id = stream.id
         self._channel_id = channel.id
         self._login = channel.login
+        self._broadcaster_id = channel.twitch_user_id
         self._buffer: list[ParsedChat] = []
         self._ensured_months: set[date] = set()
+        self._clips = ClipDetector()
+        self._clip_tasks: set[asyncio.Task] = set()
         self.stats = {"messages": 0, "disconnects": 0, "gap_seconds": 0.0}
 
     async def run(self, stop: asyncio.Event) -> None:
@@ -110,6 +116,7 @@ class ChatCollector:
                     await writer.drain()
                     continue
                 self._ingest(line)
+                self._maybe_clip()
         except TimeoutError:
             writer.write(b"PING :keepalive\r\n")
             await writer.drain()
@@ -148,6 +155,52 @@ class ChatCollector:
         if parsed is None:
             return
         self._buffer.append(parsed)
+        self._clips.observe(time.monotonic())
+
+    def _maybe_clip(self) -> None:
+        """Fire-and-forget a Twitch clip when chat spikes. Best-effort: clipping
+        needs the broadcaster live + the clips:edit scope, and any failure must
+        never disturb the capture, so it runs off the ingest path."""
+        now = time.monotonic()
+        if not self._clips.should_clip(now):
+            return
+        rate = self._clips.window_rate(now)
+        self._clips.mark_clipped(now)
+        task = asyncio.create_task(
+            asyncio.to_thread(self._create_and_store_clip, f"chat spike ({rate})")
+        )
+        self._clip_tasks.add(task)
+        task.add_done_callback(self._clip_tasks.discard)
+
+    def _create_and_store_clip(self, reason: str) -> None:
+        try:
+            with session_factory()() as db:
+                channel = db.get(Channel, self._channel_id)
+                if channel is None:
+                    return
+                token = ensure_fresh_token(db, channel)
+                clip = create_clip(self._broadcaster_id, token)
+                db.add(
+                    TwitchClip(
+                        stream_id=self._stream_id,
+                        channel_id=self._channel_id,
+                        clip_id=clip.id,
+                        edit_url=clip.edit_url,
+                        reason=reason,
+                    )
+                )
+                db.commit()
+                logger.info(
+                    "auto-clip created (%s)",
+                    reason,
+                    extra={"stream_id": self._stream_id, "clip_id": clip.id},
+                )
+        except (TwitchAuthError, OSError) as err:
+            logger.warning(
+                "auto-clip failed: %s",
+                err,
+                extra={"stream_id": self._stream_id, "channel_id": self._channel_id},
+            )
 
     async def _flush_loop(self, stop: asyncio.Event) -> None:
         while not stop.is_set():

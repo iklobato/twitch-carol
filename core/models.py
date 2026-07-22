@@ -397,6 +397,25 @@ class FollowerAiInsight(Base):
     )
 
 
+class TwitchClip(Base):
+    """A clip auto-created on Twitch at a live best moment (chat spike). Twitch
+    grabs ~90s at creation time; the user later curates (keep, title)."""
+
+    __tablename__ = "twitch_clips"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"), index=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    clip_id: Mapped[str] = mapped_column(String(128), unique=True)
+    edit_url: Mapped[str] = mapped_column(String(512))
+    reason: Mapped[str | None] = mapped_column(String(128))
+    title: Mapped[str | None] = mapped_column(String(140))
+    kept: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class EventSubMessage(Base):
     """Message ids already processed, so Twitch's retries are dropped.
 
