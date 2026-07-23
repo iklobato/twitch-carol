@@ -38,6 +38,20 @@ def test_callback_stores_oauth_tokens(api_client, db: Session, monkeypatch) -> N
     assert decrypt_secret(channel.streamelements_token_encrypted) == "at"
 
 
+def test_me_reports_streamelements_connected(api_client, db: Session) -> None:
+    channel = make_channel(db, login="meconn")
+    login_as(api_client, channel)
+    assert api_client.get("/api/me").json()["streamelements_connected"] is False
+
+    set_streamelements_oauth(
+        db,
+        channel,
+        "acct",
+        SEToken(access_token="at", refresh_token="rt", expires_in=3600),
+    )
+    assert api_client.get("/api/me").json()["streamelements_connected"] is True
+
+
 def test_callback_rejects_mismatched_state(api_client, db: Session) -> None:
     channel = make_channel(db, login="badstate")
     login_as(api_client, channel)

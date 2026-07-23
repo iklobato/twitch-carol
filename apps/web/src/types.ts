@@ -5,6 +5,7 @@ export type Me = {
   scopes: string[]
   is_admin: boolean
   impersonating: { as_login: string; admin_login: string } | null
+  streamelements_connected: boolean
 }
 
 export type ChannelOption = { login: string; display_name: string }

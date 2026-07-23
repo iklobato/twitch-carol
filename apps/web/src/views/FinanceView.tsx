@@ -483,15 +483,7 @@ export default function FinanceView() {
       </a>
       <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">Financeiro</h2>
-        <div className="flex items-center gap-2">
-          <a
-            href="/api/integrations/streamelements/connect"
-            className="rounded-lg border border-purple-700 bg-purple-900/30 px-3 py-1.5 text-sm font-semibold text-purple-200 hover:bg-purple-900/50"
-          >
-            Conectar StreamElements
-          </a>
-          <PeriodPicker value={period} onChange={setPeriod} />
-        </div>
+        <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
       {finance === null ? (
