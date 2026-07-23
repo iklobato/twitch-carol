@@ -52,33 +52,32 @@ def test_fetch_loyalty_top_raises_on_error() -> None:
 def test_fetch_merch_keeps_only_merch_and_skips_malformed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert "/activities/acct" in str(request.url)
+        # The live activities endpoint returns a bare JSON list, not {"docs": [...]}.
         return httpx.Response(
             200,
-            json={
-                "docs": [
-                    {
-                        "_id": "m1",
-                        "type": "merch",
-                        "createdAt": "2026-07-17T10:00:00.000Z",
-                        "data": {"amount": 25.0, "currency": "USD", "username": "bob"},
-                    },
-                    {  # a tip, not merch -> Twitch/tips path owns it, skip here
-                        "_id": "t1",
-                        "type": "tip",
-                        "createdAt": "2026-07-17T11:00:00.000Z",
-                        "data": {"amount": 5.0},
-                    },
-                    {  # merch but no amount -> skipped
-                        "_id": "m2",
-                        "type": "merch",
-                        "createdAt": "2026-07-17T09:00:00.000Z",
-                        "data": {},
-                    },
-                ]
-            },
+            json=[
+                {
+                    "_id": "m1",
+                    "type": "merch",
+                    "createdAt": "2026-07-17T10:00:00.000Z",
+                    "data": {"amount": 25.0, "currency": "USD", "username": "bob"},
+                },
+                {  # a tip, not merch -> Twitch/tips path owns it, skip here
+                    "_id": "t1",
+                    "type": "tip",
+                    "createdAt": "2026-07-17T11:00:00.000Z",
+                    "data": {"amount": 5.0},
+                },
+                {  # merch but no amount -> skipped
+                    "_id": "m2",
+                    "type": "merch",
+                    "createdAt": "2026-07-17T09:00:00.000Z",
+                    "data": {},
+                },
+            ],
         )
 
-    sales = fetch_merch("acct", "tok", client=_client(handler))
+    sales = fetch_merch("acct", "oAuth tok", client=_client(handler))
 
     assert len(sales) == 1
     assert sales[0].external_id == "m1"

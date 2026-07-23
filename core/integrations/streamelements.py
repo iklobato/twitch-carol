@@ -265,7 +265,10 @@ def fetch_merch(
         )
         if response.status_code != 200:
             raise StreamElementsError(f"activities returned {response.status_code}")
-        docs = response.json().get("docs", [])
+        # The activities endpoint returns a bare JSON list (unlike tips, which
+        # wraps its rows in {"docs": [...]}). Verified against the live API.
+        body = response.json()
+        docs = body if isinstance(body, list) else body.get("docs", [])
         sales.extend(s for s in (_parse_merch(doc) for doc in docs) if s is not None)
         if len(docs) < PAGE_LIMIT:
             break
