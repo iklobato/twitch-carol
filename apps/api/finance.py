@@ -492,3 +492,61 @@ def connect_streamelements(
     except StreamElementsError as err:
         raise HTTPException(status_code=502, detail=f"StreamElements: {err}") from err
     return StreamElementsResult(synced=synced)
+
+
+TOP_SUPPORTERS = 20
+
+
+class Supporter(BaseModel):
+    tipper: str
+    total: float
+    currency: str
+    tips_count: int
+    last_tipped_at: datetime
+
+
+@router.get("/finance/supporters")
+def top_supporters(channel: CurrentChannel, db: DbSession) -> list[Supporter]:
+    """Who tips the most: external tips grouped by tipper, biggest first. Sums
+    raw amounts; mixed-currency channels get the most-recent currency label
+    (currency conversion is a separate follow-up)."""
+    rows = db.execute(
+        select(
+            ExternalTip.tipper,
+            func.sum(ExternalTip.amount),
+            func.count(ExternalTip.id),
+            func.max(ExternalTip.tipped_at),
+        )
+        .where(
+            ExternalTip.channel_id == channel.id,
+            ExternalTip.tipper.is_not(None),
+        )
+        .group_by(ExternalTip.tipper)
+        .order_by(func.sum(ExternalTip.amount).desc())
+        .limit(TOP_SUPPORTERS)
+    ).all()
+    return [
+        Supporter(
+            tipper=tipper,
+            total=round(total, 2),
+            currency=_latest_currency(db, channel.id, tipper),
+            tips_count=count,
+            last_tipped_at=last_at,
+        )
+        for tipper, total, count, last_at in rows
+    ]
+
+
+def _latest_currency(db: Session, channel_id: int, tipper: str) -> str:
+    return (
+        db.scalars(
+            select(ExternalTip.currency)
+            .where(
+                ExternalTip.channel_id == channel_id,
+                ExternalTip.tipper == tipper,
+            )
+            .order_by(ExternalTip.tipped_at.desc())
+            .limit(1)
+        ).first()
+        or "USD"
+    )
