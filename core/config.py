@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,15 @@ class Settings(BaseSettings):
     """Typed app config. Env var names match the field names, case-insensitive."""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("database_url")
+    @classmethod
+    def _pin_psycopg_driver(cls, value: str) -> str:
+        # DO App Platform DB bindings hand back a bare `postgresql://` URL, which
+        # SQLAlchemy routes to psycopg2 (not installed). Pin the psycopg v3 driver.
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        return value
 
     twitch_client_id: str = ""
     twitch_client_secret: str = ""

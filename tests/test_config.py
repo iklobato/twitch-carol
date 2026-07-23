@@ -26,3 +26,17 @@ def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.whisper_model == "tiny"
     assert settings.simulation is True
     assert settings.llm_max_input_tokens == 1000
+
+
+def test_database_url_pins_psycopg_driver(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a bare postgresql:// URL (e.g. a DO App Platform DB binding) gets the
+    # psycopg v3 driver; an explicit driver is left untouched.
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:25060/db?sslmode=require")
+    assert (
+        settings_without_env_file().database_url
+        == "postgresql+psycopg://u:p@host:25060/db?sslmode=require"
+    )
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@host/db")
+    assert (
+        settings_without_env_file().database_url == "postgresql+psycopg://u:p@host/db"
+    )
