@@ -43,6 +43,8 @@ from core.finance import (
 )
 from core.integrations.streamelements import StreamElementsError
 from core.integrations.tips import (
+    KIND_MERCH,
+    KIND_TIP,
     set_streamelements_credentials,
     sync_streamelements_tips,
 )
@@ -51,6 +53,7 @@ from core.models import (
     ExternalTip,
     Insight,
     InsightType,
+    LoyaltyEntry,
     Stream,
     StreamStatus,
     TranscriptSegment,
@@ -266,6 +269,8 @@ class FinanceOverview(BaseModel):
     # about.
     tips_usd: float
     tips_count: int
+    # Merch/store sales from StreamElements (revenue Twitch never exposes).
+    merch_usd: float
     total_revenue_usd: float
     # Efficiency: consolidated revenue per hour actually streamed in-window.
     streamed_hours: float
@@ -425,8 +430,9 @@ def finance_overview(
         key=lambda row: row.started_at,
     )[:BY_STREAM_LIMIT]
 
-    tips_usd, tips_count = _tips_in_window(db, channel.id, start)
-    total_revenue = current_fold.total_usd + tips_usd
+    tips_usd, tips_count = _revenue_in_window(db, channel.id, start, KIND_TIP)
+    merch_usd, _ = _revenue_in_window(db, channel.id, start, KIND_MERCH)
+    total_revenue = current_fold.total_usd + tips_usd + merch_usd
     streamed_hours = (
         sum(
             (s.ended_at - s.started_at).total_seconds()
@@ -440,6 +446,7 @@ def finance_overview(
         estimated_usd=round(current_fold.total_usd, 2),
         tips_usd=round(tips_usd, 2),
         tips_count=tips_count,
+        merch_usd=round(merch_usd, 2),
         total_revenue_usd=round(total_revenue, 2),
         streamed_hours=round(streamed_hours, 1),
         revenue_per_hour_usd=(
@@ -460,12 +467,12 @@ def finance_overview(
     )
 
 
-def _tips_in_window(
-    db: Session, channel_id: int, start: datetime | None
+def _revenue_in_window(
+    db: Session, channel_id: int, start: datetime | None, kind: str
 ) -> tuple[float, int]:
     stmt = select(
         func.coalesce(func.sum(ExternalTip.amount), 0.0), func.count(ExternalTip.id)
-    ).where(ExternalTip.channel_id == channel_id)
+    ).where(ExternalTip.channel_id == channel_id, ExternalTip.kind == kind)
     if start is not None:
         stmt = stmt.where(ExternalTip.tipped_at >= start)
     total, count = db.execute(stmt).one()
@@ -519,6 +526,7 @@ def top_supporters(channel: CurrentChannel, db: DbSession) -> list[Supporter]:
         )
         .where(
             ExternalTip.channel_id == channel.id,
+            ExternalTip.kind == KIND_TIP,
             ExternalTip.tipper.is_not(None),
         )
         .group_by(ExternalTip.tipper)
@@ -543,6 +551,7 @@ def _latest_currency(db: Session, channel_id: int, tipper: str) -> str:
             select(ExternalTip.currency)
             .where(
                 ExternalTip.channel_id == channel_id,
+                ExternalTip.kind == KIND_TIP,
                 ExternalTip.tipper == tipper,
             )
             .order_by(ExternalTip.tipped_at.desc())
@@ -550,3 +559,73 @@ def _latest_currency(db: Session, channel_id: int, tipper: str) -> str:
         ).first()
         or "USD"
     )
+
+
+LOYALTY_TOP = 50
+TOP_PEOPLE = 20
+
+
+class LoyaltyOut(BaseModel):
+    username: str
+    points: int
+    rank: int
+
+
+@router.get("/finance/loyalty")
+def loyalty_leaderboard(channel: CurrentChannel, db: DbSession) -> list[LoyaltyOut]:
+    """StreamElements points/watchtime leaderboard: the channel's superfans, a
+    signal Twitch never exposes."""
+    rows = db.scalars(
+        select(LoyaltyEntry)
+        .where(LoyaltyEntry.channel_id == channel.id)
+        .order_by(LoyaltyEntry.rank)
+        .limit(LOYALTY_TOP)
+    ).all()
+    return [
+        LoyaltyOut(username=row.username, points=row.points, rank=row.rank)
+        for row in rows
+    ]
+
+
+class ValuedPerson(BaseModel):
+    name: str
+    tips_usd: float
+    loyalty_points: int
+
+
+@router.get("/finance/top-people")
+def top_people(channel: CurrentChannel, db: DbSession) -> list[ValuedPerson]:
+    """The channel's most valuable people: off-Twitch tips + loyalty
+    points/watchtime merged by name, biggest supporters first. (Subscriber
+    cross-referencing is a follow-up.)"""
+    tips: dict[str, float] = {}
+    points: dict[str, int] = {}
+    display: dict[str, str] = {}
+    for name, total in db.execute(
+        select(ExternalTip.tipper, func.sum(ExternalTip.amount))
+        .where(
+            ExternalTip.channel_id == channel.id,
+            ExternalTip.kind == KIND_TIP,
+            ExternalTip.tipper.is_not(None),
+        )
+        .group_by(ExternalTip.tipper)
+    ).all():
+        tips[name.lower()] = float(total)
+        display[name.lower()] = name
+    for entry in db.scalars(
+        select(LoyaltyEntry).where(LoyaltyEntry.channel_id == channel.id)
+    ):
+        points[entry.username.lower()] = entry.points
+        display.setdefault(entry.username.lower(), entry.username)
+    people = [
+        ValuedPerson(
+            name=display[key],
+            tips_usd=round(tips.get(key, 0.0), 2),
+            loyalty_points=points.get(key, 0),
+        )
+        for key in tips.keys() | points.keys()
+    ]
+    people.sort(
+        key=lambda person: (person.tips_usd, person.loyalty_points), reverse=True
+    )
+    return people[:TOP_PEOPLE]

@@ -15,9 +15,11 @@ from core.config import get_settings
 API_BASE = "https://api.streamelements.com/kappa/v2"
 OAUTH_AUTHORIZE = "https://api.streamelements.com/oauth2/authorize"
 OAUTH_TOKEN = "https://api.streamelements.com/oauth2/token"
-# activities:read lets the token read the full activity feed (merch, redemptions),
-# so extra revenue sources can be ingested later without another re-connect.
-SE_SCOPES = ("tips:read", "activities:read", "channel:read")
+# activities:read exposes the full activity feed (merch, redemptions); loyalty:read
+# exposes the points/watchtime leaderboard (superfans Twitch never reveals).
+SE_SCOPES = ("tips:read", "activities:read", "loyalty:read", "channel:read")
+LOYALTY_TOP_N = 50
+MERCH_ACTIVITY_TYPES = frozenset({"merch", "store-redemption", "storeRedemption"})
 CALLBACK_PATH = "/api/integrations/streamelements/callback"
 TIMEOUT_SECONDS = 20.0
 PAGE_LIMIT = 100
@@ -166,3 +168,96 @@ def fetch_channel_id(access_token: str, client: httpx.Client | None = None) -> s
     if not channel_id:
         raise StreamElementsError("channels/me missing _id")
     return str(channel_id)
+
+
+class RemoteLoyaltyEntry(BaseModel):
+    username: str
+    points: int
+
+
+def _parse_loyalty(item: dict) -> RemoteLoyaltyEntry | None:
+    # SE has shifted these field names across versions, so read defensively and
+    # skip anything we can't map (validated against a real payload on dev).
+    username = item.get("username") or item.get("user") or item.get("displayName")
+    points = item.get("points")
+    if not username or points is None:
+        return None
+    return RemoteLoyaltyEntry(username=str(username), points=int(points))
+
+
+def fetch_loyalty_top(
+    account_id: str,
+    access_token: str,
+    limit: int = LOYALTY_TOP_N,
+    client: httpx.Client | None = None,
+) -> list[RemoteLoyaltyEntry]:
+    """The points/watchtime leaderboard, most points first. Accepts either a
+    bare list or a {"users": [...]} envelope."""
+    http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
+    response = http.get(
+        f"{API_BASE}/points/{account_id}/top",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"limit": limit},
+    )
+    if response.status_code != 200:
+        raise StreamElementsError(f"loyalty top returned {response.status_code}")
+    body = response.json()
+    items = body.get("users", []) if isinstance(body, dict) else body
+    parsed = (_parse_loyalty(item) for item in items)
+    return [entry for entry in parsed if entry is not None]
+
+
+class RemoteRevenue(BaseModel):
+    external_id: str
+    amount: float
+    currency: str
+    actor: str | None
+    occurred_at: datetime
+
+
+def _parse_merch(doc: dict) -> RemoteRevenue | None:
+    if doc.get("type") not in MERCH_ACTIVITY_TYPES or not doc.get("_id"):
+        return None
+    data = doc.get("data") or {}
+    amount = data.get("amount")
+    created = doc.get("createdAt")
+    if amount is None or created is None:
+        return None
+    return RemoteRevenue(
+        external_id=str(doc["_id"]),
+        amount=float(amount),
+        currency=str(data.get("currency") or "USD"),
+        actor=data.get("username") or data.get("displayName"),
+        occurred_at=datetime.fromisoformat(created.replace("Z", "+00:00")),
+    )
+
+
+def fetch_merch(
+    account_id: str,
+    access_token: str,
+    after: datetime | None = None,
+    client: httpx.Client | None = None,
+) -> list[RemoteRevenue]:
+    """Merch/store sales from the activity feed (the revenue Twitch never sees).
+    Cheers/subs/follows in the feed are ignored: Twitch already provides those."""
+    http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
+    headers = {"Authorization": f"Bearer {access_token}"}
+    sales: list[RemoteRevenue] = []
+    for page in range(MAX_PAGES):
+        params: dict[str, str | int] = {
+            "limit": PAGE_LIMIT,
+            "offset": page * PAGE_LIMIT,
+        }
+        if after is not None:
+            params["after"] = after.isoformat()
+        response = http.get(
+            f"{API_BASE}/activities/{account_id}", headers=headers, params=params
+        )
+        if response.status_code != 200:
+            raise StreamElementsError(f"activities returned {response.status_code}")
+        docs = response.json().get("docs", [])
+        sales.extend(s for s in (_parse_merch(doc) for doc in docs) if s is not None)
+        if len(docs) < PAGE_LIMIT:
+            break
+    sales.sort(key=lambda s: s.occurred_at)
+    return sales

@@ -23,7 +23,9 @@ def test_callback_stores_oauth_tokens(api_client, db: Session, monkeypatch) -> N
     )
     monkeypatch.setattr(integrations_module, "fetch_channel_id", lambda token: "chan-1")
     monkeypatch.setattr(
-        integrations_module, "sync_streamelements_tips", lambda db, channel: 0
+        integrations_module,
+        "sync_streamelements",
+        lambda db, channel: {"tips": 0, "merch": 0, "loyalty": 0},
     )
     api_client.cookies.set("se_oauth_state", "st8")
 

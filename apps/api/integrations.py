@@ -16,7 +16,7 @@ from core.integrations.streamelements import (
     exchange_code,
     fetch_channel_id,
 )
-from core.integrations.tips import set_streamelements_oauth, sync_streamelements_tips
+from core.integrations.tips import set_streamelements_oauth, sync_streamelements
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +89,10 @@ def _sync_best_effort(db: DbSession, channel: CurrentChannel) -> None:
     """Pull tips on connect. Best-effort: a StreamElements hiccup must not fail
     the connect, and the next sync retries with the stored token."""
     try:
-        added = sync_streamelements_tips(db, channel)
+        summary = sync_streamelements(db, channel)
     except StreamElementsError:
         logger.exception("streamelements sync failed", extra={"channel_id": channel.id})
         return
     logger.info(
-        "streamelements sync done: %d tips", added, extra={"channel_id": channel.id}
+        "streamelements sync done: %s", summary, extra={"channel_id": channel.id}
     )
