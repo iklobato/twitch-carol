@@ -306,9 +306,36 @@ export type StreamRevenue = {
   estimated_usd: number
 }
 
+export type Supporter = {
+  tipper: string
+  total: number
+  currency: string
+  tips_count: number
+  last_tipped_at: string
+}
+
+export type LoyaltyRow = {
+  username: string
+  points: number
+  rank: number
+}
+
+export type ValuedPerson = {
+  name: string
+  tips_usd: number
+  loyalty_points: number
+}
+
 export type FinanceOverview = {
   period: string
   estimated_usd: number
+  // Consolidated with off-Twitch revenue (StreamElements tips + merch).
+  tips_usd: number
+  tips_count: number
+  merch_usd: number
+  total_revenue_usd: number
+  streamed_hours: number
+  revenue_per_hour_usd: number
   delta_pct: number | null
   total_bits: number
   total_subs: number
