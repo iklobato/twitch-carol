@@ -15,6 +15,7 @@ from core.integrations.streamelements import (
     build_authorize_url,
     exchange_code,
     fetch_channel_id,
+    oauth_header,
 )
 from core.integrations.tips import set_streamelements_oauth, sync_streamelements
 
@@ -73,7 +74,7 @@ def callback(
 
     try:
         token = exchange_code(code)
-        account_id = fetch_channel_id(token.access_token)
+        account_id = fetch_channel_id(oauth_header(token.access_token))
     except StreamElementsError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
 

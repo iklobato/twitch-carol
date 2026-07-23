@@ -58,14 +58,15 @@ def _parse(doc: dict) -> RemoteTip | None:
 
 def fetch_tips(
     account_id: str,
-    jwt: str,
+    auth: str,
     after: datetime | None = None,
     client: httpx.Client | None = None,
 ) -> list[RemoteTip]:
     """Every tip since `after` (or all, capped), oldest first. Paginates by
-    offset until a short page or the cap."""
+    offset until a short page or the cap. `auth` is the full Authorization
+    header value (`oAuth <token>` for OAuth, `Bearer <jwt>` for the legacy JWT)."""
     http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
-    headers = {"Authorization": f"Bearer {jwt}"}
+    headers = {"Authorization": auth}
     tips: list[RemoteTip] = []
     for page in range(MAX_PAGES):
         params: dict[str, str | int] = {
@@ -154,13 +155,20 @@ def refresh_access_token(
     )
 
 
-def fetch_channel_id(access_token: str, client: httpx.Client | None = None) -> str:
+def oauth_header(access_token: str) -> str:
+    """StreamElements OAuth tokens use the `oAuth` scheme on API requests, NOT
+    `Bearer` (their docs are explicit). The legacy JWT still uses `Bearer`."""
+    return f"oAuth {access_token}"
+
+
+def fetch_channel_id(auth: str, client: httpx.Client | None = None) -> str:
     """The StreamElements channel `_id` for the authorized user; this is the
-    account id every kappa/v2 data endpoint is keyed by."""
+    account id every kappa/v2 data endpoint is keyed by. `auth` is the full
+    Authorization header value."""
     http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
     response = http.get(
         f"{API_BASE}/channels/me",
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers={"Authorization": auth},
     )
     if response.status_code != 200:
         raise StreamElementsError(f"channels/me returned {response.status_code}")
@@ -187,16 +195,17 @@ def _parse_loyalty(item: dict) -> RemoteLoyaltyEntry | None:
 
 def fetch_loyalty_top(
     account_id: str,
-    access_token: str,
+    auth: str,
     limit: int = LOYALTY_TOP_N,
     client: httpx.Client | None = None,
 ) -> list[RemoteLoyaltyEntry]:
     """The points/watchtime leaderboard, most points first. Accepts either a
-    bare list or a {"users": [...]} envelope."""
+    bare list or a {"users": [...]} envelope. `auth` is the full Authorization
+    header value."""
     http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
     response = http.get(
         f"{API_BASE}/points/{account_id}/top",
-        headers={"Authorization": f"Bearer {access_token}"},
+        headers={"Authorization": auth},
         params={"limit": limit},
     )
     if response.status_code != 200:
@@ -234,14 +243,15 @@ def _parse_merch(doc: dict) -> RemoteRevenue | None:
 
 def fetch_merch(
     account_id: str,
-    access_token: str,
+    auth: str,
     after: datetime | None = None,
     client: httpx.Client | None = None,
 ) -> list[RemoteRevenue]:
     """Merch/store sales from the activity feed (the revenue Twitch never sees).
-    Cheers/subs/follows in the feed are ignored: Twitch already provides those."""
+    Cheers/subs/follows in the feed are ignored: Twitch already provides those.
+    `auth` is the full Authorization header value."""
     http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
-    headers = {"Authorization": f"Bearer {access_token}"}
+    headers = {"Authorization": auth}
     sales: list[RemoteRevenue] = []
     for page in range(MAX_PAGES):
         params: dict[str, str | int] = {

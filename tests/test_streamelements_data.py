@@ -17,7 +17,7 @@ def _client(handler) -> httpx.Client:
 def test_fetch_loyalty_top_parses_envelope_and_skips_malformed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert "/points/acct/top" in str(request.url)
-        assert request.headers.get("Authorization") == "Bearer tok"
+        assert request.headers.get("Authorization") == "oAuth tok"  # OAuth scheme
         return httpx.Response(
             200,
             json={
@@ -29,7 +29,7 @@ def test_fetch_loyalty_top_parses_envelope_and_skips_malformed() -> None:
             },
         )
 
-    entries = fetch_loyalty_top("acct", "tok", client=_client(handler))
+    entries = fetch_loyalty_top("acct", "oAuth tok", client=_client(handler))
 
     assert [e.username for e in entries] == ["alice", "bob"]
     assert entries[0].points == 500

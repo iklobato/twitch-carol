@@ -13,6 +13,7 @@ from core.integrations.streamelements import (
     fetch_loyalty_top,
     fetch_merch,
     fetch_tips,
+    oauth_header,
     refresh_access_token,
 )
 from core.models import Channel, ExternalTip, LoyaltyEntry
@@ -65,13 +66,17 @@ def _valid_access_token(db: Session, channel: Channel) -> str | None:
     return token.access_token
 
 
-def _resolve_token(db: Session, channel: Channel) -> str | None:
-    """The Bearer token for StreamElements calls: the OAuth access token
-    (refreshed if needed), else the legacy JWT, else None (not connected)."""
+def _resolve_auth(db: Session, channel: Channel) -> str | None:
+    """The full Authorization header for StreamElements calls: `oAuth <token>`
+    for the OAuth access token (refreshed if needed), else `Bearer <jwt>` for the
+    legacy JWT, else None (not connected). OAuth needs the `oAuth` scheme, not
+    Bearer (per the StreamElements docs)."""
     token = _valid_access_token(db, channel)
-    if token is None and channel.streamelements_jwt_encrypted is not None:
-        token = decrypt_secret(channel.streamelements_jwt_encrypted)
-    return token
+    if token is not None:
+        return oauth_header(token)
+    if channel.streamelements_jwt_encrypted is not None:
+        return f"Bearer {decrypt_secret(channel.streamelements_jwt_encrypted)}"
+    return None
 
 
 def _stored_external_ids(db: Session, channel_id: int) -> set[str]:
@@ -88,11 +93,11 @@ def _stored_external_ids(db: Session, channel_id: int) -> set[str]:
 def sync_streamelements_tips(db: Session, channel: Channel) -> int:
     """Pull tips since the last sync and store the new ones. Returns how many
     were added. No-op (0) when the channel hasn't connected StreamElements."""
-    token = _resolve_token(db, channel)
-    if not channel.streamelements_account_id or token is None:
+    auth = _resolve_auth(db, channel)
+    if not channel.streamelements_account_id or auth is None:
         return 0
     tips = fetch_tips(
-        channel.streamelements_account_id, token, after=channel.streamelements_synced_at
+        channel.streamelements_account_id, auth, after=channel.streamelements_synced_at
     )
     seen = _stored_external_ids(db, channel.id)
     added = 0
@@ -124,10 +129,10 @@ def sync_streamelements_merch(
     """Pull merch/store sales and store the new ones as merch-kind rows (dedup by
     external id). Returns how many were added. `after` is a fetch optimization;
     dedup guarantees correctness regardless."""
-    token = _resolve_token(db, channel)
-    if not channel.streamelements_account_id or token is None:
+    auth = _resolve_auth(db, channel)
+    if not channel.streamelements_account_id or auth is None:
         return 0
-    sales = fetch_merch(channel.streamelements_account_id, token, after=after)
+    sales = fetch_merch(channel.streamelements_account_id, auth, after=after)
     seen = _stored_external_ids(db, channel.id)
     added = 0
     for sale in sales:
@@ -154,10 +159,10 @@ def sync_streamelements_merch(
 def sync_streamelements_loyalty(db: Session, channel: Channel) -> int:
     """Replace the channel's loyalty leaderboard snapshot. Returns the number of
     ranked entries stored."""
-    token = _resolve_token(db, channel)
-    if not channel.streamelements_account_id or token is None:
+    auth = _resolve_auth(db, channel)
+    if not channel.streamelements_account_id or auth is None:
         return 0
-    entries = fetch_loyalty_top(channel.streamelements_account_id, token)
+    entries = fetch_loyalty_top(channel.streamelements_account_id, auth)
     db.execute(delete(LoyaltyEntry).where(LoyaltyEntry.channel_id == channel.id))
     now = datetime.now(UTC)
     for rank, entry in enumerate(entries, start=1):

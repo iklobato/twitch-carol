@@ -40,7 +40,7 @@ def test_fetch_tips_parses_donations_and_skips_malformed() -> None:
             },
         )
 
-    tips = fetch_tips("acct-1", "jwt-x", client=_client(handler))
+    tips = fetch_tips("acct-1", "Bearer jwt-x", client=_client(handler))
 
     assert len(tips) == 2  # the third doc (no _id/amount) is skipped
     assert all(isinstance(t, RemoteTip) for t in tips)
@@ -55,4 +55,6 @@ def test_fetch_tips_parses_donations_and_skips_malformed() -> None:
 
 def test_fetch_tips_raises_on_error() -> None:
     with pytest.raises(StreamElementsError, match="401"):
-        fetch_tips("a", "j", client=_client(lambda r: httpx.Response(401, json={})))
+        fetch_tips(
+            "a", "Bearer j", client=_client(lambda r: httpx.Response(401, json={}))
+        )

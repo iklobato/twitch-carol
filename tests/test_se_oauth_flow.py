@@ -79,7 +79,7 @@ def test_sync_prefers_oauth_token_over_jwt(db: Session, monkeypatch) -> None:
     monkeypatch.setattr(tips_module, "fetch_tips", fake_fetch)
     sync_streamelements_tips(db, channel)
 
-    assert captured["token"] == "at"
+    assert captured["token"] == "oAuth at"  # OAuth scheme, not Bearer
 
 
 def test_sync_refreshes_expired_token(db: Session, monkeypatch) -> None:
@@ -106,6 +106,6 @@ def test_sync_refreshes_expired_token(db: Session, monkeypatch) -> None:
     monkeypatch.setattr(tips_module, "fetch_tips", fake_fetch)
     sync_streamelements_tips(db, channel)
 
-    assert captured["token"] == "new"  # used the refreshed token
+    assert captured["token"] == "oAuth new"  # refreshed token, OAuth scheme
     db.refresh(channel)
     assert decrypt_secret(channel.streamelements_token_encrypted) == "new"  # persisted
