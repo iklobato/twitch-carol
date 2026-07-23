@@ -10,7 +10,15 @@ from datetime import datetime
 import httpx
 from pydantic import BaseModel
 
+from core.config import get_settings
+
 API_BASE = "https://api.streamelements.com/kappa/v2"
+OAUTH_AUTHORIZE = "https://api.streamelements.com/oauth2/authorize"
+OAUTH_TOKEN = "https://api.streamelements.com/oauth2/token"
+# activities:read lets the token read the full activity feed (merch, redemptions),
+# so extra revenue sources can be ingested later without another re-connect.
+SE_SCOPES = ("tips:read", "activities:read", "channel:read")
+CALLBACK_PATH = "/api/integrations/streamelements/callback"
 TIMEOUT_SECONDS = 20.0
 PAGE_LIMIT = 100
 MAX_PAGES = 20  # safety cap: PAGE_LIMIT * MAX_PAGES tips per sync
@@ -78,3 +86,83 @@ def fetch_tips(
             break
     tips.sort(key=lambda t: t.tipped_at)
     return tips
+
+
+class SEToken(BaseModel):
+    access_token: str
+    refresh_token: str | None
+    expires_in: int  # seconds until the access token expires
+
+
+def _redirect_uri() -> str:
+    return get_settings().public_base_url + CALLBACK_PATH
+
+
+def build_authorize_url(state: str) -> str:
+    settings = get_settings()
+    params = httpx.QueryParams(
+        {
+            "client_id": settings.streamelements_client_id,
+            "redirect_uri": _redirect_uri(),
+            "response_type": "code",
+            "scope": " ".join(SE_SCOPES),
+            "state": state,
+        }
+    )
+    return f"{OAUTH_AUTHORIZE}?{params}"
+
+
+def _post_token(data: dict[str, str], client: httpx.Client | None = None) -> SEToken:
+    settings = get_settings()
+    http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
+    response = http.post(
+        OAUTH_TOKEN,
+        data={
+            **data,
+            "client_id": settings.streamelements_client_id,
+            "client_secret": settings.streamelements_client_secret,
+        },
+    )
+    if response.status_code != 200:
+        raise StreamElementsError(f"OAuth token returned {response.status_code}")
+    body = response.json()
+    return SEToken(
+        access_token=body["access_token"],
+        refresh_token=body.get("refresh_token"),
+        expires_in=int(body.get("expires_in", 0)),
+    )
+
+
+def exchange_code(code: str, client: httpx.Client | None = None) -> SEToken:
+    return _post_token(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": _redirect_uri(),
+        },
+        client=client,
+    )
+
+
+def refresh_access_token(
+    refresh_token: str, client: httpx.Client | None = None
+) -> SEToken:
+    return _post_token(
+        {"grant_type": "refresh_token", "refresh_token": refresh_token}, client=client
+    )
+
+
+def fetch_channel_id(access_token: str, client: httpx.Client | None = None) -> str:
+    """The StreamElements channel `_id` for the authorized user; this is the
+    account id every kappa/v2 data endpoint is keyed by."""
+    http = client or httpx.Client(timeout=TIMEOUT_SECONDS)
+    response = http.get(
+        f"{API_BASE}/channels/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    if response.status_code != 200:
+        raise StreamElementsError(f"channels/me returned {response.status_code}")
+    channel_id = response.json().get("_id")
+    if not channel_id:
+        raise StreamElementsError("channels/me missing _id")
+    return str(channel_id)

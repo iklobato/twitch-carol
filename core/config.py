@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     twitch_client_id: str = ""
     twitch_client_secret: str = ""
     twitch_eventsub_secret: str = ""
+    # StreamElements OAuth ("Connect StreamElements" button). Register an app at
+    # streamelements.com/dashboard -> account -> apps to get these; the redirect
+    # URI to register is PUBLIC_BASE_URL + /api/integrations/streamelements/callback.
+    streamelements_client_id: str = ""
+    streamelements_client_secret: str = ""
     # Dev default is the Caddy entrypoint from docker compose.
     public_base_url: str = "http://localhost:8080"
     # Host-mapped compose ports (5433/6380: 5432/6379 are taken by another

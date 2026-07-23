@@ -1,11 +1,15 @@
 # Stream Intel
 
 Plataforma de analytics multimodal para streamers da Twitch. Captura chat,
-eventos (EventSub) e áudio de cada live, transcreve com faster-whisper,
-detecta picos por SQL e gera relatório com LLM local (llama.cpp): resumo,
-explicação dos picos e assuntos ranqueados, sempre com evidência clicável
-verificada contra o banco. Todo o processamento de IA roda em CPU local;
-nenhuma API paga no caminho principal.
+eventos (EventSub) e áudio de cada live, transcreve (Whisper), detecta picos
+por SQL e gera relatório com LLM: resumo, explicação dos picos, assuntos
+ranqueados e recomendações, sempre com evidência clicável verificada contra o
+banco. Números vêm sempre de SQL; o LLM só escreve texto que cita fatos já
+calculados.
+
+A IA é plugável, trocada por env e não por código: **produção usa OpenRouter**
+(Whisper remoto + Claude Haiku/Sonnet), mas o mesmo pipeline roda **100% local**
+em dev (faster-whisper + llama.cpp em CPU, sem API paga).
 
 Produção de referência: https://streamintel.cc
 
@@ -20,16 +24,64 @@ abaixo é o do repositório; a descrição de prod aqui pode estar defasada, o
 apps/api           FastAPI: OAuth Twitch, webhook EventSub, API do dashboard
 apps/web           React + Vite + Tailwind + Chart.js (build servido pelo Caddy)
 workers/capture    IRC do chat, amostrador de viewers, gravador HLS->Opus
-workers/transcribe VAD + faster-whisper (fila com prioridade por próxima live)
-workers/analyze    picos por SQL + insights via llama.cpp com evidência validada
-core               modelos, config, filas, crypto, cliente Twitch, métricas
-scripts            simulador de live, seed de estados, benchmark, backup
+workers/transcribe VAD + Whisper (OpenRouter em prod, faster-whisper em dev)
+workers/analyze    picos por SQL + insights via LLM (OpenRouter/llama.cpp), evidência validada
+core               modelos, config, filas, crypto, cliente Twitch, métricas, recordes
+scripts            simulador de live, seed de estados, benchmark, backup, backfill de recordes
 deploy             Dockerfile, docker compose (dev + prod), Caddyfile
 ```
 
-Serviços do compose: `api`, `worker-capture`, `worker-transcribe`,
-`worker-analyze`, `valkey`, `caddy` e `postgres` (dev; em produção usamos um
-Postgres gerenciado e o serviço local fica atrás do profile `local-db`).
+Serviços do compose (dev): `api`, `worker-capture`, `worker-transcribe`,
+`worker-analyze`, `caddy`, `postgres` e `valkey`. Em produção (App Platform) não
+há droplet, Postgres local nem Valkey: a fila de jobs e o dedup do EventSub
+vivem no Postgres gerenciado, e o Valkey serve só o simulador de live em dev.
+
+## Fontes de dados da Twitch
+
+Não é uma API só. O sistema puxa dados por cinco caminhos, todos protocolo
+oficial da Twitch (nada de scraping de HTML nem GraphQL privado). Todas as
+fontes convergem no Postgres; os workers leem de lá e do storage.
+
+```mermaid
+flowchart LR
+    subgraph TW[Twitch]
+      ID[OAuth]
+      HX[Helix REST]
+      ES[EventSub]
+      IR[IRC / chat]
+      HL[HLS / audio]
+    end
+
+    ID --> AUTH[auth + backfill]
+    HX --> AUTH
+    HX -. viewers 60s .-> CAP[worker-capture]
+    ES --> CB[/eventsub-callback/]
+    IR --> CAP
+    HL --> CAP
+
+    AUTH --> PG[(Postgres)]
+    CB --> PG
+    CAP --> PG
+    CAP --> ST[(Spaces .ogg)]
+    ST --> TR[worker-transcribe] --> PG
+    PG --> AN[worker-analyze] --> PG
+    PG --> API[api + dashboard]
+```
+
+| Fonte | Puxa | Grava em | Usado para |
+|---|---|---|---|
+| **OAuth** (`id.twitch.tv`) | access + refresh token, scopes, identidade (`/users`) | `channels` (token cifrado) | autentica as outras 4 fontes; os scopes definem o que dá pra ler |
+| **Helix REST** (`api.twitch.tv/helix`) | histórico de followers, VODs, subs, bits, metas, VIPs e perfis; ao vivo, viewers + título via `/streams` | `followers`, `past_broadcasts`, `subscriptions`, `bits_leaders`, `goals`, `vips`, `viewer_samples` | dados reais já no connect; base das recomendações; retenção e quedas na análise |
+| **EventSub** (webhook `/eventsub/callback`) | 19 tipos de evento ao vivo: subs, bits, follows, raids, enquetes, previsões, hype trains, ads | `events` (+ upsert em `followers`) | timeline por live, contagem por stream, causa das quedas (`dip_cause`) |
+| **IRC / TMI** (`irc.chat.twitch.tv:6667`) | cada mensagem de chat: autor, badges, emotes, texto, timestamp | `chat_messages` | detecção de picos que o LLM explica; resumos e assuntos com evidência |
+| **HLS** (`twitch.tv/{login}`) | áudio da transmissão (streamlink `audio_only`) | segmentos `.ogg` no Spaces, depois `transcript_segments` | resumo, assuntos e recomendações ancorados em fala real |
+
+O histórico vem por pull (Helix, uma vez no connect). O ao vivo vem por push
+(EventSub e IRC) e por polling (viewers no Helix a cada 60s, áudio no HLS).
+Cada webhook é verificado por HMAC-SHA256 e deduplicado por `message_id`;
+tokens nunca vão pro log; todo request tem timeout. Detalhe por endpoint no
+código: `core/twitch.py`, `core/eventsub.py`, `core/irc.py`,
+`core/backfill.py`, `workers/capture/collectors.py`.
 
 ## Desenvolvimento local
 
@@ -84,85 +136,69 @@ Documentadas em `deploy/env.example`. Essenciais em produção:
 `https://SEU_DOMINIO/auth/callback`), `TWITCH_EVENTSUB_SECRET` (string
 aleatória), `PUBLIC_BASE_URL` (https), `FERNET_KEY`, `DATABASE_URL`,
 `SPACES_*` (áudio + backups; sem eles cai em disco local), `SIMULATION=0`.
+Para a IA remota (prod): `LLM_BACKEND=openai`, `LLM_BASE_URL` + `LLM_API_KEY`
+(OpenRouter), `LLM_MODEL` e `LLM_MODEL_STRONG`, e `TRANSCRIBE_BACKEND=remote`
+com `TRANSCRIBE_BASE_URL/API_KEY/MODEL`. Em dev, o default é local (GGUF +
+faster-whisper), sem essas chaves.
 
-## Deploy em produção (droplet DigitalOcean)
+## Deploy em produção (DigitalOcean App Platform)
 
-Layout de referência: 1 droplet s-4vcpu-8gb (docker) + Postgres gerenciado.
-Para escalar, os workers movem-se para droplets próprios apontando para o
-mesmo banco/Valkey; a imagem é a mesma, muda o `command`.
+Produção roda 100% no App Platform (spec em `deploy/app.yaml`): os componentes
+`web`, `api`, `worker-capture`, `worker-transcribe`, `worker-analyze` e o job
+`migrate` (PRE_DEPLOY). Estado só no Postgres gerenciado (via pool PgBouncer) e
+no Spaces; sem droplet e sem Valkey. A responsabilidade de cada peça está em
+[`ARCHITECTURE.md`](ARCHITECTURE.md), a fonte da verdade do que roda hoje.
 
-Do zero, num droplet limpo (imagem "Docker on Ubuntu"):
+Deploy é git: **um push na `main` dispara o deploy** de cada componente
+(`deploy_on_push: true`). Antes de cada deploy, o job `migrate` roda
+`alembic upgrade head`; se a migração falhar, o deploy vira ERROR e a versão
+atual continua no ar (funciona como canário). Não há passo manual de migração.
 
 ```bash
-# 1. infra
-doctl compute droplet create stream-intel --size s-4vcpu-8gb --region nyc3 \
-  --image docker-20-04 --ssh-keys SUA_CHAVE --wait
-ssh root@IP "ufw allow 80/tcp && ufw allow 443/tcp && mkdir -p /opt/stream-intel"
-
-# 2. DNS: aponte um registro A do seu domínio para o IP do droplet
-
-# 3. banco gerenciado (ou use o postgres do compose com --profile local-db)
-doctl databases db create CLUSTER_ID streamintel
-doctl databases user create CLUSTER_ID streamintel_app
-doctl databases firewalls append CLUSTER_ID --rule droplet:DROPLET_ID
-# conceda: ALTER SCHEMA public OWNER TO streamintel_app (como doadmin)
-
-# 4. código e segredos
-rsync -az --exclude .git --exclude .venv --exclude node_modules \
-  --exclude data --exclude .env ./ root@IP:/opt/stream-intel/
-ssh root@IP  # crie /opt/stream-intel/.env (veja deploy/env.example)
-             # e /opt/stream-intel/deploy/.env com:
-             #   SITE_ADDRESS=seu.dominio
-             #   STREAMINTEL_DATABASE_URL=postgresql+psycopg://...sslmode=require
-
-# 5. modelo LLM e subida
-ssh root@IP "mkdir -p /opt/stream-intel/data/models && curl -L -o \
-  /opt/stream-intel/data/models/qwen2.5-3b-instruct-q4_k_m.gguf \
-  'https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf'"
-ssh root@IP "cd /opt/stream-intel/deploy && docker compose \
-  -f docker-compose.yml -f docker-compose.prod.yml up -d --build"
+doctl apps list                          # acha o app (streamintel)
+doctl apps get <APP_ID>                  # status + ingress
+doctl apps list-deployments <APP_ID>     # histórico de deploys
+doctl apps logs <APP_ID> <componente>    # logs em runtime
+doctl apps update <APP_ID> --spec deploy/app.yaml   # aplica mudança de infra/spec
 ```
 
-O Caddy emite o certificado TLS sozinho quando o DNS resolve. Migrações
-rodam no boot da api. Depois do primeiro login em `https://SEU_DOMINIO`,
-as subscriptions EventSub são registradas automaticamente e qualquer live
-do canal passa a ser capturada.
+Segredos (`FERNET_KEY`, `DATABASE_URL`, `TWITCH_*`, `SPACES_*`, `LLM_API_KEY`,
+...) ficam como `SECRET` no dashboard do App Platform, nunca no repo. Depois do
+primeiro login em `https://streamintel.cc`, as subscriptions EventSub são
+registradas automaticamente e qualquer live do canal passa a ser capturada.
 
-Atualização de versão: repita o rsync do passo 4 e o `up -d --build` do
-passo 5 (o cache de camadas torna rebuilds de código rápidos).
+Para rodar um comando pontual em prod (ex. backfill), use o console do
+componente: `doctl apps console <APP_ID> worker-analyze`.
 
 ## Backup e restauração
 
-Backup diário via cron no droplet (pg_dump -> gzip -> Spaces `backups/`
-com retenção de 30 dias; sem Spaces, `data/backups/` com últimos 7):
-
-```cron
-0 9 * * * cd /opt/stream-intel/deploy && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture python scripts/backup_db.py >> /var/log/stream-intel-backup.log 2>&1
-```
-
-Restauração:
+O Postgres gerenciado da DigitalOcean mantém backups diários automáticos com
+point-in-time restore: essa é a camada primária. `scripts/backup_db.py` é o
+backup portátil extra (pg_dump -> gzip -> Spaces `backups/` com retenção de 30
+dias; sem Spaces, disco local). Rode sob demanda pelo console do componente que
+tem o `DATABASE_URL`:
 
 ```bash
-# baixe o .sql.gz do Spaces (ou pegue em data/backups/), então:
-gunzip -c stream-intel-DATA.sql.gz | \
-  docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker-capture \
-  psql "$STREAMINTEL_DATABASE_URL_LIBPQ"   # URL sem o sufixo +psycopg
+doctl apps console <APP_ID> worker-capture   # depois: python scripts/backup_db.py
 ```
 
-O banco gerenciado da DigitalOcean também mantém backups diários próprios
-com point-in-time restore; este script é a camada extra e o caminho de
-restauração portátil.
+Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
+(sem o sufixo `+psycopg`).
 
 ## Operação
 
-- Logs (JSON estruturado): `docker compose ... logs -f api worker-capture`
-- Healthchecks: api via `/healthz`; workers via ping no banco (`docker compose ps`)
+- Logs (JSON estruturado): prod `doctl apps logs <APP_ID> api` (ou
+  `worker-capture` etc.); dev `docker compose ... logs -f api`
+- Healthchecks: api via `/healthz`; workers via ping no banco
 - Reprocessar uma live: enfileire um job `analyze` para o stream
   (a análise é idempotente; veja `core/queues.enqueue_job`)
 - Re-sincronizar EventSub: refaça o login no dashboard
-- Trocar modelo LLM: troque o GGUF em `data/models/`, ajuste `LLM_GGUF_PATH`
-  e reinicie `worker-analyze`
-- Benchmark de transcrição: `docker compose ... exec worker-transcribe \
+- Trocar modelo LLM: em prod ajuste `LLM_MODEL` / `LLM_MODEL_STRONG` no App
+  Platform; em dev troque o GGUF e o `LLM_GGUF_PATH`
+- Recordes das lives antigas: `python scripts/backfill_records.py` pelo console
+  (idempotente; distribui os recordes pelo histórico já capturado, e os badges
+  só aparecem com 5+ lives analisadas)
+- Benchmark de transcrição (dev): `docker compose ... exec worker-transcribe \
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
 
 ### Impersonar um cliente (suporte/debug)
