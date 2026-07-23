@@ -122,14 +122,6 @@ export default function App() {
           </div>
           <SearchBox />
           <div className="flex items-center gap-3 text-sm">
-            {!me.streamelements_connected && (
-              <a
-                href="/api/integrations/streamelements/connect"
-                className="rounded-lg border border-purple-600 bg-purple-600/20 px-3 py-1.5 font-semibold text-purple-200 hover:bg-purple-600/40"
-              >
-                Conectar StreamElements
-              </a>
-            )}
             {me.is_admin && <ImpersonatePicker />}
             <span className="text-zinc-400">@{me.login}</span>
             <a href="/auth/logout" className="text-zinc-500 underline hover:text-zinc-300">

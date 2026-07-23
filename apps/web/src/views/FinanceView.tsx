@@ -1,13 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiGet, formatDate } from '../api'
 import PeriodPicker from '../components/PeriodPicker'
-import type {
-  FinanceOverview,
-  FinancePeriod,
-  LoyaltyRow,
-  Supporter,
-  ValuedPerson,
-} from '../types'
+import type { FinanceOverview, FinancePeriod } from '../types'
 
 function usd(value: number): string {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
@@ -366,96 +360,6 @@ function Recommendations({ finance }: { finance: FinanceOverview }) {
   )
 }
 
-function ConsolidatedRevenue({ finance }: { finance: FinanceOverview }) {
-  if (finance.total_revenue_usd <= 0) return null
-  return (
-    <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-      <div className="rounded-lg border border-emerald-900/60 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Receita total (Twitch + externo)</p>
-        <p className="text-xl font-bold text-emerald-400">{usd(finance.total_revenue_usd)}</p>
-      </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Tips (StreamElements)</p>
-        <p className="text-xl font-bold">{usd(finance.tips_usd)}</p>
-        <p className="text-xs text-zinc-500">{finance.tips_count} tips</p>
-      </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Merch</p>
-        <p className="text-xl font-bold">{usd(finance.merch_usd)}</p>
-      </div>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Receita por hora</p>
-        <p className="text-xl font-bold">{usd(finance.revenue_per_hour_usd)}</p>
-        <p className="text-xs text-zinc-500">{finance.streamed_hours}h ao vivo</p>
-      </div>
-    </div>
-  )
-}
-
-function PeopleList<T>({
-  title,
-  rows,
-  label,
-  right,
-}: {
-  title: string
-  rows: T[]
-  label: (row: T) => string
-  right: (row: T) => string
-}) {
-  if (rows.length === 0) return null
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <h3 className="mb-3 text-lg font-bold">{title}</h3>
-      <ul className="space-y-1 text-sm">
-        {rows.map((row, i) => (
-          <li key={i} className="flex justify-between gap-2">
-            <span className="truncate">{label(row)}</span>
-            <span className="whitespace-nowrap text-zinc-400">{right(row)}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function StreamElementsPanel() {
-  const [supporters, setSupporters] = useState<Supporter[]>([])
-  const [loyalty, setLoyalty] = useState<LoyaltyRow[]>([])
-  const [people, setPeople] = useState<ValuedPerson[]>([])
-
-  useEffect(() => {
-    apiGet<Supporter[]>('/api/finance/supporters').then(setSupporters).catch(() => setSupporters([]))
-    apiGet<LoyaltyRow[]>('/api/finance/loyalty').then(setLoyalty).catch(() => setLoyalty([]))
-    apiGet<ValuedPerson[]>('/api/finance/top-people').then(setPeople).catch(() => setPeople([]))
-  }, [])
-
-  if (supporters.length === 0 && loyalty.length === 0 && people.length === 0) return null
-
-  return (
-    <div className="mb-6 grid items-start gap-4 md:grid-cols-3">
-      <PeopleList
-        title="Pessoas mais valiosas"
-        rows={people}
-        label={(p) => p.name}
-        right={(p) => `${usd(p.tips_usd)} · ${p.loyalty_points.toLocaleString('pt-BR')} pts`}
-      />
-      <PeopleList
-        title="Top apoiadores (tips)"
-        rows={supporters}
-        label={(s) => s.tipper}
-        right={(s) => `${usd(s.total)} · ${s.tips_count}x`}
-      />
-      <PeopleList
-        title="Superfãs (fidelidade)"
-        rows={loyalty}
-        label={(l) => `#${l.rank} ${l.username}`}
-        right={(l) => `${l.points.toLocaleString('pt-BR')} pts`}
-      />
-    </div>
-  )
-}
-
 export default function FinanceView() {
   const [period, setPeriod] = useState<FinancePeriod>('30d')
   const [finance, setFinance] = useState<FinanceOverview | null>(null)
@@ -473,8 +377,7 @@ export default function FinanceView() {
     finance.engagement.hype_train.count === 0 &&
     finance.engagement.ads.breaks === 0 &&
     finance.subscribers.total === 0 &&
-    finance.goals.length === 0 &&
-    finance.total_revenue_usd === 0
+    finance.goals.length === 0
 
   return (
     <div>
@@ -500,8 +403,6 @@ export default function FinanceView() {
             parte: a Twitch não divulga o repasse exato.
           </p>
           <KpiRow finance={finance} />
-          <ConsolidatedRevenue finance={finance} />
-          <StreamElementsPanel />
           <div className="mb-6 grid items-start gap-4 md:grid-cols-2">
             <RevenueByStream finance={finance} />
             <TopContributors finance={finance} />

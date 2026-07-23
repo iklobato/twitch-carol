@@ -7,12 +7,6 @@ function makeFinance(overrides: Partial<FinanceOverview> = {}): FinanceOverview 
   return {
     period: '30d',
     estimated_usd: 0,
-    tips_usd: 0,
-    tips_count: 0,
-    merch_usd: 0,
-    total_revenue_usd: 0,
-    streamed_hours: 0,
-    revenue_per_hour_usd: 0,
     delta_pct: null,
     total_bits: 0,
     total_subs: 0,
@@ -77,37 +71,6 @@ describe('FinanceView', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/finance?period=90d'),
     )
-  })
-
-  it('mostra apoiadores, superfãs e ranking do StreamElements', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.startsWith('/api/finance/supporters'))
-          return new Response(
-            JSON.stringify([
-              { tipper: 'alice', total: 25, currency: 'USD', tips_count: 2, last_tipped_at: 'x' },
-            ]),
-            { status: 200 },
-          )
-        if (url.startsWith('/api/finance/loyalty'))
-          return new Response(JSON.stringify([{ username: 'bob', points: 500, rank: 1 }]), {
-            status: 200,
-          })
-        if (url.startsWith('/api/finance/top-people'))
-          return new Response(
-            JSON.stringify([{ name: 'carol', tips_usd: 25, loyalty_points: 900 }]),
-            { status: 200 },
-          )
-        return new Response(JSON.stringify(makeFinance({ money_events: 1 })), { status: 200 })
-      }),
-    )
-    render(<FinanceView />)
-
-    await screen.findByText('Top apoiadores (tips)')
-    expect(screen.getByText('Superfãs (fidelidade)')).toBeTruthy()
-    expect(screen.getByText('Pessoas mais valiosas')).toBeTruthy()
-    expect(screen.getByText('#1 bob')).toBeTruthy()
   })
 
   it('mostra o estado vazio quando nada foi monetizado', async () => {
