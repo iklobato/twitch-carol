@@ -24,7 +24,9 @@ def _tip(channel_id: int, kind: str, i: int, who: str, amount: float, when: date
     return ExternalTip(
         channel_id=channel_id,
         source=SOURCE_MOCK,
-        external_id=f"mock-{kind}-{i}",
+        # external_id is globally unique (source, external_id), so namespace it
+        # per channel: fixed ids would collide across seeded channels.
+        external_id=f"mock-{channel_id}-{kind}-{i}",
         kind=kind,
         amount=amount,
         currency="USD",
