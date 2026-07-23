@@ -87,13 +87,15 @@ def test_refresh_access_token_uses_refresh_grant() -> None:
 
 def test_fetch_channel_id_returns_id() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.headers.get("Authorization") == "Bearer at"
+        assert request.headers.get("Authorization") == "oAuth at"  # OAuth scheme
         assert "/channels/me" in str(request.url)
         return httpx.Response(200, json={"_id": "chan-1", "displayName": "x"})
 
-    assert fetch_channel_id("at", client=_client(handler)) == "chan-1"
+    assert fetch_channel_id("oAuth at", client=_client(handler)) == "chan-1"
 
 
 def test_fetch_channel_id_raises_when_id_missing() -> None:
     with pytest.raises(StreamElementsError, match="_id"):
-        fetch_channel_id("at", client=_client(lambda r: httpx.Response(200, json={})))
+        fetch_channel_id(
+            "oAuth at", client=_client(lambda r: httpx.Response(200, json={}))
+        )

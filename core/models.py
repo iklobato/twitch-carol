@@ -423,11 +423,30 @@ class ExternalTip(Base):
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
     source: Mapped[str] = mapped_column(String(32))
     external_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(16), server_default="tip")  # tip | merch
     amount: Mapped[float]
     currency: Mapped[str] = mapped_column(String(8))
     tipper: Mapped[str | None] = mapped_column(String(128))
     message: Mapped[str | None] = mapped_column(Text)
     tipped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class LoyaltyEntry(Base):
+    """A snapshot row of the StreamElements points/watchtime leaderboard, so the
+    community view can rank superfans (a signal Twitch never exposes). Replaced
+    wholesale on each sync: it is current standings, not an event log."""
+
+    __tablename__ = "se_loyalty"
+    __table_args__ = (
+        UniqueConstraint("channel_id", "username", name="uq_se_loyalty_channel_user"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    username: Mapped[str] = mapped_column(String(128))
+    points: Mapped[int]
+    rank: Mapped[int]
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class TwitchClip(Base):

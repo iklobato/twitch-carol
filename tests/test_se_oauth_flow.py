@@ -23,7 +23,9 @@ def test_callback_stores_oauth_tokens(api_client, db: Session, monkeypatch) -> N
     )
     monkeypatch.setattr(integrations_module, "fetch_channel_id", lambda token: "chan-1")
     monkeypatch.setattr(
-        integrations_module, "sync_streamelements_tips", lambda db, channel: 0
+        integrations_module,
+        "sync_streamelements",
+        lambda db, channel: {"tips": 0, "merch": 0, "loyalty": 0},
     )
     api_client.cookies.set("se_oauth_state", "st8")
 
@@ -34,6 +36,20 @@ def test_callback_stores_oauth_tokens(api_client, db: Session, monkeypatch) -> N
     assert channel.streamelements_account_id == "chan-1"
     assert channel.streamelements_token_encrypted is not None
     assert decrypt_secret(channel.streamelements_token_encrypted) == "at"
+
+
+def test_me_reports_streamelements_connected(api_client, db: Session) -> None:
+    channel = make_channel(db, login="meconn")
+    login_as(api_client, channel)
+    assert api_client.get("/api/me").json()["streamelements_connected"] is False
+
+    set_streamelements_oauth(
+        db,
+        channel,
+        "acct",
+        SEToken(access_token="at", refresh_token="rt", expires_in=3600),
+    )
+    assert api_client.get("/api/me").json()["streamelements_connected"] is True
 
 
 def test_callback_rejects_mismatched_state(api_client, db: Session) -> None:
@@ -63,7 +79,7 @@ def test_sync_prefers_oauth_token_over_jwt(db: Session, monkeypatch) -> None:
     monkeypatch.setattr(tips_module, "fetch_tips", fake_fetch)
     sync_streamelements_tips(db, channel)
 
-    assert captured["token"] == "at"
+    assert captured["token"] == "oAuth at"  # OAuth scheme, not Bearer
 
 
 def test_sync_refreshes_expired_token(db: Session, monkeypatch) -> None:
@@ -90,6 +106,6 @@ def test_sync_refreshes_expired_token(db: Session, monkeypatch) -> None:
     monkeypatch.setattr(tips_module, "fetch_tips", fake_fetch)
     sync_streamelements_tips(db, channel)
 
-    assert captured["token"] == "new"  # used the refreshed token
+    assert captured["token"] == "oAuth new"  # refreshed token, OAuth scheme
     db.refresh(channel)
     assert decrypt_secret(channel.streamelements_token_encrypted) == "new"  # persisted

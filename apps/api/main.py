@@ -49,6 +49,7 @@ class MeResponse(BaseModel):
     scopes: list[str]
     is_admin: bool = False
     impersonating: Impersonation | None = None
+    streamelements_connected: bool = False
 
 
 @app.get("/healthz")
@@ -73,4 +74,5 @@ def me(session: CurrentSession, channel: CurrentChannel, db: DbSession) -> MeRes
         scopes=channel.scopes,
         is_admin=is_admin,
         impersonating=impersonating,
+        streamelements_connected=channel.streamelements_account_id is not None,
     )
