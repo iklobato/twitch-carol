@@ -23,7 +23,7 @@ abaixo é o do repositório; a descrição de prod aqui pode estar defasada, o
 ```
 apps/api           FastAPI: OAuth Twitch, webhook EventSub, API do dashboard
 apps/web           React + Vite + Tailwind + Chart.js (build servido pelo Caddy)
-workers/capture    IRC do chat, amostrador de viewers, gravador HLS->Opus
+workers/capture    IRC do chat, viewers, gravador HLS->Opus, auto-clip nos picos ao vivo
 workers/transcribe VAD + Whisper (OpenRouter em prod, faster-whisper em dev)
 workers/analyze    picos por SQL + insights via LLM (OpenRouter/llama.cpp), evidência validada
 core               modelos, config, filas, crypto, cliente Twitch, métricas, recordes
@@ -70,7 +70,7 @@ flowchart LR
 
 | Fonte | Puxa | Grava em | Usado para |
 |---|---|---|---|
-| **OAuth** (`id.twitch.tv`) | access + refresh token, scopes, identidade (`/users`) | `channels` (token cifrado) | autentica as outras 4 fontes; os scopes definem o que dá pra ler |
+| **OAuth** (`id.twitch.tv`) | access + refresh token, scopes, identidade (`/users`) | `channels` (token cifrado) | autentica as outras 4 fontes; os scopes definem o que dá pra ler, e o `clips:edit` deixa criar clips ao vivo |
 | **Helix REST** (`api.twitch.tv/helix`) | histórico de followers, VODs, subs, bits, metas, VIPs e perfis; ao vivo, viewers + título via `/streams` | `followers`, `past_broadcasts`, `subscriptions`, `bits_leaders`, `goals`, `vips`, `viewer_samples` | dados reais já no connect; base das recomendações; retenção e quedas na análise |
 | **EventSub** (webhook `/eventsub/callback`) | 19 tipos de evento ao vivo: subs, bits, follows, raids, enquetes, previsões, hype trains, ads | `events` (+ upsert em `followers`) | timeline por live, contagem por stream, causa das quedas (`dip_cause`) |
 | **IRC / TMI** (`irc.chat.twitch.tv:6667`) | cada mensagem de chat: autor, badges, emotes, texto, timestamp | `chat_messages` | detecção de picos que o LLM explica; resumos e assuntos com evidência |
@@ -78,6 +78,11 @@ flowchart LR
 
 O histórico vem por pull (Helix, uma vez no connect). O ao vivo vem por push
 (EventSub e IRC) e por polling (viewers no Helix a cada 60s, áudio no HLS).
+Durante a live, um pico de chat dispara um clipe automático na Twitch (Helix
+`/clips`, scope `clips:edit`), com cooldown e teto por stream: a Twitch só
+clipa o momento ao vivo, então a detecção é online (`clip_detector.py`), não
+os picos por SQL de pós-live. Os clipes ficam em `twitch_clips` e o streamer
+os cura em `GET/PATCH /api/clips`.
 Cada webhook é verificado por HMAC-SHA256 e deduplicado por `message_id`;
 tokens nunca vão pro log; todo request tem timeout. Detalhe por endpoint no
 código: `core/twitch.py`, `core/eventsub.py`, `core/irc.py`,
