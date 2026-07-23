@@ -85,9 +85,15 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
-    # StreamElements connector (external tips): account id + encrypted JWT.
+    # StreamElements connector (external tips). Legacy manual path stores the
+    # JWT; the OAuth "Connect" flow stores access/refresh tokens instead.
     streamelements_account_id: Mapped[str | None] = mapped_column(String(64))
     streamelements_jwt_encrypted: Mapped[bytes | None]
+    streamelements_token_encrypted: Mapped[bytes | None]
+    streamelements_refresh_encrypted: Mapped[bytes | None]
+    streamelements_token_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     streamelements_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
