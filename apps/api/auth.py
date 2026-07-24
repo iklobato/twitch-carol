@@ -4,8 +4,10 @@ import secrets
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 
 from apps.api.deps import SESSION_COOKIE, DbSession
+from apps.api.marketing import SOURCE_COOKIE
 from core.backfill import (
     backfill_bits_leaders,
     backfill_followers,
@@ -20,7 +22,7 @@ from core.channels import upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
 from core.eventsub import sync_channel_subscriptions
-from core.models import Channel
+from core.models import CampaignRecipient, Channel
 from core.twitch import TwitchAuthError, build_authorize_url, exchange_code, get_user
 
 logger = logging.getLogger(__name__)
@@ -59,16 +61,9 @@ def callback(
     error: str | None = None,
 ) -> RedirectResponse:
     if error is not None:
-        raise HTTPException(
-            status_code=400, detail=f"Twitch authorization failed: {error}"
-        )
+        raise HTTPException(status_code=400, detail=f"Twitch authorization failed: {error}")
     cookie_state = request.cookies.get(STATE_COOKIE)
-    if (
-        not code
-        or not state
-        or not cookie_state
-        or not secrets.compare_digest(state, cookie_state)
-    ):
+    if not code or not state or not cookie_state or not secrets.compare_digest(state, cookie_state):
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     try:
@@ -79,6 +74,7 @@ def callback(
 
     channel = upsert_channel(db, user, grant)
     db.commit()
+    _attribute_campaign_signup(db, request, channel)
     _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)
 
@@ -93,6 +89,25 @@ def callback(
         secure=_secure_cookies(),
     )
     return response
+
+
+def _attribute_campaign_signup(db: DbSession, request: Request, channel: Channel) -> None:
+    """Ties this connect back to the cold-email recipient whose link brought
+    them, and records the address now that they are a user. First connect wins:
+    a recipient already tied to a channel is never re-pointed."""
+    token = request.cookies.get(SOURCE_COOKIE, "")
+    if not token:
+        return
+    recipient = db.scalar(
+        select(CampaignRecipient).where(
+            CampaignRecipient.token == token,
+            CampaignRecipient.channel_id.is_(None),
+        )
+    )
+    if recipient is None:
+        return
+    recipient.channel_id = channel.id
+    db.commit()
 
 
 def _backfill_best_effort(db: DbSession, channel: Channel) -> None:
@@ -147,10 +162,7 @@ def _sync_eventsub_best_effort(channel: Channel) -> None:
     """Twitch only accepts HTTPS webhook callbacks, so local dev skips this;
     the simulator drives the webhook endpoint directly instead."""
     settings = get_settings()
-    if (
-        not settings.public_base_url.startswith("https://")
-        or not settings.twitch_eventsub_secret
-    ):
+    if not settings.public_base_url.startswith("https://") or not settings.twitch_eventsub_secret:
         logger.info(
             "eventsub sync skipped (needs https PUBLIC_BASE_URL and secret)",
             extra={"channel_id": channel.id},
