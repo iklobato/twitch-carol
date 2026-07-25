@@ -4,10 +4,8 @@ import secrets
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
 
 from apps.api.deps import SESSION_COOKIE, DbSession
-from apps.api.marketing import SOURCE_COOKIE
 from core.backfill import (
     backfill_bits_leaders,
     backfill_followers,
@@ -22,7 +20,7 @@ from core.channels import upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
 from core.eventsub import sync_channel_subscriptions
-from core.models import CampaignRecipient, Channel
+from core.models import Channel
 from core.twitch import TwitchAuthError, build_authorize_url, exchange_code, get_user
 
 logger = logging.getLogger(__name__)
@@ -74,7 +72,6 @@ def callback(
 
     channel = upsert_channel(db, user, grant)
     db.commit()
-    _attribute_campaign_signup(db, request, channel)
     _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)
 
@@ -89,25 +86,6 @@ def callback(
         secure=_secure_cookies(),
     )
     return response
-
-
-def _attribute_campaign_signup(db: DbSession, request: Request, channel: Channel) -> None:
-    """Ties this connect back to the cold-email recipient whose link brought
-    them, and records the address now that they are a user. First connect wins:
-    a recipient already tied to a channel is never re-pointed."""
-    token = request.cookies.get(SOURCE_COOKIE, "")
-    if not token:
-        return
-    recipient = db.scalar(
-        select(CampaignRecipient).where(
-            CampaignRecipient.token == token,
-            CampaignRecipient.channel_id.is_(None),
-        )
-    )
-    if recipient is None:
-        return
-    recipient.channel_id = channel.id
-    db.commit()
 
 
 def _backfill_best_effort(db: DbSession, channel: Channel) -> None:

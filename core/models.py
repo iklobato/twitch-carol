@@ -476,21 +476,3 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
-class CampaignRecipient(Base):
-    """One emailed address in a cold-outreach batch, identified by the token
-    that travels in the /howto link. The address itself is deliberately absent
-    until the person connects a channel: until then they are not a user, and
-    the token -> email map lives in a local CSV, not in production."""
-
-    __tablename__ = "campaign_recipients"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    token: Mapped[str] = mapped_column(String(16), unique=True)
-    batch: Mapped[str] = mapped_column(String(16), index=True)
-    email: Mapped[str | None] = mapped_column(String(255))
-    visited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    visit_count: Mapped[int] = mapped_column(default=0)
-    channel_id: Mapped[int | None] = mapped_column(ForeignKey("channels.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
