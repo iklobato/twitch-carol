@@ -205,6 +205,12 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
   só aparecem com 5+ lives analisadas)
 - Benchmark de transcrição (dev): `docker compose ... exec worker-transcribe \
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
+- Convite beta por email: `python scripts/build_campaign_batches.py` divide a
+  lista bruta em `data/campaign/lote-1..5.csv` (lotes crescentes, contatos de
+  negócio primeiro e Microsoft por último, para aquecer o domínio remetente).
+  O disparo é manual pelo Resend, um lote por dia; o texto do email está em
+  `ai-generated-messages/`. A lista e os CSVs são dados pessoais: ficam fora do
+  git (`data/` e `emails*.txt` no `.gitignore`)
 
 ### Impersonar um cliente (suporte/debug)
 

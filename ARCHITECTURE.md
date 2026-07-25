@@ -2,7 +2,7 @@
 
 Referência de responsabilidades de cada componente da infraestrutura, para
 humanos e agentes. Reflete o estado atual: prod 100% no DigitalOcean App
-Platform, DNS na DigitalOcean, e sem Valkey em produção (fila e dedup vivem no
+Platform, DNS na Cloudflare, e sem Valkey em produção (fila e dedup vivem no
 Postgres).
 
 Dois princípios atravessam tudo:
@@ -20,7 +20,7 @@ flowchart TB
     Browser([Navegador do streamer])
 
     subgraph edge[Borda]
-      DNS[DNS DigitalOcean<br/>streamintel.cc + TLS]
+      DNS[DNS Cloudflare<br/>streamintel.cc + TLS]
     end
 
     subgraph app[App Platform]
@@ -82,7 +82,7 @@ flowchart TB
 
 | # | Componente | Onde roda | Responsabilidade | Consome (input) | Gera (output) | Inicia / Termina |
 |---|---|---|---|---|---|---|
-| 1 | **DNS (DigitalOcean)** | Managed | Resolve `streamintel.cc` pra borda do app e emite TLS | Query DNS | Registros A/AAAA/CNAME para a borda | Sempre ativo (zona provisionada) |
+| 1 | **DNS (Cloudflare)** | Managed | Resolve `streamintel.cc` pra borda do app e emite TLS; encaminha o email do domínio pro Gmail (Email Routing) | Query DNS, email de entrada | Registros A/AAAA/CNAME (DNS-only, sem proxy: a borda do App Platform já é Cloudflare) e MX | Sempre ativo (zona provisionada) |
 | 2 | **web** (React) | App Platform, static site | Renderiza o dashboard no navegador | JSON da `api` (`/api/*`) | HTML/UI no browser | Servido por request; buildado no deploy |
 | 3 | **api** (FastAPI) | App Platform, service | OAuth, registro de EventSub, ingestão de webhook, serve o dashboard | Requests HTTP, tokens OAuth, notificações EventSub assinadas, leitura do PG | Respostas JSON; linhas `Stream`/`Event`/`Follower`; subs registradas na Twitch | Sobe no deploy; long-running (`/healthz`) |
 | 4 | **Twitch** (EventSub/Helix/IRC/OAuth) | Externo | A fonte de tudo: eventos de live, chat, viewers, auth; e o destino dos clips criados | Nossos pedidos de subscription, OAuth e criação de clips (Helix `/clips`) | Webhooks (online/offline/follow/sub/bits), Helix, chat IRC, tokens, o clip criado | Sempre ativo; emite conforme a live |
