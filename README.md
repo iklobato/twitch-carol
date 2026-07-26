@@ -205,12 +205,59 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
   só aparecem com 5+ lives analisadas)
 - Benchmark de transcrição (dev): `docker compose ... exec worker-transcribe \
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
-- Convite beta por email: `python scripts/build_campaign_batches.py` divide a
-  lista bruta em `data/campaign/lote-1..5.csv` (lotes crescentes, contatos de
-  negócio primeiro e Microsoft por último, para aquecer o domínio remetente).
-  O disparo é manual pelo Resend, um lote por dia; o texto do email está em
-  `ai-generated-messages/`. A lista e os CSVs são dados pessoais: ficam fora do
-  git (`data/` e `emails*.txt` no `.gitignore`)
+### Prospecção e convite beta
+
+Achar streamer pequeno de língua portuguesa, confirmar o tamanho do canal e
+convidar por email. Tudo roda nesta máquina, nada disso vai para produção.
+
+```bash
+python scripts/prospect_leads.py sweep      # quem está ao vivo em pt agora (grátis)
+APIFY_TOKEN=... python scripts/prospect_leads.py harvest   # Google, pago por busca
+python scripts/prospect_leads.py qualify    # enriquece na Helix e filtra
+python scripts/prospect_leads.py batches    # divide nos lotes da rampa
+```
+
+`sweep` e `harvest` só juntam candidatos em `data/campaign/candidates.csv`;
+quem decide é o `qualify`, porque o tamanho do canal só existe na Helix
+(`/helix/channels/followers` devolve o total de qualquer canal com app token).
+Ele mantém quem tem entre 100 e 5.000 seguidores, canal em português, que não é
+parceiro, com email de domínio que responde MX, e que ainda não está em nenhum
+`lote-*.csv`. Sai em `data/campaign/leads.csv`.
+
+As duas fontes se completam: `sweep` vê só quem está transmitindo naquele
+instante, `harvest` alcança canal offline pelo que o Google indexou. Buscar no
+Google é a mesma coisa que o actor pago da Apify fazia, direto pelo proxy de
+busca e sem o aluguel.
+
+Envio, um lote por dia, sempre com `--dry-run` antes:
+
+```bash
+RESEND_API_KEY=... python scripts/send_campaign_batch.py lote-6 --dry-run
+RESEND_API_KEY=... python scripts/campaign_stats.py   # entrega e bounce por lote
+```
+
+O `campaign_stats.py` é o portão: lê a entrega de cada endereço na API do Resend
+e cruza com os CSVs dos lotes. Não mostra abertura porque o rastreamento está
+desligado no domínio de propósito (o porquê está no doc da campanha).
+
+Os lotes 8 a 10 ficam agendados no droplet `lekture-sfu` (systemd timer, um por
+dia às 10h de São Paulo), para o envio não depender do notebook ligado:
+
+```bash
+RESEND_API_KEY=... ./deploy/campanha/instalar.sh
+```
+
+O systemd roda `campaign_stats.py --portao <lote>` antes de cada disparo e não
+envia se o portão barrar (lote já enviado, lote anterior parado, bounce ≥ 3% ou
+qualquer spam). Se barrar, chega um email avisando.
+
+Rampa e portões (bounce < 3%, zero spam, cadastro/resposta) em
+`ai-generated-messages/2026-07-24-broadcast-beta-streamers.md`, junto do texto do
+email. O volume sobe devagar de propósito: `send.streamintel.cc` é domínio novo,
+e pico de envio em domínio sem histórico cai no spam.
+
+A lista e os CSVs são dados pessoais: ficam fora do git (`data/` e `emails*.txt`
+no `.gitignore`) e **não têm backup**.
 
 ### Impersonar um cliente (suporte/debug)
 
