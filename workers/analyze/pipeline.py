@@ -62,6 +62,12 @@ TOPIC_MAX = 5
 TOPIC_NAME_MAX_CHARS = 60
 TOPIC_SIMILARITY_MAX = 0.6
 RECOMMEND_OUTPUT_TOKENS = 700
+# What summary + topics + recommendations need to be allowed to run at all.
+# Block summarizing must never spend below this, whatever the live's length.
+FINAL_STEPS_INPUT_RESERVE = 3 * TOPICS_PROMPT_INPUT_CAP
+FINAL_STEPS_OUTPUT_RESERVE = (
+    SUMMARY_OUTPUT_TOKENS + TOPICS_OUTPUT_TOKENS + RECOMMEND_OUTPUT_TOKENS
+)
 RECOMMEND_MAX = 3
 RECOMMEND_TOP_PEAKS = 3
 
@@ -319,7 +325,14 @@ def _summarize_blocks(
 ) -> list[str]:
     summaries: list[str] = []
     for start, end in _stream_blocks(stream):
-        if not budget.can_afford(BLOCK_PROMPT_INPUT_CAP, BLOCK_OUTPUT_TOKENS):
+        # Blocks scale with how long the live ran, the final steps do not, and
+        # the final steps are the ones the streamer actually reads. Without this
+        # reserve a long live spends the whole budget narrating its own middle
+        # and arrives at summary/topics/recommendations with nothing left.
+        if not budget.can_afford(
+            BLOCK_PROMPT_INPUT_CAP + FINAL_STEPS_INPUT_RESERVE,
+            BLOCK_OUTPUT_TOKENS + FINAL_STEPS_OUTPUT_RESERVE,
+        ):
             stats.skipped_for_budget.append(f"block@{start:%H:%M}")
             continue
         context = _window_context(db, stream, start, end, BLOCK_CHAT_SAMPLE)

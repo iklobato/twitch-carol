@@ -59,8 +59,15 @@ class Settings(BaseSettings):
     # OpenRouter only: force routing to a provider that honors every requested
     # param (so response_format json mode is actually applied). No-op elsewhere.
     llm_require_provider_params: bool = False
-    llm_max_input_tokens: int = 30000
-    llm_max_output_tokens: int = 3000
+    # Per-stream analysis budget. Sized on measured spend, not on a round number:
+    # a live costs about 7400 tokens plus 1000 per 15-minute block, so the 6-hour
+    # lives we capture need ~48k and the longest one ever captured (12h20, 50
+    # blocks) needs ~69k. 30k/3k used to truncate every live over ~3h, silently
+    # dropping summary, topics and recommendations. Raising this does not raise
+    # the bill for a live that already fit: it is a ceiling, not a purchase, and
+    # a full analysis measures $0.08 at current OpenRouter prices.
+    llm_max_input_tokens: int = 90000
+    llm_max_output_tokens: int = 15000
     # PgBouncer in transaction mode can't keep server-side prepared statements;
     # set this true when database_url points at a pooled endpoint.
     db_disable_prepared_statements: bool = False
