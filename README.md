@@ -146,6 +146,18 @@ Para a IA remota (prod): `LLM_BACKEND=openai`, `LLM_BASE_URL` + `LLM_API_KEY`
 com `TRANSCRIBE_BASE_URL/API_KEY/MODEL`. Em dev, o default é local (GGUF +
 faster-whisper), sem essas chaves.
 
+`LLM_MAX_INPUT_TOKENS` / `LLM_MAX_OUTPUT_TOKENS` (90000 / 15000) são o teto de
+tokens por live analisada. Não mexa neles sem medir: são dimensionados sobre
+consumo real, e um teto curto faz a live longa perder resumo, tópicos e
+recomendações **sem erro nenhum no log**. A mecânica está em
+[`ARCHITECTURE.md`](ARCHITECTURE.md#orçamento-de-tokens-da-análise).
+
+⚠️ **A conta do OpenRouter é a mesma para o LLM e para o Whisper.** Se o crédito
+acabar, ela responde `402` e o pipeline inteiro para: a transcrição falha 3
+vezes, o stream vai para `FAILED`, e como a análise só roda depois, ninguém
+recebe relatório. Vale conferir o saldo antes de investigar outra coisa quando
+o processamento parar para todos os canais de uma vez.
+
 ## Deploy em produção (DigitalOcean App Platform)
 
 Produção roda 100% no App Platform (spec em `deploy/app.yaml`): os componentes
@@ -195,8 +207,30 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
 - Logs (JSON estruturado): prod `doctl apps logs <APP_ID> api` (ou
   `worker-capture` etc.); dev `docker compose ... logs -f api`
 - Healthchecks: api via `/healthz`; workers via ping no banco
-- Reprocessar uma live: enfileire um job `analyze` para o stream
-  (a análise é idempotente; veja `core/queues.enqueue_job`)
+- Reprocessar uma live: enfileire um job `analyze` para o stream e volte o
+  status dele para `queued_analysis`. Tanto a análise quanto a transcrição são
+  idempotentes (cada uma apaga as próprias linhas antes de regravar), então
+  rodar de novo substitui o resultado em vez de duplicar. Veja
+  `core/queues.enqueue_job`. Para refazer desde o áudio, enfileire `transcribe`
+  e use `queued_transcription`, **mas só vale para lives dos últimos ~7 dias**:
+  o lifecycle do Spaces apaga o áudio depois disso (medido em 2026-07-28: lives
+  de 21/07 em diante tinham áudio, as de 19/07 pra trás já estavam zeradas).
+  Passado esse prazo só dá para re-analisar, porque a transcrição fica no banco
+  e é permanente. **Confira que ainda existe áudio antes de re-enfileirar
+  `transcribe`**: sem áudio a transcrição roda, não acha nada e deixa a live
+  `READY` e vazia, que é pior do que estava. Pelo console:
+
+  ```bash
+  doctl apps console <APP_ID> worker-analyze
+  python -c "from core.db import session_factory; from core.models import Stream,StreamStatus as S; \
+  from core.queues import JOB_ANALYZE,enqueue_job; db=session_factory()(); s=db.get(Stream,<ID>); \
+  s.status=S.QUEUED_ANALYSIS; enqueue_job(db,JOB_ANALYZE,s.id); db.commit()"
+  ```
+
+- Relatório vazio ou sem resumo: procure `analysis done` no log do
+  `worker-analyze`. Se vier com `skipped=['summary', 'topics', ...]`, a live
+  estourou o orçamento de tokens, não é erro de LLM. Veja
+  [`ARCHITECTURE.md`](ARCHITECTURE.md#orçamento-de-tokens-da-análise)
 - Re-sincronizar EventSub: refaça o login no dashboard
 - Trocar modelo LLM: em prod ajuste `LLM_MODEL` / `LLM_MODEL_STRONG` no App
   Platform; em dev troque o GGUF e o `LLM_GGUF_PATH`
