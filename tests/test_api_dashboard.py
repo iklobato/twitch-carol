@@ -278,11 +278,14 @@ def test_search_stream_filter(api_client, db) -> None:
 
 
 def test_queue_position_ordered_by_next_live_urgency(api_client, db) -> None:
-    # "soon" streams on today's weekday ~1h from now (next live today);
-    # "later" streamed 3 days ago, so its weekday only recurs in 4 days
+    # "soon" streams daily, so its next live is always within ~2 days; "later"
+    # streamed 3 days ago only, so its weekday recurs in 4 days. The daily
+    # history is what keeps this independent of the clock: the queued and the
+    # finished streams below land in their channel's history too and move the
+    # median, which used to flip the ordering between 09h and 22h UTC.
     soon = make_channel(db)
-    for weeks in (1, 2):
-        make_stream(db, soon, started_minutes_ago=weeks * 7 * 24 * 60 - 60)
+    for days_back in range(1, 8):
+        make_stream(db, soon, started_minutes_ago=days_back * 24 * 60 + 60)
     later = make_channel(db)
     make_stream(db, later, started_minutes_ago=3 * 24 * 60)
 
