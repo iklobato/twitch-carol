@@ -88,15 +88,37 @@ flowchart TB
 | 4 | **Twitch** (EventSub/Helix/IRC/OAuth) | Externo | A fonte de tudo: eventos de live, chat, viewers, auth; e o destino dos clips criados | Nossos pedidos de subscription, OAuth e criação de clips (Helix `/clips`) | Webhooks (online/offline/follow/sub/bits), Helix, chat IRC, tokens, o clip criado | Sempre ativo; emite conforme a live |
 | 5 | **worker-capture** | App Platform, worker | Captura a live: chat, viewers, audio; e auto-clipa os picos de chat ao vivo | IRC (chat), Helix `/streams` (viewers+titulo), HLS via streamlink | `ChatMessage`, `ViewerSample`, segmentos Opus para o Spaces, job `transcribe`, `TwitchClip` (clip nos picos via Helix `/clips`, scope `clips:edit`, com cooldown e teto por stream) | **Inicia:** `stream.online` cria `Stream` (CAPTURING), worker faz poll (3s). **Termina:** `stream.offline` ou Helix offline 3x seguidas |
 | 6 | **worker-transcribe** | App Platform, worker | Transcreve o audio pos-live | Job `transcribe` (tabela `jobs`), audio baixado do Spaces, Whisper via OpenRouter | `TranscriptSegment`, job `analyze` | **Inicia:** job `transcribe` em QUEUED (poll 5s). **Termina:** done -> `QUEUED_ANALYSIS`; ou falha apos 3 tentativas |
-| 7 | **worker-analyze** | App Platform, worker | Gera insights/picos/recomendacoes | Job `analyze`, chat/viewers/transcricao do PG, LLM via OpenRouter | `Peak`, `Insight`, `*Recommendation`; stream -> READY | **Inicia:** job `analyze` em QUEUED. **Termina:** done -> stream `READY` |
+| 7 | **worker-analyze** | App Platform, worker | Gera insights/picos/recomendacoes dentro de um orcamento de tokens por live | Job `analyze`, chat/viewers/transcricao do PG, LLM via OpenRouter | `Peak`, `Insight`, `*Recommendation`; stream -> READY | **Inicia:** job `analyze` em QUEUED. **Termina:** done -> stream `READY` |
 | 8 | **Postgres** + pool PgBouncer | Managed, nyc3 | Fonte unica de verdade: dados, fila de jobs, dedup EventSub | Escritas SQL de api/workers | Resultados de query; a fila (`jobs`); o dedup (`eventsub_messages`) | Sempre ativo (managed). Nunca tirar o pool: cluster compartilhado, ~50 conexoes |
-| 9 | **Spaces** (`streamintel-audio`) | Managed, nyc3 | Storage do audio das lives e backups | Upload de segmentos (capture) | Download de audio (transcribe) | Sempre ativo; lifecycle 7d/30d |
-| 10 | **OpenRouter** | Externo (API) | Backend remoto de LLM e de transcricao | Audio (transcribe) / prompt + fatos SQL (analyze) | Texto transcrito / JSON de insights | Chamado por job |
+| 9 | **Spaces** (`streamintel-audio`) | Managed, nyc3 | Storage do audio das lives e backups | Upload de segmentos (capture) | Download de audio (transcribe) | Sempre ativo; lifecycle 7d/30d. **`AUDIO_RETENTION_DAYS` (365) nao manda aqui:** a regra e do bucket, criada por owner key, e a chave da app so consegue ler (o log diz `lifecycle rule not set by app key`). Medido em 2026-07-28: live de 21/07 com audio, de 19/07 sem. Ou seja, **so da pra re-transcrever os ultimos ~7 dias**; depois disso so re-analisar, com a transcricao que ficou no banco |
+| 10 | **OpenRouter** | Externo (API) | Backend remoto de LLM e de transcricao | Audio (transcribe) / prompt + fatos SQL (analyze) | Texto transcrito / JSON de insights | Chamado por job. **Sem credito ele responde 402 e o pipeline inteiro para:** transcribe falha 3x e o stream vai a FAILED, e como analyze so roda depois, nenhum relatorio sai pra ninguem. E a mesma conta pros dois (LLM e Whisper) |
 | 11 | **Sentry** | Externo (SaaS) | Captura de erros da api/workers | Excecoes instrumentadas | Nada (quota esgotada ate renovar) | Sempre ativo; sem entrega enquanto sem quota |
 | 12 | **migrate** | App Platform, PRE_DEPLOY job | Aplica migracoes antes de cada deploy | Scripts alembic + `DATABASE_URL` | Schema atualizado | **Inicia:** antes de todo deploy. **Termina:** sucesso -> deploy segue; falha -> deploy ERROR (funciona como canario) |
 | 13 | **Droplet de monitoramento** (`financialdata-monitoring`) | Droplet, compartilhado | Prometheus + Grafana + blackbox + alertas | Probe do site + leitura do PG via `grafana_ro` (read-only) | Dashboards e alertas | Sempre ativo |
 | 14 | **~~Valkey~~** (`financialdata-valkey`) | Managed, nyc1 | Fora de producao (fila e dedup foram pro PG) | Apenas chaves `sim:*` do simulador local | Nada em prod | Desativado em prod em 2026-07-16/17 |
 | 15 | **~~Droplet `stream-intel`~~** | (destruido) | Era o prod antigo (rsync + docker compose) | - | - | Destruido 2026-07-16; snapshot `stream-intel-pre-retire-20260716` guardado |
+
+## Orçamento de tokens da análise
+
+Cada live analisada tem um teto de tokens (`LLM_MAX_INPUT_TOKENS` /
+`LLM_MAX_OUTPUT_TOKENS`). O `worker-analyze` gasta nesta ordem: picos, um
+resumo por bloco de 15 min, e então resumo final, tópicos e recomendações.
+
+O detalhe que importa: **os blocos crescem com a duração da live, as etapas
+finais não.** Sem proteção, uma live longa gasta o orçamento inteiro narrando o
+próprio meio e chega nas três etapas que o streamer realmente lê sem nada
+sobrando. Por isso o `_summarize_blocks` só roda um bloco se couber ele **mais**
+a reserva das etapas finais: uma live muito longa perde blocos do meio, nunca a
+conclusão.
+
+A falha é silenciosa quando o teto é curto: o job termina `done`, o stream vai
+pra `READY`, e o único rastro é `skipped=[...]` na linha `analysis done` do log.
+Se um relatório sair vazio ou sem resumo, é ali que se olha primeiro.
+
+O teto é dimensionado sobre consumo medido, não em número redondo: ~7400 tokens
+mais ~1000 por bloco de 15 min (uma live de 6h precisa de ~48k; a maior já
+capturada, de 12h20, ~69k). É teto, não gasto: subir não encarece uma live que
+já cabia, e uma análise completa custa ~US$ 0,08 nos preços atuais.
 
 Resumo em uma frase: **DNS -> web -> api (login + registra EventSub) -> Twitch
 dispara `stream.online` -> capture (chat/viewers/audio) -> transcribe
