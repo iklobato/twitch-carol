@@ -84,8 +84,10 @@ class ScriptedTranscriber:
 
     def __init__(self) -> None:
         self._lines = iter(SPEECH_SCRIPT)
+        self.languages: list[str] = []
 
-    def transcribe(self, audio) -> list[tuple[float, float, str]]:
+    def transcribe(self, audio, language: str) -> list[tuple[float, float, str]]:
+        self.languages.append(language)
         return [(0.0, 25.0, next(self._lines))]
 
 
@@ -219,6 +221,11 @@ def _process(db, stream: Stream, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     db.expire_all()
     assert stream.status == StreamStatus.QUEUED_ANALYSIS
+    # The language travels the whole way: Helix says "en" at login ->
+    # channels.language -> process_stream -> the model. Whisper told the wrong
+    # language transcribes phonetically, and the entire report is grounded on
+    # this text, so a hardcoded default here is a silently broken product.
+    assert set(transcriber.languages) == {"en"}
 
     analyze_spec = WorkerSpec(
         job_type=JOB_ANALYZE,
@@ -281,12 +288,19 @@ def test_full_flow_login_processing_visualization(
         }
     }
     fake_twitch.channel_infos = {
+        # the streamer's own channel: this is where channels.language comes from
+        FAKE_USER["id"]: {
+            "broadcaster_id": FAKE_USER["id"],
+            "broadcaster_language": "en",
+            "game_name": "Just Chatting",
+            "title": "just chatting",
+        },
         "301": {
             "broadcaster_id": "301",
-            "broadcaster_language": "pt",
+            "broadcaster_language": "en",
             "game_name": "Just Chatting",
             "title": "bate-papo",
-        }
+        },
     }
     fake_twitch.videos = [
         {
@@ -373,7 +387,7 @@ def test_full_flow_login_processing_visualization(
     chatters = api_client.get(f"/api/streams/{stream.id}/chatters").json()
     raider = next(c for c in chatters if c["author_login"] == "raider_1")
     assert raider["followed_during_stream"] is True
-    assert "seguiu durante a live" in raider["labels"]
+    assert "followed" in raider["labels"]
 
     community = api_client.get(f"/api/streams/{stream.id}/community").json()
     assert community["sentiment_overall"] is not None

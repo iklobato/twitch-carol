@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { fmtInt, fmtMoney, t } from '../i18n'
 import type { PlatformStats } from '../types'
 
 // The logged-out landing. Self-contained markup + styles so it stays isolated
@@ -148,33 +149,37 @@ const STYLE = `
 const TWITCH_SVG =
   '<svg class="tw" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg>'
 
-const BODY = `
+// A function, not a const: the markup has to be built after setLang() has run,
+// otherwise every string would be resolved at import time in the default
+// language.
+function body(): string {
+  return `
 <div class="aura"></div>
 <div class="grid-lines"></div>
 <nav>
   <div class="nav-inner">
-    <div class="brand"><span class="mark"></span><span>Stream Intel <small>/ meu canal</small></span></div>
-    <a class="btn btn-primary" href="/auth/login">${TWITCH_SVG} Conectar com a Twitch</a>
+    <div class="brand"><span class="mark"></span><span>Stream Intel <small>${t('landing.tagline')}</small></span></div>
+    <a class="btn btn-primary" href="/auth/login">${TWITCH_SVG} ${t('landing.connect')}</a>
   </div>
 </nav>
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow">Inteligência de monetização para streamers</span>
-      <h1>Descubra de onde vem a sua grana. E como fazer <span class="hl">render mais</span>.</h1>
-      <p class="lead">O Stream Intel conecta na sua conta da Twitch e transforma cada live em decisões de dinheiro: quem contribui, o que converte, e qual o próximo passo pra faturar mais.</p>
+      <span class="eyebrow">${t('landing.eyebrow')}</span>
+      <h1>${t('landing.h1.before')} <span class="hl">${t('landing.h1.highlight')}</span>.</h1>
+      <p class="lead">${t('landing.lead')}</p>
       <div class="cta-row">
-        <a class="btn btn-primary btn-lg" href="/auth/login">${TWITCH_SVG} Conectar com a Twitch</a>
-        <a class="btn btn-ghost btn-lg" href="#beneficios">Ver o que você recebe</a>
+        <a class="btn btn-primary btn-lg" href="/auth/login">${TWITCH_SVG} ${t('landing.connect')}</a>
+        <a class="btn btn-ghost btn-lg" href="#beneficios">${t('landing.seeWhat')}</a>
       </div>
-      <p class="cta-note">Grátis pra conectar. <b>Só leitura</b> — nunca postamos nada. Tokens <b>criptografados</b>.</p>
+      <p class="cta-note">${t('landing.ctaNote.free')} <b>${t('landing.ctaNote.readOnly')}</b> ${t('landing.ctaNote.never')} <b>${t('landing.ctaNote.encrypted')}</b>.</p>
     </div>
     <div class="panel" aria-hidden="true">
-      <div class="panel-top"><span class="live"><span class="dot"></span> AO VIVO</span><span class="panel-tag">Meu canal · resumo</span></div>
+      <div class="panel-top"><span class="live"><span class="dot"></span> ${t('landing.panel.live')}</span><span class="panel-tag">${t('landing.panel.tag')}</span></div>
       <div class="revenue">
-        <div class="k">Arrecadado (estimado)</div>
-        <div class="v" data-count="44.50">US$ 0,00</div>
-        <div class="sub"><b>fiel_carlos</b> foi seu maior apoiador em 5 lives</div>
+        <div class="k">${t('money.estimated')}</div>
+        <div class="v" data-count="44.50">${fmtMoney(0)}</div>
+        <div class="sub"><b>fiel_carlos</b> ${t('landing.panel.topSupporter')}</div>
         <svg class="spark" viewBox="0 0 300 46" preserveAspectRatio="none">
           <defs><linearGradient id="sig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(52,211,153,0.5)"/><stop offset="1" stop-color="rgba(52,211,153,0)"/></linearGradient></defs>
           <path d="M0,38 L40,34 L80,36 L120,26 L160,28 L200,16 L240,18 L300,6 L300,46 L0,46 Z" fill="url(#sig)"/>
@@ -182,76 +187,77 @@ const BODY = `
         </svg>
       </div>
       <div class="mini-grid">
-        <div class="mini"><div class="k">Conteúdo que converte</div><div class="v g">US$ 91,50/h</div></div>
-        <div class="mini"><div class="k">Seguidores</div><div class="v p">41</div></div>
+        <div class="mini"><div class="k">${t('landing.panel.converts')}</div><div class="v g">${fmtMoney(91.5)}/h</div></div>
+        <div class="mini"><div class="k">${t('landing.panel.followers')}</div><div class="v p">41</div></div>
       </div>
-      <div class="ai-chip"><span class="badge">IA</span><span>Faça mais blocos do assunto que mais rende: ele paga 3x por hora transmitida.</span></div>
+      <div class="ai-chip"><span class="badge">AI</span><span>${t('landing.panel.ai')}</span></div>
     </div>
   </div>
 </header>
 <div class="wrap"><div class="statband" id="si-stats" style="display:none">
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="chat_messages">—</div><div class="l">mensagens de chat analisadas</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="streams_analyzed">—</div><div class="l">lives analisadas</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="hours_captured">—</div><div class="l">horas de transmissão capturadas</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="segments_transcribed">—</div><div class="l">trechos de fala transcritos</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="chat_messages">—</div><div class="l">${t('landing.stats.messages')}</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="streams_analyzed">—</div><div class="l">${t('landing.stats.streams')}</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="hours_captured">—</div><div class="l">${t('landing.stats.hours')}</div></div>
+  <div><div class="n" data-count="0" data-fmt="int" data-stat="segments_transcribed">—</div><div class="l">${t('landing.stats.segments')}</div></div>
 </div></div>
-<div class="strip"><div class="wrap"><span class="eyebrow green">O problema</span><p>A maioria dos streamers transmite <span class="hl">no escuro</span>: não sabe qual assunto paga as contas, quem são seus maiores apoiadores, nem por que a audiência sumiu no minuto 40.</p></div></div>
+<div class="strip"><div class="wrap"><span class="eyebrow green">${t('landing.problem.eyebrow')}</span><p>${t('landing.problem.before')} <span class="hl">${t('landing.problem.highlight')}</span>${t('landing.problem.after')}</p></div></div>
 <section id="beneficios">
   <div class="wrap">
-    <div class="sec-head"><span class="eyebrow">O que você recebe</span><h2>Cada recurso resolve um problema real de quem transmite.</h2><p>Não é mais um painel de vaidade. É o que você precisa saber pra ganhar mais com o que já faz.</p></div>
+    <div class="sec-head"><span class="eyebrow">${t('landing.benefits.eyebrow')}</span><h2>${t('landing.benefits.h2')}</h2><p>${t('landing.benefits.p')}</p></div>
     <div class="benefits">
-      <div class="card"><div class="num">01 · Monetização</div><h3>Veja cada centavo</h3><p class="solve">Bits, subs e gifts estimados por live e no total. Quem mais contribuiu e quais assuntos geram mais receita.</p><span class="win">O dinheiro deixa de ser um mistério</span></div>
-      <div class="card"><div class="num">02 · Dia 1</div><h3>Dados reais no primeiro clique</h3><p class="solve">Conectou, já aparece: seus seguidores com histórico de quando seguiram e suas lives passadas. Sem esperar semanas capturando.</p><span class="win">Nada de começar do zero</span></div>
-      <div class="card"><div class="num">03 · Conteúdo</div><h3>Faça mais do que paga</h3><p class="solve">Receita por categoria e por hora transmitida. Descubra que um tema rende 3x mais por hora que outro e ajuste sua grade.</p><span class="win">Pare de confundir audiência com receita</span></div>
-      <div class="card"><div class="num">04 · Engajamento</div><h3>As mecânicas que puxam grana</h3><p class="solve">Hype trains, as recompensas de pontos mais resgatadas, e o quanto os anúncios derrubam (ou não) sua audiência.</p><span class="win">Saiba o que dispara contribuição</span></div>
-      <div class="card"><div class="num">05 · Comunidade</div><h3>Conheça quem sustenta o canal</h3><p class="solve">Seus mais fiéis, VIPs, progresso das metas e quantos viewers realmente falam no chat contra quantos só observam.</p><span class="win">Cuide de quem te banca</span></div>
-      <div class="card"><div class="num">06 · Cada live</div><h3>Um relatório automático por transmissão</h3><p class="solve">Transcrição da sua fala, picos de chat explicados, melhores momentos pra clipar e os melhores dias e horários pra transmitir.</p><span class="win">Melhore live após live</span></div>
+      <div class="card"><div class="num">${t('landing.b1.num')}</div><h3>${t('landing.b1.h3')}</h3><p class="solve">${t('landing.b1.p')}</p><span class="win">${t('landing.b1.win')}</span></div>
+      <div class="card"><div class="num">${t('landing.b2.num')}</div><h3>${t('landing.b2.h3')}</h3><p class="solve">${t('landing.b2.p')}</p><span class="win">${t('landing.b2.win')}</span></div>
+      <div class="card"><div class="num">${t('landing.b3.num')}</div><h3>${t('landing.b3.h3')}</h3><p class="solve">${t('landing.b3.p')}</p><span class="win">${t('landing.b3.win')}</span></div>
+      <div class="card"><div class="num">${t('landing.b4.num')}</div><h3>${t('landing.b4.h3')}</h3><p class="solve">${t('landing.b4.p')}</p><span class="win">${t('landing.b4.win')}</span></div>
+      <div class="card"><div class="num">${t('landing.b5.num')}</div><h3>${t('landing.b5.h3')}</h3><p class="solve">${t('landing.b5.p')}</p><span class="win">${t('landing.b5.win')}</span></div>
+      <div class="card"><div class="num">${t('landing.b6.num')}</div><h3>${t('landing.b6.h3')}</h3><p class="solve">${t('landing.b6.p')}</p><span class="win">${t('landing.b6.win')}</span></div>
       <div class="card wide">
-        <div><div class="num">07 · Recomendações por IA</div><h3>O próximo passo, com base nos <span style="color:#6ee7b7">seus</span> números</h3></div>
-        <div><p class="solve">A IA lê seus dados reais e sugere onde focar pra monetizar mais. Zero achismo: <b style="color:#f4f1fb">cada recomendação cita o fato que a embasa</b>. Os números vêm do banco, nunca de texto inventado.</p><span class="win">Do dado à decisão, sem adivinhação</span></div>
+        <div><div class="num">${t('landing.b7.num')}</div><h3>${t('landing.b7.h3.before')} <span style="color:#6ee7b7">${t('landing.b7.h3.your')}</span> ${t('landing.b7.h3.after')}</h3></div>
+        <div><p class="solve">${t('landing.b7.p.before')} <b style="color:#f4f1fb">${t('landing.b7.p.bold')}</b>${t('landing.b7.p.after')}</p><span class="win">${t('landing.b7.win')}</span></div>
       </div>
     </div>
   </div>
 </section>
 <section style="padding-top:0">
   <div class="wrap">
-    <div class="sec-head"><span class="eyebrow">Como funciona</span><h2>Três passos. Um clique pra começar.</h2></div>
+    <div class="sec-head"><span class="eyebrow">${t('landing.how.eyebrow')}</span><h2>${t('landing.how.h2')}</h2></div>
     <div class="steps">
-      <div class="step"><div class="n"></div><h4>Conecte</h4><p>Um clique com a Twitch. Só permissões de leitura, nada que mexa no seu canal.</p></div>
-      <div class="step"><div class="n"></div><h4>A gente captura e analisa</h4><p>Cada live vira números, transcrição e insights automaticamente, enquanto você transmite.</p></div>
-      <div class="step"><div class="n"></div><h4>Você decide com clareza</h4><p>Abra o painel "Meu canal" e veja exatamente onde focar pra faturar mais.</p></div>
+      <div class="step"><div class="n"></div><h4>${t('landing.s1.h4')}</h4><p>${t('landing.s1.p')}</p></div>
+      <div class="step"><div class="n"></div><h4>${t('landing.s2.h4')}</h4><p>${t('landing.s2.p')}</p></div>
+      <div class="step"><div class="n"></div><h4>${t('landing.s3.h4')}</h4><p>${t('landing.s3.p')}</p></div>
     </div>
   </div>
 </section>
 <section style="padding-top:0">
   <div class="wrap">
-    <div class="sec-head"><span class="eyebrow green">Por que confiar</span><h2>Honesto com seus dados e com seu dinheiro.</h2></div>
+    <div class="sec-head"><span class="eyebrow green">${t('landing.trust.eyebrow')}</span><h2>${t('landing.trust.h2')}</h2></div>
     <div class="trust">
-      <div class="t"><div class="k"><span class="ic">&#9670;</span>Números do banco</div><div class="d">As métricas vêm de SQL, nunca de um texto de IA "chutando" valores.</div></div>
-      <div class="t"><div class="k"><span class="ic">&#9670;</span>Só leitura</div><div class="d">A gente nunca posta, edita ou muda nada no seu canal. Nunca.</div></div>
-      <div class="t"><div class="k"><span class="ic">&#9670;</span>Criptografado</div><div class="d">Seus tokens da Twitch ficam guardados com criptografia em repouso.</div></div>
-      <div class="t"><div class="k"><span class="ic">&#9670;</span>Estimativas honestas</div><div class="d">Valores em dólar são rotulados como estimativa: a Twitch não abre o split exato.</div></div>
+      <div class="t"><div class="k"><span class="ic">&#9670;</span>${t('landing.t1.k')}</div><div class="d">${t('landing.t1.d')}</div></div>
+      <div class="t"><div class="k"><span class="ic">&#9670;</span>${t('landing.t2.k')}</div><div class="d">${t('landing.t2.d')}</div></div>
+      <div class="t"><div class="k"><span class="ic">&#9670;</span>${t('landing.t3.k')}</div><div class="d">${t('landing.t3.d')}</div></div>
+      <div class="t"><div class="k"><span class="ic">&#9670;</span>${t('landing.t4.k')}</div><div class="d">${t('landing.t4.d')}</div></div>
     </div>
   </div>
 </section>
 <section>
   <div class="wrap">
     <div class="final">
-      <span class="eyebrow">Pronto pra parar de adivinhar?</span>
-      <h2>Sua próxima live pode ser a primeira com um plano.</h2>
-      <p>Conecte sua conta da Twitch e veja, em minutos, de onde vem sua grana e como fazer render mais.</p>
-      <div class="cta-row"><a class="btn btn-primary btn-lg" href="/auth/login">${TWITCH_SVG} Conectar com a Twitch</a></div>
-      <p class="cta-note" style="margin-top:18px">Grátis pra conectar · Só leitura · Cancele quando quiser</p>
+      <span class="eyebrow">${t('landing.final.eyebrow')}</span>
+      <h2>${t('landing.final.h2')}</h2>
+      <p>${t('landing.final.p')}</p>
+      <div class="cta-row"><a class="btn btn-primary btn-lg" href="/auth/login">${TWITCH_SVG} ${t('landing.connect')}</a></div>
+      <p class="cta-note" style="margin-top:18px">${t('landing.final.note')}</p>
     </div>
   </div>
 </section>
 <footer>
   <div class="wrap">
-    <div class="foot-inner"><div class="brand"><span class="mark"></span> Stream Intel</div><span class="mono">streamintel.cc · feito para streamers</span></div>
-    <p class="fine">Estimativas de receita refletem a sua parte aproximada e são rotuladas como tal. Alguns dados (inscritos, leaderboard de bits) dependem de você ser afiliado ou parceiro da Twitch. Stream Intel não é afiliado à Twitch.</p>
+    <div class="foot-inner"><div class="brand"><span class="mark"></span> Stream Intel</div><span class="mono">${t('landing.footer.made')}</span></div>
+    <p class="fine">${t('landing.footer.fine')}</p>
   </div>
 </footer>
 `
+}
 
 export default function Landing() {
   useEffect(() => {
@@ -278,10 +284,11 @@ export default function Landing() {
       cards.forEach((c) => io.observe(c))
     }
 
-    const usd = (n: number) => 'US$ ' + n.toFixed(2).replace('.', ',')
-    const int = (n: number) => Math.round(n).toLocaleString('pt-BR')
     const animate = (el: HTMLElement, target: number) => {
-      const fmt = el.getAttribute('data-fmt') === 'int' ? int : usd
+      const fmt =
+        el.getAttribute('data-fmt') === 'int'
+          ? (n: number) => fmtInt(Math.round(n))
+          : (n: number) => fmtMoney(n)
       if (reduce) {
         el.textContent = fmt(target)
         return
@@ -322,7 +329,7 @@ export default function Landing() {
   return (
     <div className="si-landing">
       <style dangerouslySetInnerHTML={{ __html: STYLE }} />
-      <div dangerouslySetInnerHTML={{ __html: BODY }} />
+      <div dangerouslySetInnerHTML={{ __html: body() }} />
     </div>
   )
 }

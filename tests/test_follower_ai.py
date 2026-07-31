@@ -31,7 +31,7 @@ class FakeLLM:
         return json.dumps(
             {
                 "segment_actions": [
-                    {"label": "Sumidos", "action": "Faça um sorteio para quem voltar."}
+                    {"key": "dormant", "action": "Faça um sorteio para quem voltar."}
                 ],
                 "audience_summary": "Público majoritariamente de games competitivos.",
                 "reactivations": [
@@ -98,7 +98,7 @@ def test_generate_persists_segment_bio_and_reactivation(db) -> None:
     assert kinds == {KIND_SEGMENT, KIND_BIO, KIND_REACTIVATION}
 
     segment = next(r for r in rows if r.kind == KIND_SEGMENT)
-    assert segment.title == "Sumidos"
+    assert segment.title == "dormant"
     assert segment.evidence["count"] >= 1
 
     # regenerating replaces, not appends

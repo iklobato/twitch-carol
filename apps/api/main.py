@@ -47,6 +47,9 @@ class MeResponse(BaseModel):
     login: str
     display_name: str
     scopes: list[str]
+    # Drives the screen language in the web app, same value the analysis and the
+    # weekly digest write in.
+    language: str
     is_admin: bool = False
     impersonating: Impersonation | None = None
     streamelements_connected: bool = False
@@ -72,6 +75,7 @@ def me(session: CurrentSession, channel: CurrentChannel, db: DbSession) -> MeRes
         login=channel.login,
         display_name=channel.display_name,
         scopes=channel.scopes,
+        language=channel.language,
         is_admin=is_admin,
         impersonating=impersonating,
         streamelements_connected=channel.streamelements_account_id is not None,

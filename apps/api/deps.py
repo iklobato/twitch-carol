@@ -52,3 +52,18 @@ def current_channel(session: CurrentSession, db: DbSession) -> Channel:
 
 
 CurrentChannel = Annotated[Channel, Depends(current_channel)]
+
+
+def optional_channel(request: Request, db: DbSession) -> Channel | None:
+    """The signed-in channel, or None. For pages that anyone can open but that
+    read better when we know who is looking (the /howto language)."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if token is None:
+        return None
+    session = read_session_token(token)
+    if session is None:
+        return None
+    return db.get(Channel, session.channel_id)
+
+
+OptionalChannel = Annotated[Channel | None, Depends(optional_channel)]

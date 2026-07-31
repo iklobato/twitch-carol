@@ -74,8 +74,8 @@ def test_channel_best_weekdays(api_client, db) -> None:
 
     login_as(api_client, channel)
     weekdays = api_client.get("/api/channel").json()["best_weekdays"]
-    # highest avg peak first
-    assert weekdays[0]["label"] == "Sábado"
+    # highest avg peak first; 5 = Saturday (0 = Monday), named by the web app
+    assert weekdays[0]["weekday"] == 5
     assert weekdays[0]["avg_peak_viewers"] == 200.0
 
 

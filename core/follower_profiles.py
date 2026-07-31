@@ -41,12 +41,12 @@ class FollowerProfile:
         """Where the follower sits in the funnel. Each stage implies the ones
         before it, so this reads the deepest reached."""
         if self.estimated_usd > 0:
-            return "pagante"
+            return "paying"
         if self.is_subscriber:
-            return "inscrito"
+            return "subscriber"
         if self.messages > 0:
-            return "engajado"
-        return "seguidor"
+            return "engaged"
+        return "follower"
 
 
 @dataclass

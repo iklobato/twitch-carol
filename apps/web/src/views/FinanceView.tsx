@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react'
 import { apiGet, formatDate } from '../api'
+import { fmtInt, fmtMoney, t, type MessageKey } from '../i18n'
 import PeriodPicker from '../components/PeriodPicker'
+import { liveCount } from './StreamsList'
 import type { FinanceOverview, FinancePeriod } from '../types'
 
-function usd(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
-}
-
-const PERIOD_LABELS: Record<FinancePeriod, string> = {
-  '30d': 'nos últimos 30 dias',
-  '90d': 'nos últimos 90 dias',
-  all: 'em todas as lives',
+function periodPhrase(period: FinancePeriod): string {
+  return t(`finance.period.${period}` as MessageKey)
 }
 
 function Delta({ pct }: { pct: number | null }) {
@@ -19,7 +15,7 @@ function Delta({ pct }: { pct: number | null }) {
   return (
     <span className={`text-sm font-semibold ${up ? 'text-emerald-400' : 'text-red-400'}`}>
       {up ? '▲' : '▼'} {Math.abs(pct)}%
-      <span className="ml-1 text-xs font-normal text-zinc-500">vs. período anterior</span>
+      <span className="ml-1 text-xs font-normal text-zinc-500">{t('delta.vsPrevious')}</span>
     </span>
   )
 }
@@ -28,21 +24,21 @@ function KpiRow({ finance }: { finance: FinanceOverview }) {
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
       <div className="rounded-lg border border-emerald-900/60 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Arrecadado (estimado)</p>
-        <p className="text-xl font-bold text-emerald-400">{usd(finance.estimated_usd)}</p>
+        <p className="text-xs text-zinc-500">{t('money.estimated')}</p>
+        <p className="text-xl font-bold text-emerald-400">{fmtMoney(finance.estimated_usd)}</p>
         <Delta pct={finance.delta_pct} />
       </div>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Bits</p>
-        <p className="text-xl font-bold">{finance.total_bits.toLocaleString('pt-BR')}</p>
+        <p className="text-xs text-zinc-500">{t('money.bits')}</p>
+        <p className="text-xl font-bold">{fmtInt(finance.total_bits)}</p>
       </div>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Assinaturas</p>
-        <p className="text-xl font-bold">{finance.total_subs.toLocaleString('pt-BR')}</p>
+        <p className="text-xs text-zinc-500">{t('money.subs')}</p>
+        <p className="text-xl font-bold">{fmtInt(finance.total_subs)}</p>
       </div>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-        <p className="text-xs text-zinc-500">Subs presenteados</p>
-        <p className="text-xl font-bold">{finance.total_gifts.toLocaleString('pt-BR')}</p>
+        <p className="text-xs text-zinc-500">{t('money.gifts')}</p>
+        <p className="text-xl font-bold">{fmtInt(finance.total_gifts)}</p>
       </div>
     </div>
   )
@@ -53,7 +49,7 @@ function RevenueByStream({ finance }: { finance: FinanceOverview }) {
   const max = Math.max(...finance.by_stream.map((row) => row.estimated_usd), 0.01)
   return (
     <div>
-      <h3 className="mb-3 text-lg font-bold">Receita por live</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('finance.revenueByStream')}</h3>
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm">
         {finance.by_stream.map((row) => (
           <a
@@ -64,7 +60,9 @@ function RevenueByStream({ finance }: { finance: FinanceOverview }) {
             <span className="w-24 shrink-0 text-xs text-zinc-500">
               {formatDate(row.started_at)}
             </span>
-            <span className="min-w-0 flex-1 truncate">{row.title ?? `Live #${row.stream_id}`}</span>
+            <span className="min-w-0 flex-1 truncate">
+              {row.title ?? t('live.number', { id: row.stream_id })}
+            </span>
             <div className="hidden h-2 w-40 overflow-hidden rounded bg-zinc-800 md:block">
               <div
                 className="h-full rounded bg-emerald-500"
@@ -72,7 +70,7 @@ function RevenueByStream({ finance }: { finance: FinanceOverview }) {
               />
             </div>
             <span className="w-16 shrink-0 text-right text-emerald-400">
-              {usd(row.estimated_usd)}
+              {fmtMoney(row.estimated_usd)}
             </span>
           </a>
         ))}
@@ -85,19 +83,21 @@ function TopContributors({ finance }: { finance: FinanceOverview }) {
   if (finance.top_contributors.length === 0) return null
   return (
     <div>
-      <h3 className="mb-3 text-lg font-bold">Quem mais contribuiu</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('contributors.title')}</h3>
       <div className="space-y-1.5 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm">
         {finance.top_contributors.map((contributor, index) => (
           <div key={contributor.login} className="flex items-center justify-between">
             <span>
-              <span className="mr-2 text-zinc-600">{index + 1}º</span>
+              <span className="mr-2 text-zinc-600">{index + 1}.</span>
               <span className="text-purple-300">{contributor.login}</span>
               <span className="ml-2 text-xs text-zinc-500">
-                em {contributor.streams} live{contributor.streams > 1 ? 's' : ''}
+                {t(contributor.streams > 1 ? 'finance.inStreamsPlural' : 'finance.inStreams', {
+                  n: contributor.streams,
+                })}
               </span>
             </span>
             <span className="font-semibold text-emerald-400">
-              {usd(contributor.estimated_usd)}
+              {fmtMoney(contributor.estimated_usd)}
             </span>
           </div>
         ))}
@@ -111,17 +111,15 @@ function ContentRevenue({ finance }: { finance: FinanceOverview }) {
   const maxPerHour = Math.max(...finance.by_content.map((b) => b.usd_per_hour), 0.01)
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Conteúdo que converte</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        Receita por categoria e por hora transmitida. Faça mais do que rende mais por hora.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('content.title')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('content.subtitle')}</p>
       <div className="space-y-2 text-sm">
         {finance.by_content.map((bucket) => (
           <div key={bucket.category} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
             <div className="mb-1 flex items-center justify-between">
               <span className="font-semibold">{bucket.category}</span>
               <span className="text-emerald-400">
-                {usd(bucket.usd_per_hour)}
+                {fmtMoney(bucket.usd_per_hour)}
                 <span className="text-xs text-zinc-500">/h</span>
               </span>
             </div>
@@ -133,10 +131,12 @@ function ContentRevenue({ finance }: { finance: FinanceOverview }) {
             </div>
             <div className="mt-1 flex justify-between text-xs text-zinc-500">
               <span>
-                {bucket.streams} live{bucket.streams > 1 ? 's' : ''} · pico médio{' '}
-                {bucket.avg_peak_viewers.toLocaleString('pt-BR')}
+                {t('content.streamsAndPeak', {
+                  streams: liveCount(bucket.streams),
+                  peak: fmtInt(bucket.avg_peak_viewers),
+                })}
               </span>
-              <span>{usd(bucket.estimated_usd)} no total</span>
+              <span>{t('content.total', { value: fmtMoney(bucket.estimated_usd) })}</span>
             </div>
           </div>
         ))}
@@ -151,28 +151,30 @@ function Engagement({ finance }: { finance: FinanceOverview }) {
   const maxRedemptions = Math.max(...top_rewards.map((r) => r.redemptions), 1)
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Engajamento que gera receita</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('engagement.title')}</h3>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Hype Trains
+            {t('engagement.hypeTrains')}
           </p>
           {hype_train.count > 0 ? (
             <div className="space-y-1 text-sm">
               <p className="text-2xl font-bold text-purple-300">{hype_train.count}</p>
-              <p className="text-zinc-400">Melhor nível: {hype_train.best_level}</p>
+              <p className="text-zinc-400">
+                {t('engagement.bestLevel', { n: hype_train.best_level })}
+              </p>
               <p className="text-zinc-500">
-                {hype_train.total_contributed.toLocaleString('pt-BR')} em contribuições
+                {t('engagement.contributed', { n: fmtInt(hype_train.total_contributed) })}
               </p>
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum hype train no período.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noHypeTrainPeriod')}</p>
           )}
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Recompensas mais resgatadas
+            {t('engagement.topRewards')}
           </p>
           {top_rewards.length > 0 ? (
             <div className="space-y-1.5 text-sm">
@@ -192,32 +194,34 @@ function Engagement({ finance }: { finance: FinanceOverview }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum resgate de pontos no período.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noRewardsPeriod')}</p>
           )}
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Anúncios
+            {t('engagement.ads')}
           </p>
           {ads.breaks > 0 ? (
             <div className="space-y-1 text-sm">
               <p className="text-zinc-400">
-                {ads.breaks} break{ads.breaks > 1 ? 's' : ''} ·{' '}
-                {Math.round(ads.total_seconds / 60)}min de ads
+                {t(ads.breaks > 1 ? 'engagement.adBreaksPlural' : 'engagement.adBreaks', {
+                  n: ads.breaks,
+                  minutes: Math.round(ads.total_seconds / 60),
+                })}
               </p>
               {ads.avg_viewer_change_pct !== null && (
                 <p className={ads.avg_viewer_change_pct < 0 ? 'text-red-400' : 'text-emerald-400'}>
-                  {ads.avg_viewer_change_pct > 0 ? '+' : ''}
-                  {ads.avg_viewer_change_pct}% de viewers ao redor dos ads
+                  {t('engagement.adViewers', {
+                    pct:
+                      (ads.avg_viewer_change_pct > 0 ? '+' : '') + String(ads.avg_viewer_change_pct),
+                  })}
                 </p>
               )}
-              <p className="text-[11px] text-zinc-600">
-                A Twitch não expõe a receita de anúncios, só o impacto na audiência.
-              </p>
+              <p className="text-[11px] text-zinc-600">{t('engagement.adNote')}</p>
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum ad break no período.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noAdsPeriod')}</p>
           )}
         </div>
       </div>
@@ -237,57 +241,57 @@ function Subscribers({ finance }: { finance: FinanceOverview }) {
   return (
     <div className="mb-6">
       <div className="mb-3 flex items-baseline gap-2">
-        <h3 className="text-lg font-bold">Assinantes e bits</h3>
+        <h3 className="text-lg font-bold">{t('subs.title')}</h3>
         <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-          estado atual
+          {t('subs.currentState')}
         </span>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Assinantes ativos
+            {t('subs.active')}
           </p>
-          <p className="text-2xl font-bold text-purple-300">{total.toLocaleString('pt-BR')}</p>
+          <p className="text-2xl font-bold text-purple-300">{fmtInt(total)}</p>
           <div className="mt-2 space-y-1 text-sm">
-            {tiers.map((t) => (
-              <div key={t.tier} className="flex justify-between text-zinc-400">
-                <span>{TIER_LABELS[t.tier] ?? t.tier}</span>
-                <span>{t.count}</span>
+            {tiers.map((tier) => (
+              <div key={tier.tier} className="flex justify-between text-zinc-400">
+                <span>{TIER_LABELS[tier.tier] ?? tier.tier}</span>
+                <span>{tier.count}</span>
               </div>
             ))}
             <div className="flex justify-between text-zinc-500">
-              <span>Presenteados</span>
+              <span>{t('subs.gifted')}</span>
               <span>{gifted_pct}%</span>
             </div>
           </div>
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Churn</p>
-          <p className="text-2xl font-bold text-red-400">{subs_ended}</p>
-          <p className="text-xs text-zinc-500">
-            assinaturas encerradas nas lives do período
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {t('subs.churn')}
           </p>
+          <p className="text-2xl font-bold text-red-400">{subs_ended}</p>
+          <p className="text-xs text-zinc-500">{t('subs.churnPeriodNote')}</p>
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Top bits (todos os tempos)
+            {t('subs.topBits')}
           </p>
           {top_bits.length > 0 ? (
             <div className="space-y-1 text-sm">
               {top_bits.slice(0, 5).map((leader, index) => (
                 <div key={leader.login} className="flex justify-between">
                   <span>
-                    <span className="mr-2 text-zinc-600">{index + 1}º</span>
+                    <span className="mr-2 text-zinc-600">{index + 1}.</span>
                     <span className="text-purple-300">{leader.login}</span>
                   </span>
-                  <span className="text-zinc-400">{leader.score.toLocaleString('pt-BR')}</span>
+                  <span className="text-zinc-400">{fmtInt(leader.score)}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Sem leaderboard (requer afiliação).</p>
+            <p className="text-sm text-zinc-600">{t('subs.noLeaderboard')}</p>
           )}
         </div>
       </div>
@@ -300,9 +304,9 @@ function Goals({ finance }: { finance: FinanceOverview }) {
   return (
     <div className="mb-6">
       <div className="mb-3 flex items-baseline gap-2">
-        <h3 className="text-lg font-bold">Metas</h3>
+        <h3 className="text-lg font-bold">{t('goals.title')}</h3>
         <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] text-zinc-400">
-          estado atual
+          {t('subs.currentState')}
         </span>
       </div>
       <div className="space-y-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm">
@@ -311,10 +315,11 @@ function Goals({ finance }: { finance: FinanceOverview }) {
           return (
             <div key={goal.goal_type + goal.description}>
               <div className="mb-1 flex items-baseline justify-between gap-2">
-                <span className="font-medium">{goal.description ?? goal.goal_type}</span>
+                <span className="font-medium">
+                  {goal.description ?? t(`goal.${goal.goal_type}.label` as MessageKey)}
+                </span>
                 <span className="tabular-nums text-zinc-400">
-                  {goal.current_amount.toLocaleString('pt-BR')}/
-                  {goal.target_amount.toLocaleString('pt-BR')}
+                  {fmtInt(goal.current_amount)}/{fmtInt(goal.target_amount)}
                 </span>
               </div>
               <div className="h-2 overflow-hidden rounded bg-zinc-800">
@@ -324,7 +329,8 @@ function Goals({ finance }: { finance: FinanceOverview }) {
                 />
               </div>
               <p className="mt-1 text-xs text-zinc-500">
-                {goal.pct}%{reached && <span className="ml-2 text-emerald-400">✓ alcançada</span>}
+                {goal.pct}%
+                {reached && <span className="ml-2 text-emerald-400">{t('goals.reached')}</span>}
               </p>
             </div>
           )
@@ -338,10 +344,8 @@ function Recommendations({ finance }: { finance: FinanceOverview }) {
   if (finance.recommendations.length === 0) return null
   return (
     <div className="mb-6 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
-      <h3 className="mb-1 text-lg font-bold">Como ganhar mais (IA)</h3>
-      <p className="mb-3 text-xs text-zinc-500">
-        Recomendações geradas a partir dos seus números, atualizadas quando uma live é analisada.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('reco.title')}</h3>
+      <p className="mb-3 text-xs text-zinc-500">{t('reco.subtitle')}</p>
       <div className="space-y-3">
         {finance.recommendations.map((rec, index) => (
           <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
@@ -382,25 +386,23 @@ export default function FinanceView() {
   return (
     <div>
       <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">
-        ← voltar
+        {t('nav.back')}
       </a>
       <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">Financeiro</h2>
+        <h2 className="text-xl font-bold">{t('finance.title')}</h2>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
       {finance === null ? (
-        <p className="text-zinc-400">Carregando o financeiro...</p>
+        <p className="text-zinc-400">{t('finance.loading')}</p>
       ) : nothingYet ? (
         <p className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-          Nada monetizado {PERIOD_LABELS[period]}. Bits, assinaturas, hype trains e metas aparecem
-          aqui quando seu canal monetizar (requer parceria/afiliação na Twitch).
+          {t('finance.nothing', { period: periodPhrase(period) })}
         </p>
       ) : (
         <>
           <p className="mb-4 text-sm text-zinc-500">
-            Tudo que você recebeu {PERIOD_LABELS[period]}. Valores em dólar são estimativas da sua
-            parte: a Twitch não divulga o repasse exato.
+            {t('finance.intro', { period: periodPhrase(period) })}
           </p>
           <KpiRow finance={finance} />
           <div className="mb-6 grid items-start gap-4 md:grid-cols-2">

@@ -64,9 +64,9 @@ def test_new_live_beating_prior_best_sets_record(db) -> None:
 
     assert RecordMetric.MESSAGES in broke
     held = records_held_by_stream(db, channel.id)
-    assert "mensagens no chat" in held[second.id]
+    assert "messages" in held[second.id]
     # first lost the chat record to the bigger live (equal-duration record it keeps)
-    assert "mensagens no chat" not in held.get(first.id, [])
+    assert "messages" not in held.get(first.id, [])
 
 
 def test_lower_live_does_not_steal_the_record(db) -> None:
@@ -81,7 +81,7 @@ def test_lower_live_does_not_steal_the_record(db) -> None:
 
     assert RecordMetric.MESSAGES not in broke
     held = records_held_by_stream(db, channel.id)
-    assert "mensagens no chat" in held[big.id]
+    assert "messages" in held[big.id]
     assert small.id not in held
 
 
@@ -114,8 +114,8 @@ def test_backfill_orders_by_time_so_only_the_best_holds(db) -> None:
     # older sets the first record, newer beats messages/chatters/rate -> both rows exist
     assert written > 0
     held = records_held_by_stream(db, channel.id)
-    assert "mensagens no chat" in held[newer.id]
-    assert "mensagens no chat" not in held.get(older.id, [])
+    assert "messages" in held[newer.id]
+    assert "messages" not in held.get(older.id, [])
 
 
 def test_add_record_facts_lists_marks_and_fresh_break(db) -> None:

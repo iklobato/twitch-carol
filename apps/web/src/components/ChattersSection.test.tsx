@@ -40,23 +40,23 @@ describe('ChattersSection', () => {
 
     expect(screen.getByText('viewer_4')).toBeTruthy()
     expect(screen.queryByText('viewer_5')).toBeNull()
-    expect(screen.getByText('página 1 de 3')).toBeTruthy()
-    expect(screen.getByRole('button', { name: '‹ anteriores' })).toHaveProperty('disabled', true)
+    expect(screen.getByText('page 1 of 3')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '‹ previous' })).toHaveProperty('disabled', true)
 
-    fireEvent.click(screen.getByRole('button', { name: 'próximos ›' }))
+    fireEvent.click(screen.getByRole('button', { name: 'next ›' }))
     expect(screen.getByText('viewer_5')).toBeTruthy()
     expect(screen.queryByText('viewer_0')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: 'próximos ›' }))
-    expect(screen.getByText('página 3 de 3')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'próximos ›' })).toHaveProperty('disabled', true)
+    fireEvent.click(screen.getByRole('button', { name: 'next ›' }))
+    expect(screen.getByText('page 3 of 3')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'next ›' })).toHaveProperty('disabled', true)
   })
 
   it('sem paginação quando cabe numa página', async () => {
     mockChatters(4)
     render(<ChattersSection streamId={6} />)
     await screen.findByText('viewer_0')
-    expect(screen.queryByText(/página/)).toBeNull()
+    expect(screen.queryByText(/page/)).toBeNull()
   })
 
   it('não renderiza nada sem chatters', async () => {
@@ -80,7 +80,7 @@ describe('ChattersSection', () => {
     const rowsByMessages = screen.getAllByRole('button', { name: /viewer_/ })
     expect(rowsByMessages[0].textContent).toBe('viewer_0')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Sentimento' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Sentiment' }))
     const rowsBySentiment = screen.getAllByRole('button', { name: /viewer_/ })
     expect(rowsBySentiment[0].textContent).toBe('viewer_2')
   })

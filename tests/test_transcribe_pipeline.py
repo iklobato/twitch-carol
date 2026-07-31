@@ -88,6 +88,7 @@ def test_music_region_is_stored_without_text_and_never_transcribed() -> None:
         _audio(30.0),
         Region(10.0, 20.0, SegmentKind.MUSIC),
         600.0,
+        "pt",
     )
 
     assert added == 1
@@ -114,10 +115,13 @@ def test_speech_region_uses_transcriber_with_absolute_times() -> None:
         _audio(30.0),
         Region(10.0, 20.0, SegmentKind.SPEECH),
         0.0,
+        "en",
     )
 
     assert added == 2
-    transcriber.transcribe.assert_called_once()
+    # the channel's language reaches the model: Whisper told the wrong one
+    # transcribes phonetically, and every insight is grounded on this text
+    assert transcriber.transcribe.call_args[0][1] == "en"
     first = db.add.call_args_list[0][0][0]
     assert first.text == "olá pessoal"
     assert first.kind == SegmentKind.SPEECH

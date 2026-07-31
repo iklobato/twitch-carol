@@ -17,6 +17,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from core.finance import MONEY_EVENT_TYPES, SUBSCRIBE, event_contributor, event_usd
+from core.i18n import language_name, t
 from core.llm import LLMBackend, TokenBudget
 from core.models import (
     Channel,
@@ -44,9 +45,10 @@ WHALE_SHARE_MIN = 0.40
 
 
 def build_monetization_facts(
-    db: Session, channel_id: int, ready_ids: list[int]
+    db: Session, channel_id: int, ready_ids: list[int], language: str | None = None
 ) -> list[str]:
-    """Numbered, SQL-derived, COMPARATIVE monetization facts. Each helper only
+    """Numbered, SQL-derived, COMPARATIVE monetization facts, written in the
+    channel's language (they are stored and shown verbatim). Each helper only
     appends when a genuine comparison exists, so the LLM can never ground advice
     in a bare total."""
     facts: list[str] = []
@@ -69,12 +71,12 @@ def build_monetization_facts(
             per_login[login] += event_usd(event)
 
     streams = _ready_streams(db, ready_ids)
-    _add_whale_risk(per_login, total, add)
-    _add_category_efficiency(streams, per_stream, add)
-    _add_best_period(db, channel_id, streams, per_stream, add)
-    _add_subscriber_trend(db, ready_ids, add)
-    _add_category_engagement(db, streams, add)
-    _add_top_reward(db, ready_ids, add)
+    _add_whale_risk(per_login, total, add, language)
+    _add_category_efficiency(streams, per_stream, add, language)
+    _add_best_period(db, channel_id, streams, per_stream, add, language)
+    _add_subscriber_trend(db, ready_ids, add, language)
+    _add_category_engagement(db, streams, add, language)
+    _add_top_reward(db, ready_ids, add, language)
     return facts
 
 
@@ -84,7 +86,9 @@ def _ready_streams(db: Session, ready_ids: list[int]) -> list[Stream]:
     return list(db.scalars(select(Stream).where(Stream.id.in_(ready_ids))))
 
 
-def _add_whale_risk(per_login: dict[str, float], total: float, add) -> None:
+def _add_whale_risk(
+    per_login: dict[str, float], total: float, add, language: str | None
+) -> None:
     """One contributor carrying most of the revenue is a concentration risk,
     which points at a concrete action (diversify). A share below the line is
     just a stat, so it stays out."""
@@ -93,10 +97,7 @@ def _add_whale_risk(per_login: dict[str, float], total: float, add) -> None:
     login, usd = max(per_login.items(), key=lambda item: item[1])
     share = usd / total
     if share >= WHALE_SHARE_MIN:
-        add(
-            f"Seu maior contribuinte ({login}) concentra {round(share * 100)}% da "
-            "receita: risco de depender de uma pessoa só."
-        )
+        add(t(language, "fact.whale_risk", login=login, pct=round(share * 100)))
 
 
 def _hours_by(streams: list[Stream], key) -> tuple[dict, dict]:
@@ -126,7 +127,7 @@ def _per_hour_rates(seconds: dict, groups: dict, per_stream: dict[int, float]) -
 
 
 def _add_category_efficiency(
-    streams: list[Stream], per_stream: dict[int, float], add
+    streams: list[Stream], per_stream: dict[int, float], add, language: str | None
 ) -> None:
     """The category that pays best PER HOUR versus the channel average: tells
     the streamer what to put more of on the schedule. Needs 2+ paying
@@ -143,19 +144,26 @@ def _add_category_efficiency(
     best, rate = max(rates.items(), key=lambda item: item[1])
     if average > 0 and rate >= average * CATEGORY_LIFT_MIN:
         add(
-            f"A categoria '{best}' rende US$ {rate:.2f}/h, {rate / average:.1f}x a "
-            f"média das suas lives (US$ {average:.2f}/h): priorize-a na grade."
+            t(
+                language,
+                "fact.category_efficiency",
+                category=best,
+                rate=f"{rate:.2f}",
+                lift=f"{rate / average:.1f}",
+                average=f"{average:.2f}",
+            )
         )
 
 
-_PERIODS = (("manhã", 5, 12), ("tarde", 12, 18))
+# (message key, start hour, end hour); anything outside falls to the evening.
+_PERIODS = (("period.morning", 5, 12), ("period.afternoon", 12, 18))
 
 
-def _period(hour: int) -> str:
-    for name, start, end in _PERIODS:
+def _period_key(hour: int) -> str:
+    for key, start, end in _PERIODS:
         if start <= hour < end:
-            return name
-    return "noite"
+            return key
+    return "period.evening"
 
 
 def _channel_tz(db: Session, channel_id: int) -> ZoneInfo:
@@ -172,12 +180,13 @@ def _add_best_period(
     streams: list[Stream],
     per_stream: dict[int, float],
     add,
+    language: str | None,
 ) -> None:
     """Time-of-day slot that pays best per hour, in the channel's own timezone.
     Needs 2+ paying slots to compare."""
     tz = _channel_tz(db, channel_id)
     seconds, groups = _hours_by(
-        streams, lambda s: _period(s.started_at.astimezone(tz).hour)
+        streams, lambda s: _period_key(s.started_at.astimezone(tz).hour)
     )
     rates = _per_hour_rates(seconds, groups, per_stream)
     if len(rates) < 2:
@@ -186,12 +195,20 @@ def _add_best_period(
     worst, worst_rate = min(rates.items(), key=lambda item: item[1])
     if worst_rate > 0 and best_rate >= worst_rate * PERIOD_LIFT_MIN:
         add(
-            f"Lives no período da {best} rendem US$ {best_rate:.2f}/h, "
-            f"{best_rate / worst_rate:.1f}x as da {worst}: concentre nesse horário."
+            t(
+                language,
+                "fact.best_period",
+                best=t(language, best),
+                best_rate=f"{best_rate:.2f}",
+                lift=f"{best_rate / worst_rate:.1f}",
+                worst=t(language, worst),
+            )
         )
 
 
-def _add_subscriber_trend(db: Session, ready_ids: list[int], add) -> None:
+def _add_subscriber_trend(
+    db: Session, ready_ids: list[int], add, language: str | None
+) -> None:
     """Subscribers gained versus lost across the analyzed streams. Comparative
     by construction (gain vs loss), unlike a bare active-sub count."""
     if not ready_ids:
@@ -201,8 +218,13 @@ def _add_subscriber_trend(db: Session, ready_ids: list[int], add) -> None:
     if gained + lost == 0:
         return
     add(
-        f"Nas lives analisadas você ganhou {gained} e perdeu {lost} assinante(s) "
-        f"(saldo {gained - lost:+d})."
+        t(
+            language,
+            "fact.subscriber_trend",
+            gained=gained,
+            lost=lost,
+            net=f"{gained - lost:+d}",
+        )
     )
 
 
@@ -217,7 +239,9 @@ def _count_events(db: Session, ready_ids: list[int], event_type: str) -> int:
     )
 
 
-def _add_category_engagement(db: Session, streams: list[Stream], add) -> None:
+def _add_category_engagement(
+    db: Session, streams: list[Stream], add, language: str | None
+) -> None:
     """Category whose audience talks the most (chatters / peak viewers): a
     high-engagement theme builds community, which retains subscribers. Needs
     2+ categories with viewers to compare."""
@@ -240,9 +264,15 @@ def _add_category_engagement(db: Session, streams: list[Stream], add) -> None:
     worst, worst_ratio = min(per_category.items(), key=lambda item: item[1])
     if worst_ratio > 0 and best_ratio >= worst_ratio * ENGAGEMENT_LIFT_MIN:
         add(
-            f"Lives de '{best}' têm {round(best_ratio * 100)}% do público no chat, "
-            f"{best_ratio / worst_ratio:.1f}x '{worst}' ({round(worst_ratio * 100)}%): "
-            "esse tema cria mais comunidade."
+            t(
+                language,
+                "fact.category_engagement",
+                best=best,
+                best_pct=round(best_ratio * 100),
+                lift=f"{best_ratio / worst_ratio:.1f}",
+                worst=worst,
+                worst_pct=round(worst_ratio * 100),
+            )
         )
 
 
@@ -270,7 +300,9 @@ def _peak_viewers(db: Session, stream_ids: list[int]) -> dict[int, int]:
     }
 
 
-def _add_top_reward(db: Session, ready_ids: list[int], add) -> None:
+def _add_top_reward(
+    db: Session, ready_ids: list[int], add, language: str | None
+) -> None:
     """The most-redeemed channel-points reward, only when there ARE rivals to
     beat (2+ distinct rewards), so 'most redeemed' actually means something."""
     if not ready_ids:
@@ -288,10 +320,7 @@ def _add_top_reward(db: Session, ready_ids: list[int], add) -> None:
     if len(counts) < 2:
         return
     top, times = max(counts.items(), key=lambda item: item[1])
-    add(
-        f"A recompensa de pontos mais resgatada é '{top}' ({times}x), à frente das "
-        "demais: destaque-a para engajar."
-    )
+    add(t(language, "fact.top_reward", title=top, times=times))
 
 
 def _parse_json(text: str) -> dict | None:
@@ -308,6 +337,7 @@ def generate_channel_recommendations(
     facts: list[str],
     backend: LLMBackend,
     budget: TokenBudget,
+    language: str | None = None,
 ) -> int:
     """Replace the channel's recommendation set. `facts` are pre-built numbered
     strings (e.g. "[1] ..."). Returns how many grounded recommendations stored."""
@@ -318,16 +348,19 @@ def generate_channel_recommendations(
     ):
         return 0
 
+    # The prompt is English whatever the channel speaks; only the answer is
+    # localized, so there is one prompt to maintain instead of one per language.
     prompt = (
-        "FATOS de monetização medidos do canal na Twitch (cada um com um número "
-        "entre colchetes):\n"
+        "Monetization FACTS measured from a Twitch channel (each numbered in "
+        "brackets):\n"
         + "\n".join(facts)
-        + "\nCom base SOMENTE nesses fatos, dê recomendações práticas para o "
-        "streamer ganhar mais dinheiro (faça mais do que rende, corte o que não "
-        'converte). Responda APENAS um JSON válido: {"recommendations": '
-        '[{"content": "<recomendação em 1-2 frases, português do Brasil>", '
-        '"fact_ids": [números dos fatos que embasam]}]}. Cite pelo menos um número '
-        f"de fato por recomendação, máximo {RECOMMEND_MAX}, seja concreto."
+        + "\nBased ONLY on these facts, give practical recommendations for the "
+        "streamer to earn more money (do more of what pays, cut what does not "
+        'convert). Reply with valid JSON ONLY: {"recommendations": '
+        f'[{{"content": "<recommendation in 1-2 sentences, written in '
+        f'{language_name(language)}>", '
+        '"fact_ids": [numbers of the facts behind it]}]}. Cite at least one '
+        f"fact number per recommendation, at most {RECOMMEND_MAX}, be concrete."
     )
     response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
     budget.spend(prompt, response)
