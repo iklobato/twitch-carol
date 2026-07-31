@@ -11,6 +11,8 @@ import {
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
+import { fmtInt, fmtMoney, t, type MessageKey } from '../i18n'
+import { liveCount } from './StreamsList'
 import type { ChannelOverview, GoalOut, GrowthPoint } from '../types'
 
 Chart.register(
@@ -38,10 +40,8 @@ function LoyalChatters({ overview }: { overview: ChannelOverview }) {
   const maxStreams = overview.loyal_chatters[0].streams_attended
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Seus mais fiéis</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        Ordenados por número de lives em que apareceram no chat.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('channel.loyal')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('channel.loyalSub')}</p>
       <div className="space-y-2">
         {overview.loyal_chatters.map((chatter, index) => (
           <div
@@ -49,7 +49,7 @@ function LoyalChatters({ overview }: { overview: ChannelOverview }) {
             className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3"
           >
             <span className="w-6 shrink-0 text-sm font-bold tabular-nums text-zinc-600">
-              {index + 1}º
+              {index + 1}.
             </span>
             <span className="min-w-32 text-sm font-semibold text-purple-300">
               {chatter.author_login}
@@ -63,13 +63,13 @@ function LoyalChatters({ overview }: { overview: ChannelOverview }) {
               </div>
             </div>
             <span className="text-xs tabular-nums text-zinc-400">
-              {chatter.streams_attended} live{chatter.streams_attended > 1 ? 's' : ''} ·{' '}
-              {chatter.total_messages.toLocaleString('pt-BR')} msgs · visto por último{' '}
-              {formatDate(chatter.last_seen)}
+              {liveCount(chatter.streams_attended)} ·{' '}
+              {t('chatters.msgs', { n: fmtInt(chatter.total_messages) })} ·{' '}
+              {t('channel.loyalLastSeen', { date: formatDate(chatter.last_seen) })}
             </span>
             {chatter.followed && (
               <span className="rounded-full border border-emerald-800 px-2 py-0.5 text-[10px] text-emerald-400">
-                seguidor
+                {t('channel.follower')}
               </span>
             )}
           </div>
@@ -84,12 +84,14 @@ function BestWeekdays({ overview }: { overview: ChannelOverview }) {
   const max = Math.max(...overview.best_weekdays.map((slot) => slot.avg_peak_viewers), 1)
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Melhores dias para transmitir</h3>
-      <p className="mb-3 text-sm text-zinc-500">Média de pico de viewers por dia da semana.</p>
+      <h3 className="mb-1 text-lg font-bold">{t('channel.bestWeekdays')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('channel.bestWeekdaysSub')}</p>
       <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
         {overview.best_weekdays.map((slot) => (
           <div key={slot.weekday} className="flex items-center gap-3">
-            <span className="w-20 shrink-0 text-sm text-zinc-300">{slot.label}</span>
+            <span className="w-20 shrink-0 text-sm capitalize text-zinc-300">
+              {t(`weekday.${slot.weekday}` as MessageKey)}
+            </span>
             <div className="h-4 flex-1 overflow-hidden rounded bg-zinc-800">
               <div
                 className="h-full rounded bg-sky-500"
@@ -97,7 +99,7 @@ function BestWeekdays({ overview }: { overview: ChannelOverview }) {
               />
             </div>
             <span className="w-28 shrink-0 text-right text-xs tabular-nums text-zinc-400">
-              {slot.avg_peak_viewers} · {slot.streams} live{slot.streams > 1 ? 's' : ''}
+              {slot.avg_peak_viewers} · {liveCount(slot.streams)}
             </span>
           </div>
         ))}
@@ -119,7 +121,7 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
         labels: growth.map((point) => formatDate(point.started_at)),
         datasets: [
           {
-            label: 'Pico de viewers',
+            label: t('channel.growth.peak'),
             data: growth.map((point) => point.peak_viewers),
             borderColor: '#38bdf8',
             backgroundColor: 'rgba(56, 189, 248, 0.1)',
@@ -128,7 +130,7 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
             yAxisID: 'y',
           },
           {
-            label: 'Novos seguidores',
+            label: t('channel.growth.newFollowers'),
             data: growth.map((point) => point.followers_gained),
             borderColor: '#34d399',
             tension: 0.3,
@@ -143,13 +145,13 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
         scales: {
           x: { ticks: { color: '#71717a', maxTicksLimit: 12 }, grid: { color: '#27272a' } },
           y: {
-            title: { display: true, text: 'viewers', color: '#71717a' },
+            title: { display: true, text: t('chart.axis.viewers'), color: '#71717a' },
             ticks: { color: '#71717a' },
             grid: { color: '#27272a' },
           },
           y1: {
             position: 'right',
-            title: { display: true, text: 'seguidores', color: '#71717a' },
+            title: { display: true, text: t('channel.growth.axisFollowers'), color: '#71717a' },
             ticks: { color: '#71717a' },
             grid: { drawOnChartArea: false },
           },
@@ -162,7 +164,7 @@ function GrowthChart({ growth }: { growth: GrowthPoint[] }) {
   if (growth.length === 0) return null
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Crescimento ao longo das lives</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('channel.growth')}</h3>
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
         <div className="h-72 w-full">
           <canvas ref={canvasRef} />
@@ -177,15 +179,16 @@ function RecurringTopics({ overview }: { overview: ChannelOverview }) {
   if (recurring.length === 0) return null
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Assuntos que sempre voltam</h3>
-      <p className="mb-3 text-sm text-zinc-500">Tópicos que apareceram em mais de uma live.</p>
+      <h3 className="mb-1 text-lg font-bold">{t('channel.recurring')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('channel.recurringSub')}</p>
       <div className="flex flex-wrap gap-2">
         {recurring.map((topic) => (
           <span
             key={topic.name}
             className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm"
           >
-            {topic.name} <span className="text-zinc-500">· {topic.streams} lives</span>
+            {topic.name}{' '}
+            <span className="text-zinc-500">{t('channel.recurringCount', { n: topic.streams })}</span>
           </span>
         ))}
       </div>
@@ -193,30 +196,21 @@ function RecurringTopics({ overview }: { overview: ChannelOverview }) {
   )
 }
 
-function usd(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
-}
-
 function ContentRevenue({ overview }: { overview: ChannelOverview }) {
   const buckets = overview.content_revenue
   if (buckets.length === 0) return null
-  const maxPerHour = Math.max(...buckets.map((b) => b.usd_per_hour), 0.01)
+  const maxPerHour = Math.max(...buckets.map((bucket) => bucket.usd_per_hour), 0.01)
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Conteúdo que converte</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        Receita por categoria e por hora transmitida. Faça mais do que rende mais por hora.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('content.title')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('content.subtitle')}</p>
       <div className="space-y-2 text-sm">
         {buckets.map((bucket) => (
-          <div
-            key={bucket.category}
-            className="rounded-lg border border-zinc-800 bg-zinc-900 p-3"
-          >
+          <div key={bucket.category} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
             <div className="mb-1 flex items-center justify-between">
               <span className="font-semibold">{bucket.category}</span>
               <span className="text-emerald-400">
-                {usd(bucket.usd_per_hour)}
+                {fmtMoney(bucket.usd_per_hour)}
                 <span className="text-xs text-zinc-500">/h</span>
               </span>
             </div>
@@ -228,10 +222,12 @@ function ContentRevenue({ overview }: { overview: ChannelOverview }) {
             </div>
             <div className="mt-1 flex justify-between text-xs text-zinc-500">
               <span>
-                {bucket.streams} live{bucket.streams > 1 ? 's' : ''} · pico médio{' '}
-                {bucket.avg_peak_viewers.toLocaleString('pt-BR')}
+                {t('content.streamsAndPeak', {
+                  streams: liveCount(bucket.streams),
+                  peak: fmtInt(bucket.avg_peak_viewers),
+                })}
               </span>
-              <span>{usd(bucket.estimated_usd)} no total</span>
+              <span>{t('content.total', { value: fmtMoney(bucket.estimated_usd) })}</span>
             </div>
           </div>
         ))}
@@ -245,10 +241,8 @@ function RecommendationsSection({ overview }: { overview: ChannelOverview }) {
   if (recs.length === 0) return null
   return (
     <div className="mb-6 rounded-lg border border-purple-900/60 bg-purple-950/20 p-4">
-      <h3 className="mb-1 text-lg font-bold">Como ganhar mais (IA)</h3>
-      <p className="mb-3 text-xs text-zinc-500">
-        Recomendações geradas a partir dos seus números, atualizadas quando uma live é analisada.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('reco.title')}</h3>
+      <p className="mb-3 text-xs text-zinc-500">{t('reco.subtitle')}</p>
       <div className="space-y-3">
         {recs.map((rec, index) => (
           <div key={index} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
@@ -278,22 +272,22 @@ function SubscribersSection({ overview }: { overview: ChannelOverview }) {
   if (total === 0 && top_bits.length === 0) return null
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Assinantes e bits</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('subs.title')}</h3>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Assinantes ativos
+            {t('subs.active')}
           </p>
-          <p className="text-2xl font-bold text-purple-300">{total.toLocaleString('pt-BR')}</p>
+          <p className="text-2xl font-bold text-purple-300">{fmtInt(total)}</p>
           <div className="mt-2 space-y-1 text-sm">
-            {tiers.map((t) => (
-              <div key={t.tier} className="flex justify-between text-zinc-400">
-                <span>{TIER_LABELS[t.tier] ?? t.tier}</span>
-                <span>{t.count}</span>
+            {tiers.map((tier) => (
+              <div key={tier.tier} className="flex justify-between text-zinc-400">
+                <span>{TIER_LABELS[tier.tier] ?? tier.tier}</span>
+                <span>{tier.count}</span>
               </div>
             ))}
             <div className="flex justify-between text-zinc-500">
-              <span>Presenteados</span>
+              <span>{t('subs.gifted')}</span>
               <span>{gifted_pct}%</span>
             </div>
           </div>
@@ -301,32 +295,30 @@ function SubscribersSection({ overview }: { overview: ChannelOverview }) {
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Churn
+            {t('subs.churn')}
           </p>
           <p className="text-2xl font-bold text-red-400">{subs_ended}</p>
-          <p className="text-xs text-zinc-500">assinaturas encerradas nas lives capturadas</p>
+          <p className="text-xs text-zinc-500">{t('subs.churnAllNote')}</p>
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Top bits (todos os tempos)
+            {t('subs.topBits')}
           </p>
           {top_bits.length > 0 ? (
             <div className="space-y-1 text-sm">
               {top_bits.slice(0, 5).map((leader, index) => (
                 <div key={leader.login} className="flex justify-between">
                   <span>
-                    <span className="mr-2 text-zinc-600">{index + 1}º</span>
+                    <span className="mr-2 text-zinc-600">{index + 1}.</span>
                     <span className="text-purple-300">{leader.login}</span>
                   </span>
-                  <span className="text-zinc-400">
-                    {leader.score.toLocaleString('pt-BR')}
-                  </span>
+                  <span className="text-zinc-400">{fmtInt(leader.score)}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Sem leaderboard (requer afiliação).</p>
+            <p className="text-sm text-zinc-600">{t('subs.noLeaderboard')}</p>
           )}
         </div>
       </div>
@@ -337,40 +329,7 @@ function SubscribersSection({ overview }: { overview: ChannelOverview }) {
 // Twitch's five goal types. `sinceCreated` marks the ones whose current_amount
 // counts only what was gained after the goal was created (so a per-day pace is
 // meaningful); the totals include pre-goal history, where a pace would mislead.
-type GoalMeta = { label: string; unit: string; hint: string; sinceCreated: boolean }
-
-const GOAL_META: Record<string, GoalMeta> = {
-  follower: {
-    label: 'Seguidores',
-    unit: 'seguidores',
-    hint: 'Total de seguidores do canal.',
-    sinceCreated: false,
-  },
-  subscription: {
-    label: 'Inscrições (pontos)',
-    unit: 'pontos',
-    hint: 'Pontos de inscrição do canal. Tiers mais altos valem mais, então não é o número de inscritos.',
-    sinceCreated: false,
-  },
-  subscription_count: {
-    label: 'Inscritos',
-    unit: 'inscritos',
-    hint: 'Número de inscritos ativos (cabeças, não pontos).',
-    sinceCreated: false,
-  },
-  new_subscription: {
-    label: 'Novas inscrições (pontos)',
-    unit: 'pontos',
-    hint: 'Pontos de inscrição ganhos desde que a meta foi criada.',
-    sinceCreated: true,
-  },
-  new_subscription_count: {
-    label: 'Novos inscritos',
-    unit: 'inscritos',
-    hint: 'Inscritos ganhos desde que a meta foi criada.',
-    sinceCreated: true,
-  },
-}
+const GOALS_SINCE_CREATED = new Set(['new_subscription', 'new_subscription_count'])
 
 const MS_PER_DAY = 86_400_000
 
@@ -380,36 +339,35 @@ function daysSince(iso: string): number {
 
 function ageLabel(iso: string): string {
   const days = Math.floor(daysSince(iso))
-  if (days < 1) return 'criada hoje'
-  return `ativa há ${days} dia${days > 1 ? 's' : ''}`
+  if (days < 1) return t('goal.createdToday')
+  return t(days > 1 ? 'goal.activeDaysPlural' : 'goal.activeDays', { n: days })
 }
 
-function paceLabel(goal: GoalOut, meta: GoalMeta | undefined): string | null {
-  if (!meta?.sinceCreated || goal.created_at === null) return null
+function paceLabel(goal: GoalOut): string | null {
+  if (!GOALS_SINCE_CREATED.has(goal.goal_type) || goal.created_at === null) return null
   if (goal.current_amount >= goal.target_amount) return null
   const days = daysSince(goal.created_at)
   if (days < 1) return null
   const perDay = goal.current_amount / days
-  if (perDay <= 0) return 'sem progresso desde a criação'
+  if (perDay <= 0) return t('goal.noProgress')
   const eta = Math.ceil((goal.target_amount - goal.current_amount) / perDay)
-  return `ritmo ${perDay.toFixed(1)}/dia · ~${eta} dia${eta > 1 ? 's' : ''} para a meta`
+  return t(eta > 1 ? 'goal.pacePlural' : 'goal.pace', { perDay: perDay.toFixed(1), eta })
 }
 
 function GoalItem({ goal }: { goal: GoalOut }) {
-  const meta = GOAL_META[goal.goal_type]
-  const label = goal.description ?? meta?.label ?? goal.goal_type
-  const unit = meta?.unit ?? ''
+  const label = goal.description ?? t(`goal.${goal.goal_type}.label` as MessageKey)
+  const unit = t(`goal.${goal.goal_type}.unit` as MessageKey)
+  const hint = t(`goal.${goal.goal_type}.hint` as MessageKey)
   const reached = goal.current_amount >= goal.target_amount
   const remaining = Math.max(goal.target_amount - goal.current_amount, 0)
-  const pace = paceLabel(goal, meta)
+  const pace = paceLabel(goal)
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-2">
         <span className="font-medium">{label}</span>
         <span className="tabular-nums text-zinc-400">
-          {goal.current_amount.toLocaleString('pt-BR')}/
-          {goal.target_amount.toLocaleString('pt-BR')}
-          {unit && <span className="ml-1 text-zinc-600">{unit}</span>}
+          {fmtInt(goal.current_amount)}/{fmtInt(goal.target_amount)}
+          <span className="ml-1 text-zinc-600">{unit}</span>
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded bg-zinc-800">
@@ -421,16 +379,14 @@ function GoalItem({ goal }: { goal: GoalOut }) {
       <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
         <span>{goal.pct}%</span>
         {reached ? (
-          <span className="text-emerald-400">✓ meta alcançada</span>
+          <span className="text-emerald-400">{t('goal.reachedFull')}</span>
         ) : (
-          <span>
-            faltam {remaining.toLocaleString('pt-BR')} {unit}
-          </span>
+          <span>{t('goal.remaining', { n: fmtInt(remaining), unit })}</span>
         )}
         {goal.created_at && <span>· {ageLabel(goal.created_at)}</span>}
         {pace && <span>· {pace}</span>}
       </div>
-      {meta?.hint && <p className="mt-0.5 text-[11px] text-zinc-600">{meta.hint}</p>}
+      <p className="mt-0.5 text-[11px] text-zinc-600">{hint}</p>
     </div>
   )
 }
@@ -440,12 +396,12 @@ function CommunityHealth({ overview }: { overview: ChannelOverview }) {
   if (engaged_viewer_pct === null && vips.length === 0 && goals.length === 0) return null
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Comunidade</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('community.title')}</h3>
       <div className="grid gap-4 md:grid-cols-3">
         {goals.length > 0 && (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 md:col-span-2">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Metas
+              {t('goals.title')}
             </p>
             <div className="space-y-4 text-sm">
               {goals.map((goal) => (
@@ -456,22 +412,22 @@ function CommunityHealth({ overview }: { overview: ChannelOverview }) {
         )}
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Engajamento do chat
+            {t('followers.chatEngagement')}
           </p>
           {engaged_viewer_pct !== null ? (
             <>
               <p className="text-2xl font-bold text-emerald-400">{engaged_viewer_pct}%</p>
-              <p className="text-xs text-zinc-500">dos viewers escrevem no chat (o resto observa)</p>
+              <p className="text-xs text-zinc-500">{t('channel.engagedPct')}</p>
             </>
           ) : (
-            <p className="text-sm text-zinc-600">Sem dados de viewers ainda.</p>
+            <p className="text-sm text-zinc-600">{t('channel.noViewerData')}</p>
           )}
         </div>
       </div>
       {vips.length > 0 && (
         <div className="mt-3">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            VIPs
+            {t('channel.vips')}
           </p>
           <div className="flex flex-wrap gap-2">
             {vips.map((vip) => (
@@ -492,31 +448,33 @@ function CommunityHealth({ overview }: { overview: ChannelOverview }) {
 function EngagementSection({ overview }: { overview: ChannelOverview }) {
   const { hype_train, top_rewards, ads } = overview.engagement
   if (hype_train.count === 0 && top_rewards.length === 0 && ads.breaks === 0) return null
-  const maxRedemptions = Math.max(...top_rewards.map((r) => r.redemptions), 1)
+  const maxRedemptions = Math.max(...top_rewards.map((reward) => reward.redemptions), 1)
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Engajamento que gera receita</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('engagement.title')}</h3>
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Hype Trains
+            {t('engagement.hypeTrains')}
           </p>
           {hype_train.count > 0 ? (
             <div className="space-y-1 text-sm">
               <p className="text-2xl font-bold text-purple-300">{hype_train.count}</p>
-              <p className="text-zinc-400">Melhor nível: {hype_train.best_level}</p>
+              <p className="text-zinc-400">
+                {t('engagement.bestLevel', { n: hype_train.best_level })}
+              </p>
               <p className="text-zinc-500">
-                {hype_train.total_contributed.toLocaleString('pt-BR')} em contribuições
+                {t('engagement.contributed', { n: fmtInt(hype_train.total_contributed) })}
               </p>
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum hype train ainda.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noHypeTrainEver')}</p>
           )}
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Recompensas mais resgatadas
+            {t('engagement.topRewards')}
           </p>
           {top_rewards.length > 0 ? (
             <div className="space-y-1.5 text-sm">
@@ -531,40 +489,38 @@ function EngagementSection({ overview }: { overview: ChannelOverview }) {
                       style={{ width: `${(reward.redemptions / maxRedemptions) * 100}%` }}
                     />
                   </div>
-                  <span className="w-8 shrink-0 text-right text-zinc-400">
-                    {reward.redemptions}
-                  </span>
+                  <span className="w-8 shrink-0 text-right text-zinc-400">{reward.redemptions}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum resgate de pontos ainda.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noRewardsEver')}</p>
           )}
         </div>
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Anúncios
+            {t('engagement.ads')}
           </p>
           {ads.breaks > 0 ? (
             <div className="space-y-1 text-sm">
               <p className="text-zinc-400">
-                {ads.breaks} break{ads.breaks > 1 ? 's' : ''} ·{' '}
-                {Math.round(ads.total_seconds / 60)}min de ads
+                {t(ads.breaks > 1 ? 'engagement.adBreaksPlural' : 'engagement.adBreaks', {
+                  n: ads.breaks,
+                  minutes: Math.round(ads.total_seconds / 60),
+                })}
               </p>
               {ads.avg_viewer_change_pct !== null && (
-                <p
-                  className={
-                    ads.avg_viewer_change_pct < 0 ? 'text-red-400' : 'text-emerald-400'
-                  }
-                >
-                  {ads.avg_viewer_change_pct > 0 ? '+' : ''}
-                  {ads.avg_viewer_change_pct}% de viewers ao redor dos ads
+                <p className={ads.avg_viewer_change_pct < 0 ? 'text-red-400' : 'text-emerald-400'}>
+                  {t('engagement.adViewers', {
+                    pct:
+                      (ads.avg_viewer_change_pct > 0 ? '+' : '') + String(ads.avg_viewer_change_pct),
+                  })}
                 </p>
               )}
             </div>
           ) : (
-            <p className="text-sm text-zinc-600">Nenhum ad break capturado.</p>
+            <p className="text-sm text-zinc-600">{t('engagement.noAdsEver')}</p>
           )}
         </div>
       </div>
@@ -582,10 +538,8 @@ function PastBroadcasts({ overview }: { overview: ChannelOverview }) {
   if (overview.past_broadcasts.length === 0) return null
   return (
     <div className="mb-6">
-      <h3 className="mb-1 text-lg font-bold">Lives passadas</h3>
-      <p className="mb-3 text-sm text-zinc-500">
-        VODs da Twitch importadas ao conectar. Views são totais da gravação, não viewers ao vivo.
-      </p>
+      <h3 className="mb-1 text-lg font-bold">{t('channel.pastBroadcasts')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('channel.pastBroadcastsSub')}</p>
       <div className="space-y-2">
         {overview.past_broadcasts.map((vod) => (
           <a
@@ -595,11 +549,11 @@ function PastBroadcasts({ overview }: { overview: ChannelOverview }) {
             rel="noreferrer"
             className="flex items-center justify-between gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-sm hover:border-zinc-600"
           >
-            <span className="min-w-0 flex-1 truncate">{vod.title ?? 'Sem título'}</span>
+            <span className="min-w-0 flex-1 truncate">{vod.title ?? t('channel.noTitle')}</span>
             <span className="shrink-0 text-zinc-500">{formatDate(vod.published_at)}</span>
             <span className="shrink-0 text-zinc-500">{formatDuration(vod.duration_seconds)}</span>
             <span className="w-20 shrink-0 text-right text-zinc-400">
-              {vod.view_count.toLocaleString('pt-BR')} views
+              {t('channel.views', { n: fmtInt(vod.view_count) })}
             </span>
           </a>
         ))}
@@ -613,37 +567,36 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
   if (finance.total_estimated_usd === 0 && finance.top_contributors.length === 0) {
     return (
       <div className="mb-6">
-        <h3 className="mb-1 text-lg font-bold">Monetização</h3>
-        <p className="text-sm text-zinc-500">
-          Ainda sem bits ou assinaturas capturados. Aparece aqui quando seu canal começar a
-          monetizar (requer parceria/afiliação na Twitch).
-        </p>
+        <h3 className="mb-1 text-lg font-bold">{t('channel.monetization')}</h3>
+        <p className="text-sm text-zinc-500">{t('channel.noMonetization')}</p>
       </div>
     )
   }
-  const maxTopic = Math.max(...finance.top_monetizing_topics.map((t) => t.estimated_usd), 0.01)
-  const maxRevenue = Math.max(...overview.growth.map((g) => g.estimated_usd), 0.01)
-  const paidStreams = overview.growth.filter((g) => g.estimated_usd > 0)
+  const maxTopic = Math.max(...finance.top_monetizing_topics.map((topic) => topic.estimated_usd), 0.01)
+  const maxRevenue = Math.max(...overview.growth.map((point) => point.estimated_usd), 0.01)
+  const paidStreams = overview.growth.filter((point) => point.estimated_usd > 0)
 
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Monetização (todas as lives)</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('channel.monetizationAll')}</h3>
       <div className="mb-3 grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="rounded-lg border border-emerald-900/60 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">Arrecadado (estimado)</p>
-          <p className="text-xl font-bold text-emerald-400">{usd(finance.total_estimated_usd)}</p>
+          <p className="text-xs text-zinc-500">{t('money.estimated')}</p>
+          <p className="text-xl font-bold text-emerald-400">
+            {fmtMoney(finance.total_estimated_usd)}
+          </p>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">Bits</p>
-          <p className="text-xl font-bold">{finance.total_bits.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-zinc-500">{t('money.bits')}</p>
+          <p className="text-xl font-bold">{fmtInt(finance.total_bits)}</p>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">Assinaturas</p>
-          <p className="text-xl font-bold">{finance.total_subs.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-zinc-500">{t('money.subs')}</p>
+          <p className="text-xl font-bold">{fmtInt(finance.total_subs)}</p>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">Subs presenteados</p>
-          <p className="text-xl font-bold">{finance.total_gifts.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-zinc-500">{t('money.gifts')}</p>
+          <p className="text-xl font-bold">{fmtInt(finance.total_gifts)}</p>
         </div>
       </div>
 
@@ -651,19 +604,23 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
         {finance.top_contributors.length > 0 && (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Quem mais contribuiu
+              {t('contributors.title')}
             </p>
             <div className="space-y-1.5 text-sm">
               {finance.top_contributors.map((contributor, index) => (
                 <div key={contributor.login} className="flex items-center justify-between">
                   <span>
-                    <span className="mr-2 text-zinc-600">{index + 1}º</span>
+                    <span className="mr-2 text-zinc-600">{index + 1}.</span>
                     <span className="text-purple-300">{contributor.login}</span>
                     <span className="ml-2 text-xs text-zinc-500">
-                      em {contributor.streams} live{contributor.streams > 1 ? 's' : ''}
+                      {t(contributor.streams > 1 ? 'finance.inStreamsPlural' : 'finance.inStreams', {
+                        n: contributor.streams,
+                      })}
                     </span>
                   </span>
-                  <span className="font-semibold text-emerald-400">{usd(contributor.estimated_usd)}</span>
+                  <span className="font-semibold text-emerald-400">
+                    {fmtMoney(contributor.estimated_usd)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -673,7 +630,7 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
         {finance.top_monetizing_topics.length > 0 && (
           <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              Assuntos que mais monetizam
+              {t('channel.topMonetizingTopics')}
             </p>
             <div className="space-y-2 text-sm">
               {finance.top_monetizing_topics.map((topic) => (
@@ -685,7 +642,9 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
                       style={{ width: `${(topic.estimated_usd / maxTopic) * 100}%` }}
                     />
                   </div>
-                  <span className="w-16 shrink-0 text-right text-emerald-400">{usd(topic.estimated_usd)}</span>
+                  <span className="w-16 shrink-0 text-right text-emerald-400">
+                    {fmtMoney(topic.estimated_usd)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -696,7 +655,7 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
       {paidStreams.length > 0 && (
         <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Receita por live
+            {t('channel.revenuePerStream')}
           </p>
           <div className="space-y-2 text-sm">
             {paidStreams.map((point) => (
@@ -705,50 +664,39 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
                 href={`#/stream/${point.stream_id}`}
                 className="flex items-center gap-3 hover:text-purple-300"
               >
-                <span className="w-48 shrink-0 truncate">{point.title ?? `Live #${point.stream_id}`}</span>
+                <span className="w-48 shrink-0 truncate">
+                  {point.title ?? t('live.number', { id: point.stream_id })}
+                </span>
                 <div className="h-2 flex-1 overflow-hidden rounded bg-zinc-800">
                   <div
                     className="h-full rounded bg-emerald-500"
                     style={{ width: `${(point.estimated_usd / maxRevenue) * 100}%` }}
                   />
                 </div>
-                <span className="w-16 shrink-0 text-right text-emerald-400">{usd(point.estimated_usd)}</span>
+                <span className="w-16 shrink-0 text-right text-emerald-400">
+                  {fmtMoney(point.estimated_usd)}
+                </span>
               </a>
             ))}
           </div>
         </div>
       )}
-      <p className="mt-2 text-[11px] text-zinc-600">
-        Valores em dólar são estimativas da sua parte (Twitch não divulga o split exato).
-      </p>
+      <p className="mt-2 text-[11px] text-zinc-600">{t('money.disclaimer')}</p>
     </div>
   )
-}
-
-const SCOPE_LABELS: Record<string, string> = {
-  'bits:read': 'Bits',
-  'channel:read:ads': 'Anúncios',
-  'channel:read:goals': 'Metas',
-  'channel:read:hype_train': 'Hype Train',
-  'channel:read:polls': 'Enquetes',
-  'channel:read:predictions': 'Predições',
-  'channel:read:redemptions': 'Pontos do canal',
-  'channel:read:subscriptions': 'Assinantes',
-  'channel:read:vips': 'VIPs',
-  'moderator:read:followers': 'Seguidores',
 }
 
 function AccountSummary({ overview }: { overview: ChannelOverview }) {
   return (
     <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-lg font-bold">Resumo da conta</h3>
+        <h3 className="text-lg font-bold">{t('channel.accountSummary')}</h3>
         <span className="text-xs text-zinc-500">
-          conectado à Twitch em {formatDate(overview.connected_at)}
+          {t('channel.connectedAt', { date: formatDate(overview.connected_at) })}
         </span>
       </div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Dados que você autorizou o StreamIntel a ler
+        {t('channel.scopesTitle')}
       </p>
       <div className="flex flex-wrap gap-2">
         {overview.scopes.map((scope) => (
@@ -756,7 +704,7 @@ function AccountSummary({ overview }: { overview: ChannelOverview }) {
             key={scope}
             className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300"
           >
-            {SCOPE_LABELS[scope] ?? scope}
+            {t(`scope.${scope}` as MessageKey)}
           </span>
         ))}
       </div>
@@ -771,35 +719,36 @@ export default function ChannelView() {
     apiGet<ChannelOverview>('/api/channel').then(setOverview)
   }, [])
 
-  if (overview === null) return <p className="text-zinc-400">Carregando o resumo do canal...</p>
+  if (overview === null) return <p className="text-zinc-400">{t('channel.loading')}</p>
 
   const noStreams = overview.total_streams === 0
 
   return (
     <div>
       <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">
-        ← voltar
+        {t('nav.back')}
       </a>
-      <h2 className="mb-4 mt-2 text-xl font-bold">Meu canal</h2>
+      <h2 className="mb-4 mt-2 text-xl font-bold">{t('channel.title')}</h2>
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="Lives" value={overview.total_streams.toLocaleString('pt-BR')} />
-        <StatCard label="Mensagens" value={overview.total_messages.toLocaleString('pt-BR')} />
-        <StatCard label="Chatters únicos" value={overview.unique_chatters.toLocaleString('pt-BR')} />
+        <StatCard label={t('channel.stat.streams')} value={fmtInt(overview.total_streams)} />
+        <StatCard label={t('channel.stat.messages')} value={fmtInt(overview.total_messages)} />
         <StatCard
-          label="Seguidores"
-          value={overview.total_followers_gained.toLocaleString('pt-BR')}
+          label={t('channel.stat.uniqueChatters')}
+          value={fmtInt(overview.unique_chatters)}
         />
         <StatCard
-          label="Arrecadado (estimado)"
-          value={usd(overview.finance.total_estimated_usd)}
+          label={t('followers.kpi.total')}
+          value={fmtInt(overview.total_followers_gained)}
+        />
+        <StatCard
+          label={t('money.estimated')}
+          value={fmtMoney(overview.finance.total_estimated_usd)}
         />
       </div>
       <AccountSummary overview={overview} />
       {noStreams && (
         <p className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
-          Ainda sem lives capturadas. Abaixo está o resumo da sua conta importado da Twitch. Os
-          blocos de desempenho (fiéis, crescimento, receita por hora, recomendações) aparecem
-          quando você transmitir.
+          {t('channel.noStreams')}
         </p>
       )}
       <ChannelMonetization overview={overview} />

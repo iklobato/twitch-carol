@@ -123,14 +123,6 @@ _REASON_WEIGHT = {
     "no_avatar": SCORE_NO_AVATAR,
     "no_bio": SCORE_NO_BIO,
 }
-_REASON_LABEL = {
-    "young": "conta recém-criada",
-    "fresh_follow": "seguiu logo após criar a conta",
-    "no_avatar": "sem foto de perfil",
-    "no_bio": "sem bio",
-}
-
-
 def suspicious_followers(
     db: Session, channel_id: int, now: datetime | None = None
 ) -> list[SuspiciousFollower]:
@@ -151,7 +143,7 @@ def suspicious_followers(
                     login=follower.login,
                     display_name=follower.display_name,
                     score=score,
-                    reasons=[_REASON_LABEL[r] for r in reasons],
+                    reasons=reasons,
                 )
             )
     flagged.sort(key=lambda f: f.score, reverse=True)

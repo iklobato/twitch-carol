@@ -16,7 +16,7 @@ from core.backfill import (
     enrich_followers,
     enrich_streamer_followers,
 )
-from core.channels import upsert_channel
+from core.channels import channel_language, upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
 from core.eventsub import sync_channel_subscriptions
@@ -59,9 +59,16 @@ def callback(
     error: str | None = None,
 ) -> RedirectResponse:
     if error is not None:
-        raise HTTPException(status_code=400, detail=f"Twitch authorization failed: {error}")
+        raise HTTPException(
+            status_code=400, detail=f"Twitch authorization failed: {error}"
+        )
     cookie_state = request.cookies.get(STATE_COOKIE)
-    if not code or not state or not cookie_state or not secrets.compare_digest(state, cookie_state):
+    if (
+        not code
+        or not state
+        or not cookie_state
+        or not secrets.compare_digest(state, cookie_state)
+    ):
         raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     try:
@@ -70,7 +77,7 @@ def callback(
     except TwitchAuthError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
 
-    channel = upsert_channel(db, user, grant)
+    channel = upsert_channel(db, user, grant, channel_language(int(user.id)))
     db.commit()
     _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)
@@ -140,7 +147,10 @@ def _sync_eventsub_best_effort(channel: Channel) -> None:
     """Twitch only accepts HTTPS webhook callbacks, so local dev skips this;
     the simulator drives the webhook endpoint directly instead."""
     settings = get_settings()
-    if not settings.public_base_url.startswith("https://") or not settings.twitch_eventsub_secret:
+    if (
+        not settings.public_base_url.startswith("https://")
+        or not settings.twitch_eventsub_secret
+    ):
         logger.info(
             "eventsub sync skipped (needs https PUBLIC_BASE_URL and secret)",
             extra={"channel_id": channel.id},

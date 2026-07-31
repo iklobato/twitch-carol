@@ -8,12 +8,39 @@ from sqlalchemy.orm import Session
 
 from core.crypto import decrypt_secret, encrypt_secret
 from core.models import Channel
-from core.twitch import TokenGrant, TwitchAuthError, TwitchUser, refresh_grant
+from core.twitch import (
+    TokenGrant,
+    TwitchAuthError,
+    TwitchUser,
+    get_channels_by_ids,
+    refresh_grant,
+)
 
 TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
+DEFAULT_LANGUAGE = "pt"
 
 
-def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
+def channel_language(
+    twitch_user_id: int,
+    client: httpx.Client | None = None,
+    buscar=get_channels_by_ids,
+) -> str:
+    """Idioma que a Helix reporta, ou portugues se ela nao souber. Cai no padrao
+    de proposito: idioma vazio quebraria a escolha de lexico na analise de chat,
+    e todo canal cadastrado hoje e brasileiro."""
+    try:
+        infos = buscar([twitch_user_id], client)
+    except (TwitchAuthError, httpx.HTTPError):
+        return DEFAULT_LANGUAGE
+    return next((i.broadcaster_language for i in infos if i.broadcaster_language), DEFAULT_LANGUAGE)
+
+
+def upsert_channel(
+    db: Session,
+    user: TwitchUser,
+    grant: TokenGrant,
+    language: str | None = None,
+) -> Channel:
     channel = db.scalar(select(Channel).where(Channel.twitch_user_id == int(user.id)))
     if channel is None:
         channel = Channel(
@@ -24,6 +51,8 @@ def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
         db.add(channel)
     channel.login = user.login
     channel.display_name = user.display_name
+    if language:
+        channel.language = language
     _store_grant(channel, grant)
     db.flush()
     return channel

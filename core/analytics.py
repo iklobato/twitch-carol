@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from core.i18n import t
 from core.models import (
     ChatMessage,
     Event,
@@ -40,10 +41,13 @@ AD_BREAK = "channel.ad_break.begin"
 CHANNEL_UPDATE = "channel.update"
 CAUSE_EVENT_TYPES = (AD_BREAK, CHANNEL_UPDATE)
 
-SCENE_LABELS: dict[SegmentKind, str] = {
-    SegmentKind.MUSIC: "tocando música",
-    SegmentKind.SILENCE: "sem falar",
-    SegmentKind.GUEST_CONVERSATION: "conversa com convidado",
+# What was on screen during a dip, per segment kind. Message keys, resolved in
+# the channel's language: this text reaches both the dashboard and the facts the
+# recommendations are grounded in.
+SCENE_KEYS: dict[SegmentKind, str] = {
+    SegmentKind.MUSIC: "scene.music",
+    SegmentKind.SILENCE: "scene.silence",
+    SegmentKind.GUEST_CONVERSATION: "scene.guest",
 }
 
 
@@ -139,7 +143,7 @@ def retention_and_dips(
 
 
 def _speech_and_scene(
-    db: Session, stream_id: int, moment: datetime
+    db: Session, stream_id: int, moment: datetime, language: str | None
 ) -> tuple[str | None, str | None]:
     """What was happening at the drop: the speech text if you were talking (or
     the nearest speech within the gap), and a scene label when a non-speech
@@ -159,7 +163,8 @@ def _speech_and_scene(
         if segment.started_at <= moment <= segment.ended_at:
             if segment.kind == SegmentKind.SPEECH and segment.text:
                 return segment.text, None
-            scene = SCENE_LABELS.get(segment.kind)
+            key = SCENE_KEYS.get(segment.kind)
+            scene = t(language, key) if key else None
             break
 
     nearest = _nearest_speech(segments, moment)
@@ -184,7 +189,9 @@ def _nearest_speech(
     return best_text
 
 
-def dip_cause(db: Session, stream_id: int, moment: datetime) -> str | None:
+def dip_cause(
+    db: Session, stream_id: int, moment: datetime, language: str | None = None
+) -> str | None:
     """The most likely trigger of a drop from the event timeline: an ad break
     (its duration) or a category change just before it. None if neither fired."""
     low = moment - timedelta(seconds=CONTEXT_GAP_SECONDS)
@@ -199,11 +206,13 @@ def dip_cause(db: Session, stream_id: int, moment: datetime) -> str | None:
     ).all()
     ad = next((e for e in events if e.type == AD_BREAK), None)
     if ad is not None:
-        return f"anúncio de {ad.amount}s" if ad.amount else "anúncio"
+        if ad.amount:
+            return t(language, "cause.adBreakSeconds", seconds=ad.amount)
+        return t(language, "cause.adBreak")
     for event in events:
         category = (event.payload or {}).get("category_name")
         if category:
-            return f"troca para {category}"
+            return t(language, "cause.categoryChange", category=category)
     return None
 
 
@@ -235,12 +244,16 @@ def _chat_around(db: Session, stream_id: int, moment: datetime) -> tuple[str, ..
 
 
 def enrich_dips(
-    db: Session, stream: Stream, samples: list[ViewerSample], dips: list[Dip]
+    db: Session,
+    stream: Stream,
+    samples: list[ViewerSample],
+    dips: list[Dip],
+    language: str | None = None,
 ) -> list[Dip]:
     """Layer the explaining context onto each bare dip."""
     enriched: list[Dip] = []
     for dip in dips:
-        speech, scene = _speech_and_scene(db, stream.id, dip.at)
+        speech, scene = _speech_and_scene(db, stream.id, dip.at, language)
         recovered_to, recovered_in = _recovery(samples, dip)
         enriched.append(
             replace(
@@ -250,7 +263,7 @@ def enrich_dips(
                 ),
                 speech_context=speech,
                 scene=scene,
-                cause=dip_cause(db, stream.id, dip.at),
+                cause=dip_cause(db, stream.id, dip.at, language),
                 recovered_to=recovered_to,
                 recovered_in_minutes=recovered_in,
                 chat_context=_chat_around(db, stream.id, dip.at),

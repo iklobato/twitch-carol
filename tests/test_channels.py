@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from core.channels import ensure_fresh_token, upsert_channel
+from core.channels import channel_language, ensure_fresh_token, upsert_channel
 from core.crypto import decrypt_secret, encrypt_secret
 from core.models import Channel
 from core.twitch import TokenGrant, TwitchAuthError, TwitchUser
@@ -119,3 +119,28 @@ def test_ensure_fresh_token_without_refresh_token_raises() -> None:
     channel = Channel(twitch_user_id=123, login="henry", display_name="Henry")
     with pytest.raises(TwitchAuthError, match="no refresh token"):
         ensure_fresh_token(Mock(), channel)
+
+
+def test_upsert_grava_o_idioma_do_canal(db) -> None:
+    """O idioma decide o lexico da analise de chat, o idioma dos insights e o da
+    tela. Sem ele, streamer de fora do Brasil recebe 'the' e 'you' como assuntos
+    da live."""
+    channel = upsert_channel(db, USER, GRANT, "en")
+
+    assert channel.language == "en"
+
+
+def test_upsert_mantem_portugues_quando_a_helix_nao_diz_o_idioma(db) -> None:
+    channel = upsert_channel(db, USER, GRANT, None)
+
+    assert channel.language == "pt"
+
+
+def test_idioma_cai_no_padrao_quando_a_helix_falha() -> None:
+    """Login nao pode quebrar porque a Helix esta fora: idioma vazio quebraria a
+    escolha de lexico depois."""
+
+    def helix_fora(_ids, _client=None):
+        raise TwitchAuthError("Twitch /channels returned 500")
+
+    assert channel_language(123, buscar=helix_fora) == "pt"

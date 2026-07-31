@@ -49,7 +49,7 @@ def test_transcribe_posts_audio_and_parses_segments() -> None:
         )
 
     transcriber = RemoteTranscriber(_settings(), client=_client(handler))
-    out = transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))
+    out = transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32), "en")
 
     assert out == [(0.0, 1.5, "olá mundo")]  # blank-text segment dropped
     assert str(seen["url"]).endswith("/audio/transcriptions")
@@ -58,7 +58,10 @@ def test_transcribe_posts_audio_and_parses_segments() -> None:
     assert isinstance(body, bytes)
     assert b"whisper-large-v3-turbo" in body
     assert b'name="file"' in body
-    assert b'name="language"' in body
+    # the language asked for is the one sent, not a hardcoded default: this is
+    # the path production runs on, and a wrong language here means Whisper
+    # transcribes phonetically and every insight is built on nonsense
+    assert b'name="language"\r\n\r\nen' in body
 
 
 def test_missing_config_raises() -> None:
@@ -82,7 +85,7 @@ def test_retries_on_429_then_succeeds() -> None:
     transcriber = RemoteTranscriber(
         _settings(), client=_client(handler), retry_backoff=0
     )
-    out = transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+    out = transcriber.transcribe(np.zeros(1600, dtype=np.float32), "pt")
     assert out == [(0, 1, "oi")]
     assert calls["n"] == 2  # first 429, retried once
 
@@ -94,7 +97,7 @@ def test_exhausts_retries_then_raises() -> None:
         retry_backoff=0,
     )
     with pytest.raises(TranscriptionError, match="429"):
-        transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+        transcriber.transcribe(np.zeros(1600, dtype=np.float32), "pt")
 
 
 def test_client_error_raises_without_retry() -> None:
@@ -108,7 +111,7 @@ def test_client_error_raises_without_retry() -> None:
         _settings(), client=_client(handler), retry_backoff=0
     )
     with pytest.raises(TranscriptionError, match="400"):
-        transcriber.transcribe(np.zeros(1600, dtype=np.float32))
+        transcriber.transcribe(np.zeros(1600, dtype=np.float32), "pt")
     assert calls["n"] == 1  # 4xx (non-429) not retried
 
 

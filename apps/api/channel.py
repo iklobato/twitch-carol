@@ -35,6 +35,7 @@ from core.models import (
     ViewerSample,
     Vip,
 )
+from core.topics import recurring_topics
 
 router = APIRouter(prefix="/api/channel")
 
@@ -54,7 +55,6 @@ BITS_LEADER_LIMIT = 10
 HYPE_TRAIN_END = "channel.hype_train.end"
 REDEMPTION_ADD = "channel.channel_points_custom_reward_redemption.add"
 AD_BREAK = "channel.ad_break.begin"
-WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 
 class LoyalChatter(BaseModel):
@@ -66,8 +66,8 @@ class LoyalChatter(BaseModel):
 
 
 class WeekdaySlot(BaseModel):
+    # 0 = Monday. The web app names the day, in the reader's language.
     weekday: int
-    label: str
     streams: int
     avg_peak_viewers: float
 
@@ -584,7 +584,6 @@ def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
         slots.append(
             WeekdaySlot(
                 weekday=weekday,
-                label=WEEKDAY_LABELS[weekday],
                 streams=streams,
                 avg_peak_viewers=round(float(avg_peak or 0), 1),
             )
@@ -765,20 +764,10 @@ def _channel_finance(
 
 
 def _recurring_topics(db: DbSession, stream_ids: list[int]) -> list[RecurringTopic]:
-    if not stream_ids:
-        return []
-    # topic insight content is "name\ndescription"; the name is the first line
-    topic_name = func.split_part(Insight.content, "\n", 1)
-    rows = db.execute(
-        select(topic_name, func.count(func.distinct(Insight.stream_id)))
-        .where(Insight.stream_id.in_(stream_ids))
-        .where(Insight.type == InsightType.TOPIC)
-        .group_by(topic_name)
-        .having(func.count(func.distinct(Insight.stream_id)) >= 1)
-        .order_by(func.count(func.distinct(Insight.stream_id)).desc())
-        .limit(TOPIC_LIMIT)
-    ).all()
-    return [RecurringTopic(name=name, streams=streams) for name, streams in rows]
+    return [
+        RecurringTopic(name=name, streams=streams)
+        for name, streams in recurring_topics(db, stream_ids, TOPIC_LIMIT)
+    ]
 
 
 def _recommendations(db: DbSession, channel_id: int) -> list[RecommendationOut]:

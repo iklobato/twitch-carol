@@ -123,9 +123,9 @@ def test_followers_funnel_value_and_loyalty(api_client, db) -> None:
 
     # funnel is cumulative: 3 follow, 2 chatted, 1 subscribed (badge), 1 paid
     stages = {s["stage"]: s["count"] for s in body["funnel"]}
-    assert stages["seguidor"] == 3
-    assert stages["engajado"] == 2
-    assert stages["pagante"] == 1
+    assert stages["follower"] == 3
+    assert stages["engaged"] == 2
+    assert stages["paying"] == 1
 
     # whale tops the value table
     assert body["top_value"][0]["login"] == "whale"

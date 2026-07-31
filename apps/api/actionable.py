@@ -157,7 +157,7 @@ def stream_actionable(
     samples = load_viewer_samples(db, stream.id)
     speech = load_speech_segments(db, stream.id)
     retention, dips = retention_and_dips(samples, MAX_DIPS)
-    dips = enrich_dips(db, stream, samples, dips)
+    dips = enrich_dips(db, stream, samples, dips, channel.language)
     count, question_samples = _unanswered_questions(db, stream, speech)
     return ActionableOut(
         retention=Retention(**vars(retention)) if retention else None,

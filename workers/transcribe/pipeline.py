@@ -19,11 +19,12 @@ from typing import Protocol
 
 import httpx
 import numpy as np
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.config import Settings, get_settings
-from core.models import SegmentKind, Stream, TranscriptSegment
+from core.i18n import resolve
+from core.models import Channel, SegmentKind, Stream, TranscriptSegment
 from core.storage import get_audio_storage
 from workers.capture.collectors import AUDIO_SEGMENT_SECONDS
 
@@ -129,16 +130,20 @@ class Transcriber:
             )
         return self._model
 
-    def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]:
+    def transcribe(
+        self, audio: np.ndarray, language: str
+    ) -> list[tuple[float, float, str]]:
         """Returns (start, end, text) relative to the given audio chunk."""
         segments, _ = self._load().transcribe(
-            audio, language="pt", beam_size=1, vad_filter=False
+            audio, language=language, beam_size=1, vad_filter=False
         )
         return [(s.start, s.end, s.text.strip()) for s in segments if s.text.strip()]
 
 
 class SpeechTranscriber(Protocol):
-    def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]: ...
+    def transcribe(
+        self, audio: np.ndarray, language: str
+    ) -> list[tuple[float, float, str]]: ...
 
 
 class TranscriptionError(Exception):
@@ -187,7 +192,9 @@ class RemoteTranscriber:
         self._retry_backoff = retry_backoff
         self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
 
-    def transcribe(self, audio: np.ndarray) -> list[tuple[float, float, str]]:
+    def transcribe(
+        self, audio: np.ndarray, language: str
+    ) -> list[tuple[float, float, str]]:
         """Returns (start, end, text) relative to the given audio chunk.
         Retries on 429/5xx with backoff: transcription is idempotent and gets
         called once per speech chunk, so a transient throttle must not fail the
@@ -200,7 +207,7 @@ class RemoteTranscriber:
                 files={"file": ("audio.wav", wav, "audio/wav")},
                 data={
                     "model": self._model,
-                    "language": "pt",
+                    "language": language,
                     "response_format": "verbose_json",
                     "temperature": "0",
                 },
@@ -243,6 +250,14 @@ def process_stream(
     transcript_segments. Idempotent: reruns replace previous rows."""
     from faster_whisper.audio import decode_audio
 
+    # Whisper told the wrong language does not translate: it transcribes
+    # phonetically and returns nonsense. Every downstream LLM step (summary,
+    # topics, peak explanations, recommendations) is grounded on this text, and
+    # the evidence validator only checks that cited ids exist, never that the
+    # text makes sense, so a wrong language here is published as insight.
+    language = resolve(
+        db.scalar(select(Channel.language).where(Channel.id == stream.channel_id))
+    )
     storage = get_audio_storage()
     prefix = f"audio/{stream.channel_id}/{stream.id}/"
     keys = storage.list_keys(prefix)
@@ -264,7 +279,7 @@ def process_stream(
             audio = decode_audio(handle.name, sampling_rate=SAMPLE_RATE)
         for region in classify_regions(audio, detect_speech_spans(audio)):
             counts[region.kind.value] += _persist_region(
-                db, stream, transcriber, audio, region, file_offset
+                db, stream, transcriber, audio, region, file_offset, language
             )
     db.flush()
     return counts
@@ -285,6 +300,7 @@ def _persist_region(
     audio: np.ndarray,
     region: Region,
     file_offset: float,
+    language: str,
 ) -> int:
     if region.kind is not SegmentKind.SPEECH:
         # music/silence/guest: timeline marker only, never any text
@@ -301,7 +317,7 @@ def _persist_region(
 
     chunk = audio[int(region.start * SAMPLE_RATE) : int(region.end * SAMPLE_RATE)]
     added = 0
-    for start, end, text in transcriber.transcribe(chunk):
+    for start, end, text in transcriber.transcribe(chunk, language):
         db.add(
             TranscriptSegment(
                 stream_id=stream.id,

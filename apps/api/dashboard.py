@@ -675,7 +675,7 @@ def _chatter_samples(
 
 
 def _chatter_words_and_sentiment(
-    db: Session, stream_id: int, logins: list[str]
+    db: Session, stream_id: int, logins: list[str], language: str
 ) -> tuple[dict[str, list[WordCount]], dict[str, float | None]]:
     """Per-chatter top words and mean lexicon sentiment, in one pass over
     their messages (same rules as the community word cloud and sentiment)."""
@@ -689,8 +689,8 @@ def _chatter_words_and_sentiment(
         .where(ChatMessage.author_login.in_(logins))
     ).yield_per(2000)
     for login, text, emotes in rows:
-        counters[login].update(meaningful_words(text, emotes))
-        score = message_sentiment(tokenize(strip_emotes(text, emotes)))
+        counters[login].update(meaningful_words(text, emotes, language))
+        score = message_sentiment(tokenize(strip_emotes(text, emotes)), language)
         if score is not None:
             scores[login].append(score)
     top_words = {
@@ -716,19 +716,21 @@ def _chatter_labels(
     peak_messages: int,
     followed: bool,
 ) -> list[str]:
+    """Stable label keys, not display text. The web app owns the wording and the
+    colour per key, so neither depends on parsing a translated sentence."""
     labels = []
     if rank == 0:
-        labels.append("nº 1 do chat")
+        labels.append("top_chatter")
     if (
         stream.ended_at is not None
         and first_at <= stream.started_at + FULL_PRESENCE_MARGIN
         and last_at >= stream.ended_at - FULL_PRESENCE_MARGIN
     ):
-        labels.append("presente a live toda")
+        labels.append("full_presence")
     if peak_messages > 0 and peak_messages >= messages / 2:
-        labels.append("ativou nos picos")
+        labels.append("peak_active")
     if followed:
-        labels.append("seguiu durante a live")
+        labels.append("followed")
     return labels
 
 
@@ -769,7 +771,9 @@ def stream_chatters(
     peak_counts = _peak_message_counts(db, stream)
     followers = _follower_logins(db, stream.id)
     samples = _chatter_samples(db, stream.id, top_logins)
-    top_words, sentiment = _chatter_words_and_sentiment(db, stream.id, top_logins)
+    top_words, sentiment = _chatter_words_and_sentiment(
+        db, stream.id, top_logins, channel.language
+    )
 
     chatters = []
     for rank, (login, messages, first_at, last_at, active_minutes) in enumerate(rows):
@@ -818,6 +822,7 @@ def topic_detail(
     stream_id: int, insight_id: int, channel: CurrentChannel, db: DbSession
 ) -> TopicDetail:
     stream = _owned_stream(db, channel, stream_id)
+    language = channel.language
     insight = db.get(Insight, insight_id)
     if (
         insight is None
@@ -882,7 +887,7 @@ def topic_detail(
         .where(ChatMessage.sent_at < window_end)
     ).yield_per(2000)
     for text, emotes in window_rows:
-        word_counter.update(meaningful_words(text, emotes))
+        word_counter.update(meaningful_words(text, emotes, language))
 
     sample = db.scalars(
         in_window.order_by(ChatMessage.sent_at).limit(TOPIC_SAMPLE_MESSAGES)

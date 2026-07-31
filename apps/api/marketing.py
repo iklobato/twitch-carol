@@ -6,6 +6,8 @@ API lets the exact URL return the page. It also lets us pick the language:
 
 - ?lang=pt|en on the URL wins and is remembered in a cookie;
 - else the howto_lang cookie;
+- else the signed-in channel's own language (channels.language), so the page
+  matches the language the dashboard is already showing them;
 - else the browser's Accept-Language (en* -> en);
 - else Portuguese (the default audience).
 
@@ -17,6 +19,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
+
+from apps.api.deps import OptionalChannel
+from core.i18n import resolve as resolve_language
+from core.models import Channel
 
 router = APIRouter()
 
@@ -34,13 +40,15 @@ _SEARCH_DIRS = (
 )
 
 
-def resolve_lang(request: Request) -> str:
+def resolve_lang(request: Request, channel: Channel | None = None) -> str:
     query = request.query_params.get("lang")
     if query in SUPPORTED_LANGS:
         return query
     cookie = request.cookies.get(LANG_COOKIE)
     if cookie in SUPPORTED_LANGS:
         return cookie
+    if channel is not None:
+        return resolve_language(channel.language)
     if request.headers.get("accept-language", "").strip().lower().startswith("en"):
         return "en"
     return DEFAULT_LANG
@@ -57,8 +65,8 @@ def _howto_html(lang: str) -> str:
 
 @router.get("/howto", response_class=HTMLResponse)
 @router.get("/howto.html", response_class=HTMLResponse)
-def howto(request: Request) -> HTMLResponse:
-    lang = resolve_lang(request)
+def howto(request: Request, channel: OptionalChannel = None) -> HTMLResponse:
+    lang = resolve_lang(request, channel)
     response = HTMLResponse(_howto_html(lang))
     # Remember an explicit choice so the toggle sticks across pages.
     if request.query_params.get("lang") in SUPPORTED_LANGS:

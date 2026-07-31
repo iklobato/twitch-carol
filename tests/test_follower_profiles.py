@@ -31,14 +31,14 @@ def test_profiles_cross_chat_money_and_subs(db) -> None:
     profiles = {p.login: p for p in build_follower_profiles(db, channel.id)}
 
     # payer reached the deepest stage and sorts first (most value)
-    assert profiles["payer"].stage == "pagante"
+    assert profiles["payer"].stage == "paying"
     assert profiles["payer"].estimated_usd > 0
     assert profiles["payer"].messages == 4
     assert profiles["payer"].is_subscriber is True
 
-    assert profiles["chatter"].stage == "engajado"
+    assert profiles["chatter"].stage == "engaged"
     assert profiles["chatter"].estimated_usd == 0.0
-    assert profiles["lurker"].stage == "seguidor"
+    assert profiles["lurker"].stage == "follower"
     assert profiles["lurker"].messages == 0
 
 
@@ -55,7 +55,7 @@ def test_badge_months_are_read_from_chat(db) -> None:
     )
     assert profile.sub_months == 18
     assert profile.is_subscriber is True
-    assert profile.stage == "inscrito"
+    assert profile.stage == "subscriber"
 
 
 def test_profiles_ordered_by_value_then_messages(db) -> None:

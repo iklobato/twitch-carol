@@ -18,6 +18,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from core.finance import CHEER, GIFT, MONEY_EVENT_TYPES, RESUB, SUBSCRIBE, event_usd
+from core.i18n import format_number, t
 from core.models import (
     ChatMessage,
     Event,
@@ -53,41 +54,29 @@ class RecordMetric(enum.StrEnum):
     RESUBS = "resubs"
 
 
-LABELS: dict[RecordMetric, str] = {
-    RecordMetric.MESSAGES: "mensagens no chat",
-    RecordMetric.CHATTERS: "chatters únicos",
-    RecordMetric.EVENTS: "eventos",
-    RecordMetric.FOLLOWS: "seguidores ganhos",
-    RecordMetric.PEAK_VIEWERS: "pico de viewers",
-    RecordMetric.AVG_VIEWERS: "média de viewers",
-    RecordMetric.DURATION_MINUTES: "duração",
-    RecordMetric.SUBS: "inscrições",
-    RecordMetric.GIFTS: "subs presenteados",
-    RecordMetric.BITS: "bits",
-    RecordMetric.RAIDS: "raids recebidos",
-    RecordMetric.REVENUE_USD: "receita estimada",
-    RecordMetric.MESSAGES_PER_MIN: "ritmo de chat (msgs/min)",
-    RecordMetric.RESUBS: "resubs",
-}
+def metric_label(metric: RecordMetric, language: str | None) -> str:
+    """Metric name in the channel's language, for the facts fed to the LLM. The
+    badges in the web app are worded there, from the same metric key."""
+    return t(language, f"record.{metric.value}")
 
 
-def _fmt_int(value: float) -> str:
-    return f"{int(round(value)):,}".replace(",", ".")
+def _fmt_int(value: float, language: str | None) -> str:
+    return format_number(round(value), language)
 
 
-def _fmt_dec(value: float) -> str:
-    return f"{value:.1f}".replace(".", ",")
+def _fmt_dec(value: float, language: str | None) -> str:
+    return format_number(value, language, decimals=1)
 
 
-def _fmt_min(value: float) -> str:
+def _fmt_min(value: float, language: str | None) -> str:
     return f"{value:.0f} min"
 
 
-def _fmt_usd(value: float) -> str:
-    return f"US$ {value:.2f}".replace(".", ",")
+def _fmt_usd(value: float, language: str | None) -> str:
+    return f"US$ {format_number(value, language, decimals=2)}"
 
 
-_FORMATTERS: dict[RecordMetric, Callable[[float], str]] = {
+_FORMATTERS: dict[RecordMetric, Callable[[float, str | None], str]] = {
     RecordMetric.AVG_VIEWERS: _fmt_dec,
     RecordMetric.MESSAGES_PER_MIN: _fmt_dec,
     RecordMetric.DURATION_MINUTES: _fmt_min,
@@ -95,8 +84,8 @@ _FORMATTERS: dict[RecordMetric, Callable[[float], str]] = {
 }
 
 
-def format_value(metric: RecordMetric, value: float) -> str:
-    return _FORMATTERS.get(metric, _fmt_int)(value)
+def format_value(metric: RecordMetric, value: float, language: str | None = None) -> str:
+    return _FORMATTERS.get(metric, _fmt_int)(value, language)
 
 
 def compute_stream_metrics(db: Session, stream: Stream) -> dict[RecordMetric, float]:
@@ -120,9 +109,7 @@ def compute_stream_metrics(db: Session, stream: Stream) -> dict[RecordMetric, fl
     count_by_type = {row[0]: row[1] for row in by_type}
     amount_by_type = {row[0]: row[2] for row in by_type}
     money = db.scalars(
-        select(Event).where(
-            Event.stream_id == stream.id, Event.type.in_(MONEY_EVENT_TYPES)
-        )
+        select(Event).where(Event.stream_id == stream.id, Event.type.in_(MONEY_EVENT_TYPES))
     ).all()
     revenue = round(sum(event_usd(e) for e in money), 2)
 
@@ -203,20 +190,25 @@ def _current_best(db: Session, channel_id: int) -> dict[str, tuple[int, float]]:
 
 
 def records_held_by_stream(db: Session, channel_id: int) -> dict[int, list[str]]:
-    """stream_id -> labels of the metrics it currently holds the record for,
-    in metric order (for stable badge display). The caller decides whether the
-    channel has enough history to show them (MIN_LIVES_FOR_RECORDS)."""
+    """stream_id -> metric keys it currently holds the record for, in metric
+    order (for stable badge display). Keys rather than labels: the web app owns
+    the wording, in the reader's language. The caller decides whether the channel
+    has enough history to show them (MIN_LIVES_FOR_RECORDS)."""
     best = _current_best(db, channel_id)
     held: dict[int, list[str]] = defaultdict(list)
     for metric in RecordMetric:
         current = best.get(metric.value)
         if current is not None:
-            held[current[0]].append(LABELS[metric])
+            held[current[0]].append(metric.value)
     return dict(held)
 
 
 def add_record_facts(
-    db: Session, channel_id: int, broke: list[RecordMetric], facts: list[str]
+    db: Session,
+    channel_id: int,
+    broke: list[RecordMetric],
+    facts: list[str],
+    language: str | None = None,
 ) -> None:
     """Append numbered record facts to the channel recommendation prompt so the
     AI can reference milestones (a target to beat) and celebrate a fresh record.
@@ -224,19 +216,14 @@ def add_record_facts(
     best = _current_best(db, channel_id)
     if best:
         marks = ", ".join(
-            f"{format_value(m, best[m.value][1])} {LABELS[m]}"
+            f"{format_value(m, best[m.value][1], language)} {metric_label(m, language)}"
             for m in RecordMetric
             if m.value in best
         )
-        facts.append(
-            f"[{len(facts) + 1}] Melhores marcas do canal (metas a superar): {marks}"
-        )
+        facts.append(f"[{len(facts) + 1}] " + t(language, "fact.best_marks", marks=marks))
     if broke:
-        labels = ", ".join(LABELS[m] for m in broke)
-        facts.append(
-            f"[{len(facts) + 1}] A última live analisada bateu o recorde do canal "
-            f"em: {labels}"
-        )
+        labels = ", ".join(metric_label(m, language) for m in broke)
+        facts.append(f"[{len(facts) + 1}] " + t(language, "fact.broke_records", labels=labels))
 
 
 def backfill_records(db: Session, channel_id: int) -> int:
