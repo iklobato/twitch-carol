@@ -25,8 +25,17 @@ from pathlib import Path
 import httpx
 
 BATCH_DIR = Path("data/campaign")
-BODY_HTML = Path("ai-generated-messages/broadcast-body.html")
-SUBJECT = "Ferramenta que analisa suas lives na Twitch (gratis na fase de testes)"
+# Um corpo e um assunto por idioma. Convite em portugues para canal em ingles
+# rende reclamacao de spam, que e o unico numero que o portao trata como fatal.
+BODY_HTML = {
+    "pt": Path("ai-generated-messages/broadcast-body.html"),
+    "en": Path("ai-generated-messages/broadcast-body-en.html"),
+}
+SUBJECT = {
+    "pt": "Ferramenta que analisa suas lives na Twitch (gratis na fase de testes)",
+    "en": "I built a tool that analyses your Twitch streams (free while in beta)",
+}
+DEFAULT_LANGUAGE = "pt"
 FROM = "Henrique <henrique@send.streamintel.cc>"
 REPLY_TO = "tiktachack@gmail.com"
 BROADCAST_UNSUBSCRIBE_TOKEN = "{{{RESEND_UNSUBSCRIBE_URL}}}"
@@ -34,16 +43,25 @@ BROADCAST_UNSUBSCRIBE_BLOCK = re.compile(
     r"\s*<p[^>]*>(?:(?!</p>).)*\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}(?:(?!</p>).)*</p>",
     re.DOTALL,
 )
-UNSUBSCRIBE_MAILTO = f"mailto:{REPLY_TO}?subject=sair"
+UNSUBSCRIBE_MAILTO = {
+    "pt": f"mailto:{REPLY_TO}?subject=sair",
+    "en": f"mailto:{REPLY_TO}?subject=unsubscribe",
+}
 RESEND_BATCH_URL = "https://api.resend.com/emails/batch"
 RESEND_MAX_PER_CALL = 100
 SECONDS_BETWEEN_CALLS = 1.0  # o Resend aceita 2 req/s; uma por segundo sobra
 
 
-def read_batch(batch: str) -> list[str]:
+def read_batch(batch: str) -> list[tuple[str, str]]:
+    """Endereco e idioma. Lote antigo nao tem a coluna `language`; ele e
+    portugues, que era o unico idioma quando foi montado."""
     path = BATCH_DIR / f"{batch}.csv"
     with path.open(newline="") as handle:
-        return [row["email"].strip() for row in csv.DictReader(handle) if row["email"]]
+        return [
+            (row["email"].strip(), (row.get("language") or DEFAULT_LANGUAGE).strip())
+            for row in csv.DictReader(handle)
+            if row["email"]
+        ]
 
 
 def body_for_api(html: str) -> str:
@@ -58,17 +76,17 @@ def body_for_api(html: str) -> str:
     return stripped
 
 
-def build_payloads(emails: list[str], html: str) -> list[dict]:
+def build_payloads(destinatarios: list[tuple[str, str]], corpos: dict[str, str]) -> list[dict]:
     return [
         {
             "from": FROM,
             "to": [email],
             "reply_to": REPLY_TO,
-            "subject": SUBJECT,
-            "html": html,
-            "headers": {"List-Unsubscribe": f"<{UNSUBSCRIBE_MAILTO}>"},
+            "subject": SUBJECT[idioma],
+            "html": corpos[idioma],
+            "headers": {"List-Unsubscribe": f"<{UNSUBSCRIBE_MAILTO[idioma]}>"},
         }
-        for email in emails
+        for email, idioma in destinatarios
     ]
 
 
@@ -88,16 +106,26 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    emails = read_batch(args.batch)
-    duplicates = len(emails) - len(set(emails))
+    destinatarios = read_batch(args.batch)
+    duplicates = len(destinatarios) - len({e for e, _ in destinatarios})
     if duplicates:
         raise ValueError(f"{args.batch} tem {duplicates} email repetido")
-    payloads = build_payloads(emails, body_for_api(BODY_HTML.read_text()))
-    print(f"{args.batch}: {len(emails)} destinatarios | assunto: {SUBJECT}")
+    idiomas = sorted({idioma for _, idioma in destinatarios})
+    faltando = [i for i in idiomas if i not in BODY_HTML or not BODY_HTML[i].exists()]
+    if faltando:
+        raise ValueError(f"sem corpo de email para: {', '.join(faltando)}")
+    corpos = {i: body_for_api(BODY_HTML[i].read_text()) for i in idiomas}
+    payloads = build_payloads(destinatarios, corpos)
+    print(
+        f"{args.batch}: {len(destinatarios)} destinatarios | idiomas: {'/'.join(idiomas)}"
+    )
+    for idioma in idiomas:
+        print(f"  {idioma}: {SUBJECT[idioma]}")
 
     if args.dry_run:
-        print(f"dry-run, ninguem recebeu nada. Primeiro: {emails[0]}")
-        print(f"  List-Unsubscribe: <{UNSUBSCRIBE_MAILTO}>")
+        primeiro, idioma = destinatarios[0]
+        print(f"dry-run, ninguem recebeu nada. Primeiro: {primeiro} ({idioma})")
+        print(f"  List-Unsubscribe: <{UNSUBSCRIBE_MAILTO[idioma]}>")
         Path("/tmp/preview-email.html").write_text(payloads[0]["html"])
         print("  corpo renderizado em /tmp/preview-email.html")
         return 0

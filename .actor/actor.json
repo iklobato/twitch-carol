@@ -1,0 +1,27 @@
+{
+  "actorSpecification": 1,
+  "name": "streamintel-campanha",
+  "title": "StreamIntel: colheita semanal de leads",
+  "description": "Junta streamer br com email publico (Twitch ao vivo + Google), qualifica na Helix e guarda os leads. Nao envia email.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "storages": {
+    "dataset": {
+      "actorSpecification": 1,
+      "title": "Leads qualificados",
+      "views": {
+        "leads": {
+          "title": "Leads",
+          "transformation": {
+            "fields": ["login", "email", "followers", "broadcaster_type", "game", "source"]
+          },
+          "display": {
+            "component": "table"
+          }
+        }
+      }
+    }
+  }
+}

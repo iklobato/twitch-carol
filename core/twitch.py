@@ -271,19 +271,19 @@ def get_channels_by_ids(
     return channels
 
 
-def get_users_by_ids(
-    user_ids: list[int], client: httpx.Client | None = None
+def _get_users(
+    param: str, values: list[str], client: httpx.Client | None = None
 ) -> list[UserProfile]:
-    """Helix Get Users by id, batched 100 per call (an app token suffices, as
-    this is public profile data). Ids Twitch no longer knows are simply absent
-    from the response."""
+    """Helix Get Users, batched 100 per call (an app token suffices, as this is
+    public profile data). Keys Twitch no longer knows are simply absent from the
+    response."""
     profiles: list[UserProfile] = []
     with _http(client) as http:
-        for start in range(0, len(user_ids), USERS_BATCH_SIZE):
-            batch = user_ids[start : start + USERS_BATCH_SIZE]
+        for start in range(0, len(values), USERS_BATCH_SIZE):
+            batch = values[start : start + USERS_BATCH_SIZE]
             response = http.get(
                 f"{HELIX_URL}/users",
-                params=[("id", str(uid)) for uid in batch],
+                params=[(param, value) for value in batch],
                 headers=app_headers(http),
             )
             if response.status_code != 200:
@@ -293,6 +293,18 @@ def get_users_by_ids(
                 for row in response.json().get("data", [])
             )
     return profiles
+
+
+def get_users_by_ids(
+    user_ids: list[int], client: httpx.Client | None = None
+) -> list[UserProfile]:
+    return _get_users("id", [str(uid) for uid in user_ids], client)
+
+
+def get_users_by_logins(
+    logins: list[str], client: httpx.Client | None = None
+) -> list[UserProfile]:
+    return _get_users("login", logins, client)
 
 
 class VideoRecord(BaseModel):
@@ -364,6 +376,23 @@ def iter_followers(
             "follower backfill hit page cap; not all followers captured",
             extra={"broadcaster_id": broadcaster_id},
         )
+
+
+def get_follower_count(broadcaster_id: int, client: httpx.Client | None = None) -> int:
+    """Follower total of any broadcaster, with an app token. Asking for first=1
+    keeps it to one call: the total is public, only the follower list itself
+    needs the channel's own moderator scope (and comes back empty here)."""
+    with _http(client) as http:
+        response = http.get(
+            f"{HELIX_URL}/channels/followers",
+            params={"broadcaster_id": str(broadcaster_id), "first": "1"},
+            headers=app_headers(http),
+        )
+    if response.status_code != 200:
+        raise TwitchAuthError(
+            f"Twitch /channels/followers returned {response.status_code}"
+        )
+    return int(response.json().get("total", 0))
 
 
 def get_videos(

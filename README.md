@@ -27,8 +27,10 @@ workers/capture    IRC do chat, viewers, gravador HLS->Opus, auto-clip nos picos
 workers/transcribe VAD + Whisper (OpenRouter em prod, faster-whisper em dev)
 workers/analyze    picos por SQL + insights via LLM (OpenRouter/llama.cpp), evidência validada
 core               modelos, config, filas, crypto, cliente Twitch, métricas, recordes
-scripts            simulador de live, seed de estados, benchmark, backup, backfill de recordes
-deploy             Dockerfile, docker compose (dev + prod), Caddyfile
+scripts            simulador de live, seed, benchmark, backup, backfill, prospecção e envio da campanha
+deploy             Dockerfile, docker compose (dev + prod), Caddyfile, campanha/ (timers no droplet)
+.actor             actor do Apify: colhe leads todo dia e envia o convite (fora do produto)
+migrations         alembic; o job migrate roda `upgrade head` antes de cada deploy
 ```
 
 Serviços do compose (dev): `api`, `worker-capture`, `worker-transcribe`,
@@ -207,22 +209,62 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
 ### Prospecção e convite beta
 
-Achar streamer pequeno de língua portuguesa, confirmar o tamanho do canal e
-convidar por email. Tudo roda nesta máquina, nada disso vai para produção.
+Achar streamer, confirmar o tamanho do canal e convidar por email. Nada disso
+toca produção. Roda em dois lugares: na mão nesta máquina, e num actor no Apify
+(`.actor/`) com duas schedules, colheita todo dia 03h e envio de segunda a sexta
+10h.
+
+O actor é o mesmo código deste repo: ele baixa o estado de um Key-Value Store
+para um diretório temporário, entra nele (os caminhos do script são relativos) e
+sobe o resultado de volta. Nenhuma função do `prospect_leads.py` foi alterada
+para isso.
 
 ```bash
-python scripts/prospect_leads.py sweep      # quem está ao vivo em pt agora (grátis)
-APIFY_TOKEN=... python scripts/prospect_leads.py harvest   # Google, pago por busca
-python scripts/prospect_leads.py qualify    # enriquece na Helix e filtra
-python scripts/prospect_leads.py batches    # divide nos lotes da rampa
+cd .actor && npx apify-cli push        # publica; precisa de --registry publico nesta maquina
+```
+
+Segredos ficam no ambiente do actor (Twitch, Resend, e um token de conta do
+Apify, porque o token do run não cria loja nomeada nem lê o consumo do mês). O
+teto de gasto é input do actor: ele lê quanto já foi gasto no mês, divide o que
+sobra pelos **dias** que faltam e converte em número de buscas. Dividir por
+semana estouraria o mês em uma rodada, porque a colheita é diária.
+
+```bash
+python scripts/prospect_leads.py sweep --idiomas pt,en     # quem está ao vivo agora (grátis)
+APIFY_TOKEN=... python scripts/prospect_leads.py harvest --skip 798   # Google, pago por busca
+python scripts/prospect_leads.py qualify --min-seguidores 500 --max-seguidores 100000000
+python scripts/prospect_leads.py batches --start 15        # divide nos lotes da rampa
 ```
 
 `sweep` e `harvest` só juntam candidatos em `data/campaign/candidates.csv`;
 quem decide é o `qualify`, porque o tamanho do canal só existe na Helix
 (`/helix/channels/followers` devolve o total de qualquer canal com app token).
-Ele mantém quem tem entre 100 e 5.000 seguidores, canal em português, que não é
-parceiro, com email de domínio que responde MX, e que ainda não está em nenhum
-`lote-*.csv`. Sai em `data/campaign/leads.csv`.
+Ele mantém quem está na faixa de seguidores pedida (`--min-seguidores` /
+`--max-seguidores`, e `--sem-partner` para excluir parceiro), com canal no idioma
+pedido, email de domínio que responde MX, e que ainda não está em nenhum
+`lote-*.csv`. Sai em `data/campaign/leads.csv`, com a coluna `language`.
+
+**O `--idiomas` do `qualify` continua `pt` por padrão, de propósito.** A coleta
+varre inglês porque é grátis, mas o convite só existe em português, e mandar
+português para canal em inglês vira reclamação de spam, que é o único número que
+o portão trata como fatal. Medido em 2026-07-29: 4.417 leads em inglês contra 198
+em português esperando na base.
+
+Duas coisas gravadas em tempo de execução para não perder trabalho quando algo
+falha no meio:
+
+- `data/campaign/coleta-parcial.csv` é o diário da busca no Google. Cada consulta
+  é paga, e o `candidates.csv` só era escrito no fim: um erro depois de 2.000
+  buscas jogava ~USD 5 no lixo. Agora o resultado vai para o diário conforme
+  chega, e ele é consumido e apagado quando a coleta fecha. Se sobrar, a próxima
+  coleta o recolhe.
+- `data/campaign/seguidores.csv` guarda a contagem de seguidores por 7 dias, que
+  é a etapa mais lenta (uma chamada por canal). Erro no meio não faz repetir 6.000
+  chamadas, e a qualificação diária passa a custar só os canais novos.
+
+Também importa que a qualificação **não morre** por um erro transitório da Twitch:
+um `500` em 6.071 chamadas derrubou duas rodadas em 2026-07-29. Agora ela insiste
+3 vezes, pula o canal se a Twitch continuar fora, e diz quantos pulou.
 
 As duas fontes se completam: `sweep` vê só quem está transmitindo naquele
 instante, `harvest` alcança canal offline pelo que o Google indexou. Buscar no
@@ -250,6 +292,22 @@ RESEND_API_KEY=... ./deploy/campanha/instalar.sh
 O systemd roda `campaign_stats.py --portao <lote>` antes de cada disparo e não
 envia se o portão barrar (lote já enviado, lote anterior parado, bounce ≥ 3% ou
 qualquer spam). Se barrar, chega um email avisando.
+
+**Depois de 12/08 a campanha passa para o actor**, que tem dois modos e duas
+schedules: `colher` todo dia às 03h (sweep grátis + busca paga dentro do teto) e
+`enviar` de segunda a sexta às 10h, até 300 por dia (o maior degrau que a rampa
+prova em 06/08; o teto é só limite superior, porque o portão roda antes de cada
+disparo). O envio tem três freios:
+não manda antes de `comecar_em`, não manda com fila abaixo de 30, e não manda se
+o portão barrar. Ele grava o progresso a cada bloco de 100, então container que
+morre no meio não reenvia para quem já recebeu.
+
+Expectativa realista, medida em 2026-07-29: um sweep completo rende 44 a 80 leads
+e o Google já está seco para português, então a oferta de streamer br novo com
+email público fica entre 10 e 30 por dia. O teto de 300 quase nunca vai ser
+atingido; o normal vai ser disparar 30 a 60 a cada um ou dois dias. A lista em
+português acaba por volta de 13/08, e o que existe depois disso é o que o sweep
+diário trouxer.
 
 Rampa e portões (bounce < 3%, zero spam, cadastro/resposta) em
 `ai-generated-messages/2026-07-24-broadcast-beta-streamers.md`, junto do texto do

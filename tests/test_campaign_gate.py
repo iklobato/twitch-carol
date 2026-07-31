@@ -69,3 +69,32 @@ def test_barra_lote_que_nao_existe():
 def test_limite_de_bounce_e_3_porcento(bounces, esperado):
     counts = {"delivered": 100 - bounces, "bounced": bounces}
     assert gate("lote-8", events(**{"lote-7": counts}), BATCHES) == esperado
+
+
+TRILHAS = {
+    "lote-10": {"br@exemplo.com"},
+    "lote-11": {"br2@exemplo.com"},
+    "lote-en-1": {"us@exemplo.com"},
+    "lote-en-2": {"us2@exemplo.com"},
+}
+
+
+def test_trilha_nova_pode_abrir_sem_lote_anterior():
+    """O primeiro lote em ingles nao tem o que medir; quem segura o risco e o
+    tamanho do degrau (50), nao o portao."""
+    assert gate("lote-en-1", events(), TRILHAS) == 0
+
+
+def test_lote_em_ingles_mede_contra_ingles_e_nao_contra_o_portugues():
+    """Publico novo nao herda a reputacao construida com brasileiros: se o
+    primeiro lote em ingles nao saiu, o segundo nao sai."""
+    enviados = events(**{"lote-10": {"delivered": 121}, "lote-11": {"delivered": 200}})
+
+    assert gate("lote-en-2", enviados, TRILHAS) == 1
+
+
+def test_bounce_do_ingles_nao_trava_a_trilha_portuguesa():
+    ruim = {"delivered": 45, "bounced": 5}  # 10% na trilha inglesa
+    enviados = events(**{"lote-10": {"delivered": 121}, "lote-en-1": ruim})
+
+    assert gate("lote-11", enviados, TRILHAS) == 0

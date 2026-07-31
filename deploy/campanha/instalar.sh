@@ -13,7 +13,10 @@ HOST=lekture-sfu
 DEST=/opt/streamintel-campanha
 ENV_FILE=/etc/streamintel-campanha.env
 UV=/root/.local/bin/uv
-AGENDA=("lote-8:2026-07-28" "lote-9:2026-07-29" "lote-10:2026-07-30")
+# Terca a quinta as 10h, subindo no maximo um terco por degrau: 151 (o maior
+# ja enviado) -> 200 -> 250 -> 300 -> 176. O que sobra do dia vira o degrau da
+# terca seguinte, porque a janela de melhor abertura e so terca a quinta.
+AGENDA=("lote-11:2026-08-04" "lote-12:2026-08-05" "lote-13:2026-08-06" "lote-14:2026-08-11")
 HORA="10:00"
 FUSO="America/Sao_Paulo"
 
@@ -26,16 +29,17 @@ escrever_no_droplet() {
   ssh "$HOST" "cat > '$1'"
 }
 
-# O lote-7 vai junto mesmo ja tendo sido enviado: sem a lista dele o portao nao
-# consegue medir o bounce do lote anterior ao lote-8, e barra o primeiro disparo.
+# O lote-10 vai junto mesmo ja tendo saido: sem a lista dele o portao nao
+# consegue medir o bounce do lote anterior ao lote-11, e barra o disparo.
 echo "== 1. codigo e listas para $HOST:$DEST"
 ssh "$HOST" "install -d -m 700 $DEST"
 rsync -a --relative \
   scripts/send_campaign_batch.py \
   scripts/campaign_stats.py \
   ai-generated-messages/broadcast-body.html \
-  data/campaign/lote-7.csv \
-  data/campaign/lote-8.csv data/campaign/lote-9.csv data/campaign/lote-10.csv \
+  data/campaign/lote-10.csv \
+  data/campaign/lote-11.csv data/campaign/lote-12.csv \
+  data/campaign/lote-13.csv data/campaign/lote-14.csv \
   "$HOST:$DEST/"
 rsync -a deploy/campanha/avisar.sh "$HOST:$DEST/avisar.sh"
 ssh "$HOST" "chmod 700 $DEST/avisar.sh && chmod -R go-rwx $DEST"
@@ -89,10 +93,16 @@ done
 
 ssh "$HOST" "systemctl daemon-reload"
 
+PRIMEIRO="${AGENDA[0]%%:*}"
 echo "== 4. conferindo antes de ligar (nao envia nada)"
+# O dry-run e o que pode abortar: ele prova que o codigo, o corpo do email e a
+# lista estao de pe. O portao aqui e so informativo, porque ele barra de proposito
+# enquanto o lote anterior nao tiver saido, e isso nao e motivo para nao agendar.
 ssh "$HOST" "cd $DEST && set -a && . $ENV_FILE && set +a &&
-  $UV run --no-project --with httpx python scripts/campaign_stats.py --portao lote-8 &&
-  $UV run --no-project --with httpx python scripts/send_campaign_batch.py lote-8 --dry-run"
+  $UV run --no-project --with httpx python scripts/send_campaign_batch.py $PRIMEIRO --dry-run"
+echo "-- portao de $PRIMEIRO agora (informativo):"
+ssh "$HOST" "cd $DEST && set -a && . $ENV_FILE && set +a &&
+  $UV run --no-project --with httpx python scripts/campaign_stats.py --portao $PRIMEIRO" || true
 
 echo "== 5. ligando os timers"
 for item in "${AGENDA[@]}"; do

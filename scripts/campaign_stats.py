@@ -51,8 +51,20 @@ def fetch_emails(api_key: str) -> list[dict]:
             after = page["data"][-1]["id"]
 
 
+def trilha_e_numero(name: str) -> tuple[str, int]:
+    """`lote-11` e a trilha portugues (historico), `lote-en-3` e a inglesa.
+
+    Trilha separada porque publico novo tem bounce e reclamacao desconhecidos:
+    misturado no mesmo lote, o portao mede a media e voce so descobre qual
+    populacao machucou o dominio quando ja machucou."""
+    partes = name.split("-")
+    if len(partes) == 2:
+        return "pt", int(partes[1])
+    return partes[1], int(partes[2])
+
+
 def batch_number(name: str) -> int:
-    return int(name.split("-")[1])
+    return trilha_e_numero(name)[1]
 
 
 def load_batches() -> dict[str, set[str]]:
@@ -98,10 +110,18 @@ def report(
 
 
 def previous_batch(name: str, batches: dict[str, set[str]]) -> str | None:
-    """O lote imediatamente anterior, tenha ele saido ou nao. Nao vale pular para
-    o ultimo que saiu: numa corrente agendada isso deixaria o lote-10 disparar na
-    quinta conferindo o lote-7, se o lote-9 tivesse falhado na quarta."""
-    earlier = [other for other in batches if batch_number(other) < batch_number(name)]
+    """O lote imediatamente anterior **da mesma trilha**, tenha ele saido ou nao.
+
+    Nao vale pular para o ultimo que saiu: numa corrente agendada isso deixaria o
+    lote-10 disparar na quinta conferindo o lote-7, se o lote-9 tivesse falhado na
+    quarta. E nao vale comparar com outra trilha: o primeiro lote em ingles nao
+    herda a reputacao construida com brasileiros."""
+    trilha, numero = trilha_e_numero(name)
+    earlier = [
+        other
+        for other in batches
+        if trilha_e_numero(other)[0] == trilha and batch_number(other) < numero
+    ]
     return max(earlier, key=batch_number, default=None)
 
 
@@ -119,6 +139,11 @@ def gate(
 
     anterior = previous_batch(name, batches)
     if not anterior:
+        # Trilha nova nao tem o que medir. Ela sai, mas pequena: quem segura o
+        # risco aqui e o tamanho do primeiro degrau (50), nao o portao.
+        if trilha_e_numero(name)[1] == 1:
+            print(f"portao OK: {name} abre a trilha, nao ha anterior para medir")
+            return 0
         print(f"PORTAO BLOQUEADO: {name} nao tem lote anterior, nada para conferir")
         return 1
     if not sum(events[anterior].values()):

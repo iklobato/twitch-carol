@@ -98,6 +98,33 @@ flowchart TB
 | 14 | **~~Valkey~~** (`financialdata-valkey`) | Managed, nyc1 | Fora de producao (fila e dedup foram pro PG) | Apenas chaves `sim:*` do simulador local | Nada em prod | Desativado em prod em 2026-07-16/17 |
 | 15 | **~~Droplet `stream-intel`~~** | (destruido) | Era o prod antigo (rsync + docker compose) | - | - | Destruido 2026-07-16; snapshot `stream-intel-pre-retire-20260716` guardado |
 
+## Fora do caminho do produto: a campanha de convite
+
+Nada disso participa da captura nem do dashboard, mas manda email de verdade em
+nome do domínio, então tem dono e tem freio. Estado em 2026-07-30:
+
+| # | Componente | Onde roda | Responsabilidade | Início / Fim |
+|---|---|---|---|---|
+| 16 | **Timers da campanha** | Droplet `lekture-sfu` (compartilhado com outro projeto) | Dispara os lotes 10 a 14 (1.047 emails) por systemd timer, terça a quinta 10h BRT, cada um passando pelo portão antes | Ativos até 2026-08-11 |
+| 17 | **Limpeza da campanha** | Mesmo droplet | Apaga `/opt/streamintel-campanha` e a chave do Resend depois do último lote. Trava: se o lote-14 não tiver saído, **não apaga** e manda email | Dispara 2026-08-12 03h |
+| 18 | **Actor `streamintel-campanha`** | Apify | Assume a campanha depois do droplet. Modo `colher` (todo dia 03h): sweep na Twitch + busca no Google dentro do teto de gasto, qualifica na Helix, empilha na fila. Modo `enviar` (seg a sex 10h): tira até 300 da fila, passa pelo portão, manda pelo Resend | Colheita ativa; envio travado até 2026-08-12 |
+| 19 | **Resend** | Externo (SaaS) | Entrega o convite pelo subdomínio `send.streamintel.cc` (DKIM + SPF no return-path, DMARC `p=none` no domínio raiz) | Chamado por lote |
+
+O portão (`scripts/campaign_stats.py --portao <lote>`) é a peça que protege o
+domínio: ele lê a entrega de cada endereço na API do Resend e recusa o disparo se
+o lote já foi enviado, se o lote anterior não saiu, se o bounce duro chegou a 3%
+ou se houve **qualquer** reclamação de spam. Em 2026-07-29 ele barrou um envio de
+verdade, com o lote-8 fechando em 3,3%.
+
+**Limitação de idioma, hoje.** O produto só funciona em português: o prompt do
+LLM pede texto em português do Brasil, e `core/text.py` traz stopwords e léxico de
+sentimento brasileiros, usados por `dashboard.py` e `community.py`. Para um canal
+em inglês, "assuntos da live" listaria `the`/`you` e a reação do chat viria vazia.
+O campo `channels.language` (migração 0020) já guarda o idioma que a Helix
+reporta, mas ainda não muda comportamento nenhum: é a fase 1 de quatro. Por isso
+os 4.417 leads em inglês seguem parados na base, e o `qualify` só deixa português
+entrar na fila de envio.
+
 Resumo em uma frase: **DNS -> web -> api (login + registra EventSub) -> Twitch
 dispara `stream.online` -> capture (chat/viewers/audio) -> transcribe
 (audio->texto) -> analyze (texto->insights) -> api/web mostram o relatorio**,
