@@ -52,6 +52,22 @@ def test_assuntos_em_ingles_com_stopwords_portuguesas_devolvem_lixo():
     assert "bro" in palavras and "just" in palavras
 
 
+def test_emoji_pontua_igual_nos_dois_idiomas():
+    """Emoji nao tem idioma. Sem isso, o chat em ingles que responde em 🔥 e 💀
+    marca reacao neutra, e o grafico de sentimento sai vazio justamente no canal
+    que o convite foi buscar."""
+    assert sentimento("🔥", "en") == sentimento("🔥", "pt") > 0
+    assert sentimento("😡", "en") == sentimento("😡", "pt") < 0
+
+
+def test_coracao_pontua_apesar_do_seletor_de_variacao():
+    """O teclado manda ❤ seguido de U+FE0F. A chave tinha os dois codepoints, o
+    tokenizador separava, e nada casava: o coracao nunca pontuou em idioma
+    nenhum."""
+    assert tokenize("❤️") == ["❤"]
+    assert sentimento("❤️", "pt") == sentimento("❤️", "en") > 0
+
+
 def test_idioma_desconhecido_cai_em_portugues():
     """`resolve` normaliza qualquer tag BCP-47; login nunca deve quebrar a analise."""
     assert sentimento("que jogada incrivel", None) > 0.5
