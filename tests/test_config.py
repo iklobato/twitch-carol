@@ -13,8 +13,9 @@ def test_defaults() -> None:
     assert settings.whisper_model == "small"
     assert settings.whisper_compute_type == "int8"
     assert settings.llm_backend == "local"
-    assert settings.llm_max_input_tokens == 30000
-    assert settings.llm_max_output_tokens == 3000
+    # sized on measured spend: a 12h live needs ~69k input, see core/config.py
+    assert settings.llm_max_input_tokens == 90000
+    assert settings.llm_max_output_tokens == 15000
     assert settings.simulation is False
 
 
