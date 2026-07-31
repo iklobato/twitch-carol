@@ -114,8 +114,17 @@ LEXICON_PT: dict[str, float] = {
     "aff": -0.5,
     "credo": -0.6,
     "pior": -0.7,
+}
+
+# An emoji carries the same feeling in any language, so it is scored once and
+# merged into every lexicon. Kept apart from the word lists on purpose: two
+# copies would drift, and an English channel scored without these loses the
+# signal entirely (a chat that answers in 🔥 and 💀 reads as neutral).
+EMOJI_SCORES: dict[str, float] = {
     "😂": 0.6,
-    "❤️": 0.8,
+    # bare U+2764, without the U+FE0F variation selector the keyboard appends:
+    # the selector is not tokenized, so keying on the pair never matched
+    "❤": 0.8,
     "🔥": 0.7,
     "👏": 0.6,
     "😍": 0.9,
@@ -126,9 +135,9 @@ LEXICON_PT: dict[str, float] = {
     "💀": 0.3,
 }
 
-# Ingles: vocabulario de chat de Twitch, nao dicionario. Emote e risada ja sao
-# neutros (o LAUGH_PATTERN cobre kkk, haha, lol, lul, kekw), entao aqui entra o
-# que o chat em ingles escreve com palavra.
+# Ingles: vocabulario de chat de Twitch, nao dicionario. Risada ja e neutra (o
+# LAUGH_PATTERN cobre kkk, haha, lol, lul, kekw) e emoji vem de EMOJI_SCORES,
+# entao aqui entra so o que o chat em ingles escreve com palavra.
 LEXICON_EN: dict[str, float] = {
     "good": 0.5,
     "nice": 0.6,
@@ -189,13 +198,20 @@ LEXICON_EN: dict[str, float] = {
     "hate": -0.9,
 }
 
-# Idioma -> lexico de sentimento. Canal em ingles com o lexico de portugues
-# devolve reacao vazia, porque nenhuma palavra casa.
-LEXICON: dict[str, dict[str, float]] = {"pt": LEXICON_PT, "en": LEXICON_EN}
+# Idioma -> lexico de sentimento, cada um com os emojis por cima. Canal em
+# ingles com o lexico de portugues devolve reacao vazia, porque nenhuma palavra
+# casa.
+LEXICON: dict[str, dict[str, float]] = {
+    "pt": LEXICON_PT | EMOJI_SCORES,
+    "en": LEXICON_EN | EMOJI_SCORES,
+}
 LAUGH_PATTERN = re.compile(
     r"^(?:k{3,}|(?:ha){2,}h?|(?:rs){2,}|lol|lul|omegalul|kekw)$", re.IGNORECASE
 )
-TOKEN_PATTERN = re.compile(r"[0-9a-zà-öø-ÿ_]+|[\U0001F300-\U0001FAFF❤️]", re.IGNORECASE)
+# The heart lives outside the main emoji block, so it is listed on its own. The
+# U+FE0F variation selector that follows it in real messages is deliberately NOT
+# matchable: it would tokenize as its own meaningless token.
+TOKEN_PATTERN = re.compile(r"[0-9a-zà-öø-ÿ_]+|[\U0001F300-\U0001FAFF❤]", re.IGNORECASE)
 
 
 def tokenize(text: str) -> list[str]:
