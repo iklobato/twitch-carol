@@ -116,7 +116,9 @@ def prepara_pasta(apify: Apify, loja: str) -> Path:
     cache = apify.le(loja, "seguidores", [])
     if cache:
         escreve_csv(
-            pasta / "data/campaign/seguidores.csv", cache, ["login", "followers", "data"]
+            pasta / "data/campaign/seguidores.csv",
+            cache,
+            ["login", "followers", "data"],
         )
     # Sem este registro a colheita por login pagaria de novo, todo dia, por quem
     # nao tem email publico.
@@ -180,7 +182,10 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     # container morrer na qualificacao (a Twitch derrubou duas rodadas em
     # 2026-07-29), o dinheiro do Google ja esta salvo.
     apify.grava(loja, "candidatos", candidatos)
-    print(f"checkpoint: {len(candidatos)} candidatos salvos antes de qualificar", flush=True)
+    print(
+        f"checkpoint: {len(candidatos)} candidatos salvos antes de qualificar",
+        flush=True,
+    )
 
     idiomas = tuple(str(entrada.get("idiomas", "pt")).split(","))
     leads = pl.qualify(
@@ -221,6 +226,17 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     import campaign_stats as cs
     import send_campaign_batch as envio
 
+    # A fila guarda so o endereco, sem idioma, e a imagem carrega so o corpo em
+    # portugues. Ligar `idiomas` no ingles sem trazer o corpo junto mandaria o
+    # convite em portugues para quem nao le portugues, e isso volta como spam.
+    idiomas = str(entrada.get("idiomas", envio.DEFAULT_LANGUAGE)).split(",")
+    if idiomas != [envio.DEFAULT_LANGUAGE]:
+        print(
+            f"idiomas={','.join(idiomas)}, mas aqui so existe corpo em "
+            f"{envio.DEFAULT_LANGUAGE}. Nao envio."
+        )
+        return 1
+
     maximo = int(entrada.get("maximo_por_dia", 150))
     minimo = int(entrada.get("minimo_por_dia", 30))
     fila = [e.lower() for e in apify.le(loja, "fila", [])]
@@ -245,7 +261,8 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     if cs.gate(nome, cs.tally(os.environ["RESEND_API_KEY"], lotes), lotes):
         return 1
 
-    html = envio.body_for_api(Path(CORPO_HTML).read_text())
+    idioma = envio.DEFAULT_LANGUAGE
+    corpos = {idioma: envio.body_for_api(Path(CORPO_HTML).read_text())}
     enviados: list[str] = []
     with httpx.Client(
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, timeout=60
@@ -253,7 +270,8 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
         for inicio in range(0, len(escolhidos), POR_CHAMADA):
             bloco = escolhidos[inicio : inicio + POR_CHAMADA]
             resposta = cliente.post(
-                envio.RESEND_BATCH_URL, json=envio.build_payloads(bloco, html)
+                envio.RESEND_BATCH_URL,
+                json=envio.build_payloads([(e, idioma) for e in bloco], corpos),
             )
             resposta.raise_for_status()
             enviados += bloco
