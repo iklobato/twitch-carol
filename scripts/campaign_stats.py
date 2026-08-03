@@ -71,7 +71,10 @@ def load_batches() -> dict[str, set[str]]:
     paths = sorted(
         BATCH_DIR.glob("lote-*.csv"), key=lambda path: batch_number(path.stem)
     )
-    return {path.stem: {e.lower() for e in read_batch(path.stem)} for path in paths}
+    return {
+        path.stem: {email.lower() for email, _ in read_batch(path.stem)}
+        for path in paths
+    }
 
 
 def batch_of(recipient: str, batches: dict[str, set[str]]) -> str:

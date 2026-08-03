@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from campaign_stats import gate  # noqa: E402
+from campaign_stats import gate, load_batches  # noqa: E402
 
 BATCHES = {f"lote-{n}": {f"pessoa{n}@exemplo.com"} for n in range(6, 11)}
 
@@ -98,3 +98,20 @@ def test_bounce_do_ingles_nao_trava_a_trilha_portuguesa():
     enviados = events(**{"lote-10": {"delivered": 121}, "lote-en-1": ruim})
 
     assert gate("lote-11", enviados, TRILHAS) == 0
+
+
+def test_load_batches_unpacks_the_language_column(tmp_path, monkeypatch):
+    """`read_batch` returns (address, language) pairs since the English track
+    landed. Keeping the raw tuples makes every batch lookup miss, so the gate
+    stops telling a batch that went out from one that never did, and it reads
+    every batch as unsent.
+    """
+    (tmp_path / "lote-1.csv").write_text("email,language\nAlice@Exemplo.com,pt\n")
+    (tmp_path / "lote-2.csv").write_text("email\nbob@exemplo.com\n")  # pre-language
+    monkeypatch.setattr("campaign_stats.BATCH_DIR", tmp_path)
+    monkeypatch.setattr("send_campaign_batch.BATCH_DIR", tmp_path)
+
+    assert load_batches() == {
+        "lote-1": {"alice@exemplo.com"},
+        "lote-2": {"bob@exemplo.com"},
+    }
