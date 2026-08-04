@@ -28,7 +28,7 @@ workers/transcribe VAD + Whisper (OpenRouter em prod, faster-whisper em dev)
 workers/analyze    picos por SQL + insights via LLM (OpenRouter/llama.cpp), evidência validada
 core               modelos, config, filas, crypto, cliente Twitch, métricas, recordes
 scripts            simulador de live, seed, benchmark, backup, backfill, prospecção e envio da campanha
-deploy             Dockerfile, docker compose (dev + prod), Caddyfile, campanha/ (timers no droplet)
+deploy             Dockerfile, docker compose (dev + prod), Caddyfile, campanha/ (timers do droplet, histórico)
 .actor             actor do Apify: colhe leads todo dia e envia o convite (fora do produto)
 migrations         alembic; o job migrate roda `upgrade head` antes de cada deploy
 ```
@@ -233,7 +233,7 @@ semana estouraria o mês em uma rodada, porque a colheita é diária.
 python scripts/prospect_leads.py sweep --idiomas pt,en     # quem está ao vivo agora (grátis)
 APIFY_TOKEN=... python scripts/prospect_leads.py harvest --skip 798   # Google, pago por busca
 python scripts/prospect_leads.py qualify --min-seguidores 500 --max-seguidores 100000000
-python scripts/prospect_leads.py batches --start 15        # divide nos lotes da rampa
+python scripts/prospect_leads.py batches --start 11        # divide nos lotes da rampa
 ```
 
 `sweep` e `harvest` só juntam candidatos em `data/campaign/candidates.csv`;
@@ -245,10 +245,17 @@ pedido, email de domínio que responde MX, e que ainda não está em nenhum
 `lote-*.csv`. Sai em `data/campaign/leads.csv`, com a coluna `language`.
 
 **O `--idiomas` do `qualify` continua `pt` por padrão, de propósito.** A coleta
-varre inglês porque é grátis, mas o convite só existe em português, e mandar
-português para canal em inglês vira reclamação de spam, que é o único número que
-o portão trata como fatal. Medido em 2026-07-29: 4.417 leads em inglês contra 198
-em português esperando na base.
+varre inglês porque é grátis, mas mandar português para canal em inglês vira
+reclamação de spam, que é o único número que o portão trata como fatal. Medido em
+2026-07-29: 4.417 leads em inglês contra 198 em português esperando na base.
+
+O corpo em inglês já existe (`ai-generated-messages/broadcast-body-en.html`) e o
+`send_campaign_batch.py` sabe escolher o corpo por idioma, mas **a trilha inglesa
+continua fechada nas duas pontas**: a imagem do actor carrega só o corpo em
+português, e ele recusa a entrada que pedir outro idioma em vez de mandar o texto
+errado. Antes de abrir, falta a fase que importa, o léxico e as stopwords por
+idioma em `core/text.py`: sem isso o convite promete uma análise que devolve
+`the`/`you` como assuntos da live e reação de chat vazia.
 
 Duas coisas gravadas em tempo de execução para não perder trabalho quando algo
 falha no meio:
@@ -282,32 +289,48 @@ O `campaign_stats.py` é o portão: lê a entrega de cada endereço na API do Re
 e cruza com os CSVs dos lotes. Não mostra abertura porque o rastreamento está
 desligado no domínio de propósito (o porquê está no doc da campanha).
 
-Os lotes 8 a 10 ficam agendados no droplet `lekture-sfu` (systemd timer, um por
-dia às 10h de São Paulo), para o envio não depender do notebook ligado:
+**O envio roda só no actor do Apify.** O droplet `lekture-sfu`, que disparava os
+lotes por systemd timer, foi destruído em 2026-08-03 depois de chegar ao lote-10.
+`deploy/campanha/` continua no repo como histórico, mas não há mais droplet para
+instalar: rodar `instalar.sh` hoje não serve para nada.
 
-```bash
-RESEND_API_KEY=... ./deploy/campanha/instalar.sh
-```
+O actor tem dois modos e duas schedules: `colher` todo dia às 03h (sweep grátis +
+busca paga dentro do teto) e `enviar` de segunda a sexta às 10h, até
+`maximo_por_dia` da entrada. O envio tem três freios: não manda antes de
+`comecar_em`, não manda com fila abaixo de 30, e não manda se o portão barrar. Ele
+grava o progresso a cada bloco de 100, então container que morre no meio não
+reenvia para quem já recebeu.
 
-O systemd roda `campaign_stats.py --portao <lote>` antes de cada disparo e não
-envia se o portão barrar (lote já enviado, lote anterior parado, bounce ≥ 3% ou
-qualquer spam). Se barrar, chega um email avisando.
+O portão confere entrega, nunca tamanho de lote. Quem segura a rampa (no máximo
++33% por degrau) é o `maximo_por_dia`, e ele tem de sair do último lote que saiu
+**de verdade**, não do que o plano previa.
 
-**Depois de 12/08 a campanha passa para o actor**, que tem dois modos e duas
-schedules: `colher` todo dia às 03h (sweep grátis + busca paga dentro do teto) e
-`enviar` de segunda a sexta às 10h, até 300 por dia (o maior degrau que a rampa
-prova em 06/08; o teto é só limite superior, porque o portão roda antes de cada
-disparo). O envio tem três freios:
-não manda antes de `comecar_em`, não manda com fila abaixo de 30, e não manda se
-o portão barrar. Ele grava o progresso a cada bloco de 100, então container que
-morre no meio não reenvia para quem já recebeu.
+Duas armadilhas do Apify que custam um envio inteiro:
+
+- **Variável de ambiente é assada na imagem.** Trocar um segredo (por exemplo
+  girar a `RESEND_API_KEY`) não muda nada para builds já feitos: é preciso
+  reconstruir o actor depois. Sem isso o container segue com a chave velha, e a
+  API do Resend responde `400 API key is invalid`, não 401.
+- **Para conferir a credencial sem mandar email**, aponte `proximo_lote` para um
+  lote já enviado e rode: o portão consulta o Resend antes de qualquer disparo, e
+  um run que chega em `PORTAO BLOQUEADO` já provou que a chave funciona.
+
+O estado do actor (fila, contatados, histórico) vive no Key-Value Store, e a
+fonte da verdade sobre o que saiu é sempre a API do Resend, nunca o histórico
+gravado. Foi assim que os 657 contatos fantasmas de 03/08 apareceram: o histórico
+tinha sido semeado com lotes que o droplet nunca chegou a enviar.
 
 Expectativa realista, medida em 2026-07-29: um sweep completo rende 44 a 80 leads
 e o Google já está seco para português, então a oferta de streamer br novo com
-email público fica entre 10 e 30 por dia. O teto de 300 quase nunca vai ser
-atingido; o normal vai ser disparar 30 a 60 a cada um ou dois dias. A lista em
-português acaba por volta de 13/08, e o que existe depois disso é o que o sweep
-diário trouxer.
+email público fica entre 10 e 30 por dia. O teto quase nunca vai ser atingido; o
+normal vai ser disparar 30 a 60 a cada um ou dois dias.
+
+Situação em 2026-08-03: fila com 946 e `maximo_por_dia` em 160, recalculado a
+partir do lote-10 (121 enviados) porque os lotes 11 a 14 nunca saíram. Nesse
+ritmo a fila em português esvazia por volta de 12/08. O que repõe é o sweep
+diário, e **a busca paga está parada até 24/08**: o crédito do mês foi quase todo
+consumido num pico em 29/07, então o freio de gasto do actor libera centavos por
+dia e a colheita roda só na parte grátis.
 
 Rampa e portões (bounce < 3%, zero spam, cadastro/resposta) em
 `ai-generated-messages/2026-07-24-broadcast-beta-streamers.md`, junto do texto do

@@ -1,17 +1,18 @@
 # Convite beta para streamers
 
 Comecou em 2026-07-24 como um broadcast de 220 contatos em 5 lotes. Estado em
-2026-07-30:
+2026-08-03:
 
 | | |
 |---|---|
 | Remetente | `Henrique <henrique@send.streamintel.cc>`, reply-to `tiktachack@gmail.com` |
 | Plano do Resend | Pro (50 mil/mes, sem teto diario). Julho fechou com 427 enviados |
-| Emails coletados na base | **7.657** unicos (eram 990 em 2026-07-29 de manha) |
-| Ja contatados | 741 (lotes 1 a 9) |
-| Na fila | 1.047 agendados (lotes 10 a 14) + 198 leads pt novos |
+| Emails coletados na base | **139.567** candidatos, 10.736 com email e nao contatados |
+| Contatados de verdade | **541** (lotes 1, 6, 7, 8, 9 e 10), conferido na API do Resend |
+| Na fila | 946 |
 | Parados esperando traducao | **4.417 leads em ingles** |
 | Reclamacao de spam desde o inicio | **zero** |
+| Onde roda | so o actor do Apify; o droplet foi destruido em 2026-08-03 |
 
 Sem merge tags: o lote so tem o email, nao tem nome nem canal.
 
@@ -93,25 +94,39 @@ seguidores, nao-parceiros, nunca contatados). Rampa de 5 dias, um lote por dia:
 | lote-7 | 80 | enviado 2026-07-24 23:00 (BRT) |
 | lote-8 | 120 | enviado 2026-07-28 10h BRT pelo timer. 115 entregues, 4 bounce, 1 suprimido = 3,3% |
 | lote-9 | 150 | enviado 2026-07-29 10h20 BRT **na mao**. 146 entregues, 4 bounce = 2,7% |
-| lote-10 | 121 | timer armado para 2026-07-30 10h BRT, portao ja liberado |
+| lote-10 | 121 | enviado 2026-07-30 10h BRT pelo timer. 119 entregues, 2 bounce = 1,7%. **Ultimo lote que saiu** |
 
-## Terceira leva: a rampa dos 926 (agosto)
+## Terceira leva: a rampa que nao aconteceu (agosto)
 
-Em 2026-07-29 a base saltou de 990 para 7.615 emails coletados, e sobraram 926
-brasileiros nunca contatados. Eles saem em quatro degraus, terca a quinta as 10h,
-cada um com o portao medindo o anterior:
+O plano era quatro degraus terca a quinta, cada um com o portao medindo o
+anterior. **Nenhum deles saiu.** O droplet foi destruido em 2026-08-03, antes do
+primeiro:
 
-| Lote | Emails | Timer | Salto |
+| Lote | Emails | Plano | O que houve |
 |---|---|---|---|
-| lote-11 | 200 | ter 2026-08-04 | +32% sobre os 151 do lote-9 |
-| lote-12 | 250 | qua 2026-08-05 | +25% |
-| lote-13 | 300 | qui 2026-08-06 | +20% |
-| lote-14 | 176 | ter 2026-08-11 | resto |
+| lote-11 | 200 | ter 2026-08-04 | nao saiu |
+| lote-12 | 250 | qua 2026-08-05 | nao saiu |
+| lote-13 | 300 | qui 2026-08-06 | nao saiu |
+| lote-14 | 176 | ter 2026-08-11 | nao saiu |
 
-Nenhum degrau sobe mais de um terco. Pular de 150 para 500 num dominio de duas
-semanas e o caminho curto para a caixa de spam, e ai os 7.615 emails coletados
-viram lixo. O plano do Resend e Pro (50 mil/mes, sem teto diario), entao o limite
-aqui nao e cota, e reputacao.
+O caro nao foi o atraso, foi o silencio: o historico do actor tinha sido semeado
+em 2026-07-29 ja contando esses quatro lotes como enviados, para o handover
+funcionar. Como o droplet nao cumpriu a parte dele, **657 pessoas ficaram marcadas
+como contatadas sem nunca ter recebido nada** (457 dos lotes 11 a 14, e 200 que
+eram os lotes 2 a 5 inteiros, orfaos desde a troca de broadcast por envio via
+API). Nenhuma delas voltaria a ser escolhida, porque `already_contacted()` as
+exclui para sempre.
+
+Corrigido em 2026-08-03 refazendo o estado com a API do Resend como fonte da
+verdade: `contatados` de 1.198 para 541, fila de 289 para 946, historico so com o
+`lote-10`, `proximo_lote` de 15 para 11. **Nunca semear estado com trabalho que
+ainda nao aconteceu.**
+
+A rampa recomeca de onde parou de verdade: 121 (lote-10) -> 160, nao os 300 que o
+plano ja supunha conquistados. Nenhum degrau sobe mais de um terco. Pular de 150
+para 500 num dominio de duas semanas e o caminho curto para a caixa de spam. O
+plano do Resend e Pro (50 mil/mes, sem teto diario), entao o limite aqui nao e
+cota, e reputacao.
 
 **Autenticacao conferida em 2026-07-29** (e por isso que a entrega esta em 96%):
 DKIM publicado em `resend._domainkey.send.streamintel.cc`, SPF em
@@ -119,15 +134,27 @@ DKIM publicado em `resend._domainkey.send.streamintel.cc`, SPF em
 com `p=none` e relatorio chegando no Gmail, e o return-path apontando para o
 feedback do SES.
 
-## Depois de 12/08: o actor assume
+## Desde 03/08: so o actor
 
-O droplet termina no lote-14 e e apagado. Dali em diante quem manda e o actor no
-Apify, com duas schedules: colheita todo dia 03h (que qualifica e empilha na fila
-sozinha, sem ninguem montar lote) e envio de segunda a sexta as 10h, ate **300 por
-dia**, que e o maior degrau provado pela rampa (o lote-13, de 06/08).
+O droplet foi destruido no meio da rampa, entao o handover deixou de ser uma data
+e virou o unico caminho. Quem manda e o actor no Apify, com duas schedules:
+colheita todo dia 03h (que qualifica e empilha na fila sozinha, sem ninguem montar
+lote) e envio de segunda a sexta as 10h, ate `maximo_por_dia`, hoje **160**,
+recalculado sobre o lote-10.
 
-O teto de 300 e seguro por construcao: o portao roda antes de cada disparo, entao
-se a rampa nao aguentar 300 o envio nao sai, independente do teto configurado.
+O teto e seguro por construcao: o portao roda antes de cada disparo, entao se a
+rampa nao aguentar o envio nao sai, independente do teto configurado. Mas o portao
+mede entrega, nunca tamanho: quem impede o salto de 121 para 300 e o teto, nao
+ele.
+
+Duas armadilhas do Apify, medidas em 2026-08-03 girando a chave do Resend:
+
+- Variavel de ambiente e **assada na imagem**. Trocar o segredo nao muda nada para
+  builds ja feitos; sem reconstruir o actor, o container segue com a chave velha e
+  o Resend responde `400 API key is invalid` (nao 401).
+- Para conferir a credencial **sem mandar email**, aponte `proximo_lote` para um
+  lote ja enviado: o portao consulta o Resend antes de qualquer disparo, entao um
+  run que chega em `PORTAO BLOQUEADO` ja provou que a chave funciona.
 
 **Idioma e a trava principal da integridade.** A coleta varre portugues e ingles
 (`sweep --idiomas pt,en`, gratuito), mas o `qualify` so deixa portugues entrar na
@@ -137,12 +164,17 @@ portugues gera cadastro que desiste na primeira tela, e reclamacao de spam de qu
 se sentiu enganado. Reclamacao de spam e o unico numero que o portao trata como
 fatal.
 
-**Limpeza agendada.** Em 2026-08-12 03h um timer (`campanha-limpeza.timer`, script
-em `/usr/local/sbin/campanha-limpeza.sh`, fonte em `deploy/campanha/limpeza.sh`)
-apaga `/opt/streamintel-campanha` e `/etc/streamintel-campanha.env`, tira os dados
-de terceiros do droplet e desliga os timers dos lotes. Ele tem trava: se o
-`lote-14` nao tiver saido (portao barrou algum degrau no caminho), ele **nao apaga
-nada**, sai com erro e manda email. Testado de verdade em 2026-07-29: recusou.
+**Limpeza: resolvida por acidente.** Havia um timer para 2026-08-12 03h
+(`campanha-limpeza.timer`, fonte em `deploy/campanha/limpeza.sh`) que apagaria
+`/opt/streamintel-campanha` e `/etc/streamintel-campanha.env`, com trava para nao
+apagar nada se o `lote-14` nao tivesse saido. Ele nunca chegou a rodar: o droplet
+foi destruido antes, e os dados de terceiros e a chave foram junto com o disco. O
+resultado certo veio pelo caminho errado, e a trava (testada de verdade em
+2026-07-29, quando recusou) nunca precisou agir.
+
+Detalhe que vale para qualquer droplet: o IP `138.197.100.60` foi reciclado para
+outro cliente da DigitalOcean em poucas horas, e a chave de host SSH mudou. Nao
+faca ssh no IP de um droplet morto.
 
 **Depois do ultimo lote**, dois acertos de integridade que valem mais que a
 campanha: subir o DMARC de `p=none` para `quarantine` (hoje qualquer um pode
@@ -150,6 +182,10 @@ falsificar o dominio, e isso nao afeta a entrega do email proprio, que ja esta
 alinhado), e manter volume constante em vez de silencio, porque dominio que manda
 300 por dia e desaparece por semanas entrega pior do que um que manda pouco todo
 dia. O `weekly_digest.py`, parado no repo, serve para isso.
+
+Deixou de ser teoria: com a morte do droplet o dominio ficou **cinco dias em
+silencio** (30/07 a 04/08). Nao ha como medir o estrago sozinho, mas e mais um
+motivo para o lote-11 recomecar em 160 e nao em 300.
 
 O lote-9 saiu na mao porque o portao barrou o disparo automatico: o lote-8 fechou
 em 3,3% de bounce, acima do limite de 3%. Foi excecao consciente, com o portao
@@ -206,32 +242,38 @@ de um pedido de "sair" se perder num atraso da Cloudflare.
 
 Lotes 6 e 7 sairam antes desta correcao, com o mailto do Gmail visivel no corpo.
 
-## Agendamento no droplet (lotes 10 a 14)
+## ~~Agendamento no droplet~~ (historico, o droplet nao existe mais)
 
-Os lotes ficam agendados no droplet `lekture-sfu`, que ja roda trabalho agendado
-com systemd. Assim o envio nao depende do notebook ligado.
+Ate 2026-08-03 os lotes ficavam agendados no droplet `lekture-sfu` por systemd,
+instalados com `./deploy/campanha/instalar.sh`. **O droplet foi destruido e os
+comandos abaixo nao servem mais**; o registro fica pelo desenho, que continua
+valendo no actor.
 
-`./deploy/campanha/instalar.sh` copia o sender, o portao, o corpo do email e os
-CSVs para `/opt/streamintel-campanha`, poe a chave em
-`/etc/streamintel-campanha.env` (600, so root le) e cria um timer por lote. A
-lista de datas fica no proprio script (`AGENDA`), e o CSV do lote anterior vai
-junto mesmo ja tendo saido, porque sem ele o portao nao tem o que medir.
+O que sobreviveu conceitualmente: antes de cada disparo roda
+`campaign_stats.py --portao <lote>`, e o envio so acontece se ele sair com 0. O
+portao barra em quatro casos: o lote ja foi enviado (disparo repetido nao manda o
+mesmo email de novo), o lote anterior nao saiu (a fila nao pula), bounce do
+anterior em 3% ou mais, ou qualquer reclamacao de spam.
 
-O pre-voo do instalador aborta pelo dry-run, que prova codigo, corpo e lista de
-pe. O portao ali e so informativo: ele barra de proposito enquanto o lote anterior
-nao saiu, e isso nao e motivo para nao agendar.
+O que se perdeu na mudanca e vale recriar: o `OnFailure` do systemd mandava email
+quando o portao barrava. No Apify isso nao existe por padrao, e um run que
+**sucede sem enviar** (fila abaixo do minimo, ou portao barrando) nao avisa
+ninguem. Conferir com `campaign_stats.py` depois do horario continua sendo a
+unica forma de saber.
 
-Antes de cada disparo o systemd roda `campaign_stats.py --portao <lote>`, e o
-envio so acontece se ele sair com 0. O portao barra em quatro casos: o lote ja
-foi enviado (timer disparado duas vezes nao manda o mesmo email de novo), o lote
-anterior nao saiu (a fila nao pula), bounce do anterior em 3% ou mais, ou
-qualquer reclamacao de spam. Quando barra, um `OnFailure` manda email avisando.
+`Persistent=false` era de proposito: droplet fora do ar as 10h significava lote
+nao enviado, em vez de disparo de madrugada sem ninguem olhando. O actor herda o
+mesmo comportamento, porque schedule perdida no Apify tambem nao reexecuta.
 
-`Persistent=false` de proposito: se o droplet estiver fora do ar as 10h, o lote
-nao sai, em vez de sair de madrugada quando ninguem esta olhando.
+## Como acompanhar hoje
 
-Cancelar: `ssh lekture-sfu systemctl disable --now campanha@lote-9.timer`.
-Ver o que aconteceu: `ssh lekture-sfu journalctl -u campanha@lote-8 -n 50`.
+```bash
+set -a && . ./.env && set +a && python scripts/campaign_stats.py
+```
+
+`lote-N: X enviados` com bounce e spam por lote. Se o lote do dia aparecer como
+`nao enviado`, o portao barrou ou o run falhou, e o log do run no Apify diz qual
+dos dois.
 
 ## O que trava os 4.417 leads em ingles
 

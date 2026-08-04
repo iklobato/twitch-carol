@@ -101,20 +101,32 @@ flowchart TB
 ## Fora do caminho do produto: a campanha de convite
 
 Nada disso participa da captura nem do dashboard, mas manda email de verdade em
-nome do domínio, então tem dono e tem freio. Estado em 2026-07-30:
+nome do domínio, então tem dono e tem freio. Estado em 2026-08-03:
 
 | # | Componente | Onde roda | Responsabilidade | Início / Fim |
 |---|---|---|---|---|
-| 16 | **Timers da campanha** | Droplet `lekture-sfu` (compartilhado com outro projeto) | Dispara os lotes 10 a 14 (1.047 emails) por systemd timer, terça a quinta 10h BRT, cada um passando pelo portão antes | Ativos até 2026-08-11 |
-| 17 | **Limpeza da campanha** | Mesmo droplet | Apaga `/opt/streamintel-campanha` e a chave do Resend depois do último lote. Trava: se o lote-14 não tiver saído, **não apaga** e manda email | Dispara 2026-08-12 03h |
-| 18 | **Actor `streamintel-campanha`** | Apify | Assume a campanha depois do droplet. Modo `colher` (todo dia 03h): sweep na Twitch + busca no Google dentro do teto de gasto, qualifica na Helix, empilha na fila. Modo `enviar` (seg a sex 10h): tira até 300 da fila, passa pelo portão, manda pelo Resend | Colheita ativa; envio travado até 2026-08-12 |
-| 19 | **Resend** | Externo (SaaS) | Entrega o convite pelo subdomínio `send.streamintel.cc` (DKIM + SPF no return-path, DMARC `p=none` no domínio raiz) | Chamado por lote |
+| 16 | **Actor `streamintel-campanha`** | Apify (único lugar que envia) | Modo `colher` (todo dia 03h): sweep na Twitch + busca no Google dentro do teto de gasto, qualifica na Helix, empilha na fila. Modo `enviar` (seg a sex 10h): tira até `maximo_por_dia` da fila, passa pelo portão, manda pelo Resend | Colheita e envio ativos |
+| 17 | **Resend** | Externo (SaaS) | Entrega o convite pelo subdomínio `send.streamintel.cc` (DKIM + SPF no return-path, DMARC `p=none` no domínio raiz). O mesmo subdomínio tem MX próprio, senão a resposta de quem ignora o `Reply-To` volta | Chamado por lote |
+| 18 | **~~Timers da campanha~~** | Droplet `lekture-sfu` (destruído) | Disparavam os lotes por systemd timer. Chegaram ao lote-10 | Mortos em 2026-08-03 com o droplet |
+| 19 | **~~Limpeza da campanha~~** | Mesmo droplet | Apagaria os dados e a chave depois do último lote | Nunca rodou; o disco foi destruído junto |
 
 O portão (`scripts/campaign_stats.py --portao <lote>`) é a peça que protege o
 domínio: ele lê a entrega de cada endereço na API do Resend e recusa o disparo se
 o lote já foi enviado, se o lote anterior não saiu, se o bounce duro chegou a 3%
 ou se houve **qualquer** reclamação de spam. Em 2026-07-29 ele barrou um envio de
-verdade, com o lote-8 fechando em 3,3%.
+verdade, com o lote-8 fechando em 3,3%. Ele falha fechado: se a API do Resend não
+responder, a exceção sobe e o envio não acontece.
+
+O portão mede entrega, não tamanho. Quem segura a rampa (no máximo +33% por
+degrau) é o `maximo_por_dia` da entrada do agendamento.
+
+**O droplet morreu no meio da rampa (2026-08-03).** Ele foi destruído sem ter
+enviado os lotes 11 a 14, mas o histórico do actor já tinha sido semeado contando
+esses lotes como enviados. 657 pessoas ficaram marcadas como contatadas sem nunca
+ter recebido nada, e por isso invisíveis para sempre. O estado foi refeito usando
+a API do Resend como fonte da verdade, e a lição ficou: **nunca semear estado com
+trabalho que ainda não aconteceu**, porque uma fila que acredita ter enviado nunca
+tenta de novo, e a perda é silenciosa.
 
 **Limitação de idioma, hoje.** O produto só funciona em português: o prompt do
 LLM pede texto em português do Brasil, e `core/text.py` traz stopwords e léxico de
