@@ -294,19 +294,31 @@ def process_stream(
 
 
 def _remember_spoken_language(db: Session, channel_id: int, heard: str | None) -> None:
-    """First detection wins. Whisper reports per chunk, and a noisy chunk can
-    come back as something else entirely; letting every chunk rewrite the
-    channel would make the chat lexicon flip between lives for no reason."""
+    """A language the streamer declared is never overwritten: they know what
+    they speak, and Whisper reports per chunk, so a noisy one would flip the
+    chat lexicon between lives. A disagreement is worth a log line though, since
+    it is the only evidence available of which source is actually right.
+
+    Detection still fills the field for a channel that has not declared one,
+    which is what keeps the analysis working before onboarding is answered."""
     if not heard:
         return
     channel = db.get(Channel, channel_id)
-    if channel is None or channel.spoken_language:
+    if channel is None:
         return
-    channel.spoken_language = resolve(heard)
+    detected = resolve(heard)
+    if channel.spoken_language:
+        if channel.spoken_language != detected:
+            logger.warning(
+                "spoken language disagrees: channel says %s, audio sounds like %s",
+                channel.spoken_language,
+                detected,
+                extra={"channel_id": channel_id},
+            )
+        return
+    channel.spoken_language = detected
     logger.info(
-        "spoken language detected: %s",
-        channel.spoken_language,
-        extra={"channel_id": channel_id},
+        "spoken language detected: %s", detected, extra={"channel_id": channel_id}
     )
 
 

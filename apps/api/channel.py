@@ -2,9 +2,9 @@
 best time to go live, growth, and recurring topics. All numbers from SQL."""
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import Float, func, select
 
@@ -18,6 +18,7 @@ from core.finance import (
     event_contributor,
     event_usd,
 )
+from core.i18n import SUPPORTED_LANGUAGES
 from core.models import (
     BitsLeader,
     ChannelRecommendation,
@@ -812,3 +813,27 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         subscribers=_subscribers(db, channel.id, ready_ids),
         recommendations=_recommendations(db, channel.id),
     )
+
+
+class OnboardingIn(BaseModel):
+    """What the streamer tells us on the way in. Only the spoken language for
+    now: it is the one thing the product cannot infer without being wrong
+    sometimes, and being wrong here means transcribing a language phonetically
+    into another one."""
+
+    stream_language: str
+
+
+@router.post("/onboarding", status_code=204)
+def complete_onboarding(
+    body: OnboardingIn, channel: CurrentChannel, db: DbSession
+) -> Response:
+    if body.stream_language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"stream_language must be one of {SUPPORTED_LANGUAGES}",
+        )
+    channel.spoken_language = body.stream_language
+    channel.onboarded_at = datetime.now(UTC)
+    db.commit()
+    return Response(status_code=204)

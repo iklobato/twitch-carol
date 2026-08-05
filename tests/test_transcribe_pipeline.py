@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
@@ -155,3 +156,24 @@ def test_a_chunk_with_no_speech_leaves_the_language_alone(db) -> None:
     _remember_spoken_language(db, channel.id, None)
 
     assert channel.spoken_language is None
+
+
+def test_a_declared_language_is_never_overwritten(db, caplog) -> None:
+    """The streamer said what they speak on the way in. Whisper hearing
+    otherwise on one noisy chunk is not grounds to overrule them, but it is
+    worth saying out loud."""
+    channel = Channel(
+        twitch_user_id=3,
+        login="sim3",
+        display_name="Sim",
+        language="en",
+        spoken_language="pt",
+    )
+    db.add(channel)
+    db.flush()
+
+    with caplog.at_level(logging.WARNING):
+        _remember_spoken_language(db, channel.id, "en")
+
+    assert channel.spoken_language == "pt"
+    assert "disagrees" in caplog.text

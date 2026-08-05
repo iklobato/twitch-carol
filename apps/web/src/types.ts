@@ -6,6 +6,8 @@ export type Me = {
   is_admin: boolean;
   /** BCP-47 tag from channels.language; decides the whole screen's language. */
   language: string;
+  /** True until the streamer has declared what language they stream in. */
+  needs_onboarding: boolean;
   impersonating: { as_login: string; admin_login: string } | null;
 };
 
