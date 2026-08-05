@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { setLang, t } from "./i18n";
+import Onboarding from "./views/Onboarding";
 import { useRoute } from "./router";
 import ChannelView from "./views/ChannelView";
 import FinanceView from "./views/FinanceView";
@@ -116,6 +117,13 @@ export default function App() {
   }
   if (!me) {
     return <Landing />;
+  }
+  // A gate, not a suggestion: every screen below reads the chat and the speech
+  // in a language this channel has not declared yet.
+  if (me.needs_onboarding) {
+    return (
+      <Onboarding onDone={() => setMe({ ...me, needs_onboarding: false })} />
+    );
   }
 
   return (

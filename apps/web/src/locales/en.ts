@@ -3,6 +3,15 @@
 // `{name}` placeholders are filled by t(key, params).
 
 export default {
+  // onboarding
+  "onboarding.title": "One thing before we start",
+  "onboarding.why":
+    "We read your chat and your speech in the language you stream in. Getting it wrong turns your transcript into noise, so we ask instead of guessing.",
+  "onboarding.language.label": "What language do you stream in?",
+  "onboarding.submit": "Start",
+  "onboarding.saving": "Saving...",
+  "onboarding.failed": "Could not save that. Try again.",
+
   // shell
   "app.loading": "Loading...",
   "app.search.placeholder": "Search chat and speech...",

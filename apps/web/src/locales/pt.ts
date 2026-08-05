@@ -4,6 +4,15 @@
 import en from "./en";
 
 const pt: Record<keyof typeof en, string> = {
+  // onboarding
+  "onboarding.title": "Uma coisa antes de come\u00e7ar",
+  "onboarding.why":
+    "A gente l\u00ea seu chat e sua fala no idioma em que voc\u00ea transmite. Errar isso transforma sua transcri\u00e7\u00e3o em ru\u00eddo, ent\u00e3o preferimos perguntar a adivinhar.",
+  "onboarding.language.label": "Em qual idioma voc\u00ea transmite?",
+  "onboarding.submit": "Come\u00e7ar",
+  "onboarding.saving": "Salvando...",
+  "onboarding.failed": "N\u00e3o deu para salvar. Tente de novo.",
+
   // shell
   "app.loading": "Carregando...",
   "app.search.placeholder": "Buscar no chat e na fala...",

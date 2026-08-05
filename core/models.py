@@ -89,10 +89,15 @@ class Channel(Base):
     # sign-up. NOT the language spoken on the channel: Twitch's
     # broadcaster_language says "en" for plenty of Brazilian channels.
     language: Mapped[str] = mapped_column(String(8), default="pt")
-    # What the streamer actually speaks, measured by Whisper on the first
-    # transcription instead of guessed. Drives the chat stopwords and sentiment
-    # lexicon, so a Portuguese live signed up in English still reads correctly.
+    # What the streamer actually speaks: declared by them on the onboarding
+    # screen, with Whisper's detection as a fallback and a cross-check. Drives
+    # the chat stopwords and sentiment lexicon, so a Portuguese live on an
+    # English product still reads correctly.
     spoken_language: Mapped[str | None] = mapped_column(String(8))
+    # Null until the streamer has answered the onboarding screen. Kept apart
+    # from spoken_language because null there means "not detected yet", which
+    # is a different thing from "not asked yet".
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # StreamElements connector (external tips). Legacy manual path stores the
     # JWT; the OAuth "Connect" flow stores access/refresh tokens instead.
     streamelements_account_id: Mapped[str | None] = mapped_column(String(64))
