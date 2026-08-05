@@ -358,10 +358,10 @@ def _summarize_blocks(
         context = _window_context(db, stream, start, end, BLOCK_CHAT_SAMPLE)
         fitted = budget.fit_input(context.text, BLOCK_PROMPT_INPUT_CAP)
         previous = (
-            f"Resumo do que aconteceu antes: {summaries[-1]}\n" if summaries else ""
+            f"Summary of what happened before: {summaries[-1]}\n" if summaries else ""
         )
         prompt = (
-            f"{previous}Bloco de {start:%H:%M} a {end:%H:%M} (UTC) de uma live na Twitch.\n"
+            f"{previous}Block from {start:%H:%M} to {end:%H:%M} (UTC) of a Twitch live.\n"
             f"{fitted}\nSummarize this block in at most 3 sentences. "
             + _json_instruction(language)
         )
@@ -411,7 +411,7 @@ def _final_summary(
         "\n".join(f"- {s}" for s in block_summaries), TOPICS_PROMPT_INPUT_CAP
     )
     prompt = (
-        f"Resumos por bloco de uma live na Twitch, em ordem:\n{joined}\n{context.text}\n"
+        f"Block-by-block summaries of a Twitch live, in order:\n{joined}\n{context.text}\n"
         f"Write the overall summary of the live in one paragraph. "
         + _json_instruction(language)
     )
@@ -446,7 +446,7 @@ def _rank_topics(
         "\n".join(f"- {s}" for s in block_summaries), TOPICS_PROMPT_INPUT_CAP
     )
     prompt = (
-        f"Resumos por bloco de uma live na Twitch:\n{joined}\n{context.text}\n"
+        f"Block-by-block summaries of a Twitch live:\n{joined}\n{context.text}\n"
         "Identify the main topics of the live, from most to least talked about. "
         'Reply with valid JSON ONLY: {"topics": [{"name": "<topic in a few words>", '
         f'"description": "<1 sentence written in {language_name(language)}>", '
