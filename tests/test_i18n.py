@@ -8,7 +8,7 @@ Portuguese facts is a visible bug, not a cosmetic one.
 import pytest
 
 from core.follower_intel import build_follower_facts
-from core.i18n import format_number, language_name, resolve, t
+from core.i18n import chat_language, format_number, language_name, resolve, t
 from core.models import Follower
 from core.monetization import build_monetization_facts
 from core.records import RecordMetric, add_record_facts, update_stream_records
@@ -132,3 +132,16 @@ def test_t_fills_placeholders() -> None:
     assert t("en", "fact.follow_timing", pct=40, weekday="Monday") == (
         "40% of your follows arrive on Monday."
     )
+
+
+def test_chat_language_follows_the_audio_not_the_sign_up() -> None:
+    """A Brazilian streamer signed up in English still types Portuguese in chat.
+    Reading it with the English lexicon returns no reaction at all, which is the
+    exact failure this split exists to prevent."""
+    assert chat_language("pt", "en") == "pt"
+    assert chat_language("en", "pt") == "en"
+
+
+def test_chat_language_falls_back_until_a_live_is_transcribed() -> None:
+    assert chat_language(None, "en") == "en"
+    assert chat_language(None, "pt") == "pt"

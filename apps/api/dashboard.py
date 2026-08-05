@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from apps.api.deps import CurrentChannel, DbSession
+from core.i18n import chat_language
 from core.metrics import (
     average_job_seconds,
     chat_rate_buckets,
@@ -772,7 +773,7 @@ def stream_chatters(
     followers = _follower_logins(db, stream.id)
     samples = _chatter_samples(db, stream.id, top_logins)
     top_words, sentiment = _chatter_words_and_sentiment(
-        db, stream.id, top_logins, channel.language
+        db, stream.id, top_logins, chat_language(channel.spoken_language, channel.language)
     )
 
     chatters = []
@@ -822,7 +823,7 @@ def topic_detail(
     stream_id: int, insight_id: int, channel: CurrentChannel, db: DbSession
 ) -> TopicDetail:
     stream = _owned_stream(db, channel, stream_id)
-    language = channel.language
+    language = chat_language(channel.spoken_language, channel.language)
     insight = db.get(Insight, insight_id)
     if (
         insight is None

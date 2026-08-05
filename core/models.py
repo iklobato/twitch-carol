@@ -85,10 +85,14 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
-    # Idioma que a Helix reporta para o canal. Decide o idioma da tela, o idioma
-    # em que o LLM escreve os insights, e qual lexico de sentimento e qual lista
-    # de stopwords a analise de chat usa.
+    # Screen language and the language the LLM writes insights in, fixed at
+    # sign-up. NOT the language spoken on the channel: Twitch's
+    # broadcaster_language says "en" for plenty of Brazilian channels.
     language: Mapped[str] = mapped_column(String(8), default="pt")
+    # What the streamer actually speaks, measured by Whisper on the first
+    # transcription instead of guessed. Drives the chat stopwords and sentiment
+    # lexicon, so a Portuguese live signed up in English still reads correctly.
+    spoken_language: Mapped[str | None] = mapped_column(String(8))
     # StreamElements connector (external tips). Legacy manual path stores the
     # JWT; the OAuth "Connect" flow stores access/refresh tokens instead.
     streamelements_account_id: Mapped[str | None] = mapped_column(String(64))

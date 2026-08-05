@@ -16,7 +16,7 @@ from core.backfill import (
     enrich_followers,
     enrich_streamer_followers,
 )
-from core.channels import channel_language, upsert_channel
+from core.channels import upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
 from core.eventsub import sync_channel_subscriptions
@@ -77,7 +77,7 @@ def callback(
     except TwitchAuthError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
 
-    channel = upsert_channel(db, user, grant, channel_language(int(user.id)))
+    channel = upsert_channel(db, user, grant)
     db.commit()
     _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)

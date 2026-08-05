@@ -19,7 +19,7 @@ from typing import Protocol
 
 import httpx
 import numpy as np
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from core.config import Settings, get_settings
@@ -45,6 +45,16 @@ class Region:
     start: float  # seconds within the audio file
     end: float
     kind: SegmentKind
+
+
+@dataclass(frozen=True)
+class Transcription:
+    """What one chunk of audio produced. The language rides along with the text
+    because Whisper reports what it heard, and that is the only evidence we have
+    of the language spoken on a channel."""
+
+    language: str | None
+    segments: list[tuple[float, float, str]]  # (start, end, text)
 
 
 def merge_speech_spans(
@@ -130,20 +140,22 @@ class Transcriber:
             )
         return self._model
 
-    def transcribe(
-        self, audio: np.ndarray, language: str
-    ) -> list[tuple[float, float, str]]:
-        """Returns (start, end, text) relative to the given audio chunk."""
-        segments, _ = self._load().transcribe(
-            audio, language=language, beam_size=1, vad_filter=False
+    def transcribe(self, audio: np.ndarray) -> Transcription:
+        """Language is left for Whisper to detect: it reads the audio, while
+        anything we could pass it is a guess about the audio."""
+        segments, info = self._load().transcribe(
+            audio, language=None, beam_size=1, vad_filter=False
         )
-        return [(s.start, s.end, s.text.strip()) for s in segments if s.text.strip()]
+        return Transcription(
+            language=info.language,
+            segments=[
+                (s.start, s.end, s.text.strip()) for s in segments if s.text.strip()
+            ],
+        )
 
 
 class SpeechTranscriber(Protocol):
-    def transcribe(
-        self, audio: np.ndarray, language: str
-    ) -> list[tuple[float, float, str]]: ...
+    def transcribe(self, audio: np.ndarray) -> Transcription: ...
 
 
 class TranscriptionError(Exception):
@@ -192,13 +204,11 @@ class RemoteTranscriber:
         self._retry_backoff = retry_backoff
         self._client = client or httpx.Client(timeout=self.TIMEOUT_SECONDS)
 
-    def transcribe(
-        self, audio: np.ndarray, language: str
-    ) -> list[tuple[float, float, str]]:
-        """Returns (start, end, text) relative to the given audio chunk.
-        Retries on 429/5xx with backoff: transcription is idempotent and gets
+    def transcribe(self, audio: np.ndarray) -> Transcription:
+        """Retries on 429/5xx with backoff: transcription is idempotent and gets
         called once per speech chunk, so a transient throttle must not fail the
-        whole stream."""
+        whole stream. No language is sent: verbose_json reports the one the
+        model heard, which beats anything we could tell it."""
         wav = _encode_wav(audio, SAMPLE_RATE)
         for attempt in range(1, self.MAX_ATTEMPTS + 1):
             response = self._client.post(
@@ -207,18 +217,20 @@ class RemoteTranscriber:
                 files={"file": ("audio.wav", wav, "audio/wav")},
                 data={
                     "model": self._model,
-                    "language": language,
                     "response_format": "verbose_json",
                     "temperature": "0",
                 },
             )
             if response.status_code == 200:
-                segments = response.json().get("segments", [])
-                return [
-                    (s["start"], s["end"], s["text"].strip())
-                    for s in segments
-                    if s.get("text", "").strip()
-                ]
+                payload = response.json()
+                return Transcription(
+                    language=payload.get("language"),
+                    segments=[
+                        (s["start"], s["end"], s["text"].strip())
+                        for s in payload.get("segments", [])
+                        if s.get("text", "").strip()
+                    ],
+                )
             retryable = response.status_code == 429 or response.status_code >= 500
             if retryable and attempt < self.MAX_ATTEMPTS:
                 time.sleep(self._retry_backoff * attempt)
@@ -250,14 +262,6 @@ def process_stream(
     transcript_segments. Idempotent: reruns replace previous rows."""
     from faster_whisper.audio import decode_audio
 
-    # Whisper told the wrong language does not translate: it transcribes
-    # phonetically and returns nonsense. Every downstream LLM step (summary,
-    # topics, peak explanations, recommendations) is grounded on this text, and
-    # the evidence validator only checks that cited ids exist, never that the
-    # text makes sense, so a wrong language here is published as insight.
-    language = resolve(
-        db.scalar(select(Channel.language).where(Channel.id == stream.channel_id))
-    )
     storage = get_audio_storage()
     prefix = f"audio/{stream.channel_id}/{stream.id}/"
     keys = storage.list_keys(prefix)
@@ -271,6 +275,7 @@ def process_stream(
         delete(TranscriptSegment).where(TranscriptSegment.stream_id == stream.id)
     )
     counts = {kind.value: 0 for kind in SegmentKind}
+    heard: str | None = None
 
     for key in keys:
         file_offset = _file_offset_seconds(key)
@@ -278,11 +283,31 @@ def process_stream(
             storage.fetch_file(key, Path(handle.name))
             audio = decode_audio(handle.name, sampling_rate=SAMPLE_RATE)
         for region in classify_regions(audio, detect_speech_spans(audio)):
-            counts[region.kind.value] += _persist_region(
-                db, stream, transcriber, audio, region, file_offset, language
+            added, language = _persist_region(
+                db, stream, transcriber, audio, region, file_offset
             )
+            counts[region.kind.value] += added
+            heard = heard or language
+    _remember_spoken_language(db, stream.channel_id, heard)
     db.flush()
     return counts
+
+
+def _remember_spoken_language(db: Session, channel_id: int, heard: str | None) -> None:
+    """First detection wins. Whisper reports per chunk, and a noisy chunk can
+    come back as something else entirely; letting every chunk rewrite the
+    channel would make the chat lexicon flip between lives for no reason."""
+    if not heard:
+        return
+    channel = db.get(Channel, channel_id)
+    if channel is None or channel.spoken_language:
+        return
+    channel.spoken_language = resolve(heard)
+    logger.info(
+        "spoken language detected: %s",
+        channel.spoken_language,
+        extra={"channel_id": channel_id},
+    )
 
 
 def _file_offset_seconds(key: str) -> float:
@@ -300,8 +325,9 @@ def _persist_region(
     audio: np.ndarray,
     region: Region,
     file_offset: float,
-    language: str,
-) -> int:
+) -> tuple[int, str | None]:
+    """Returns how many segments were stored and the language Whisper heard in
+    this chunk (None when the chunk carries no speech)."""
     if region.kind is not SegmentKind.SPEECH:
         # music/silence/guest: timeline marker only, never any text
         db.add(
@@ -313,11 +339,12 @@ def _persist_region(
                 text=None,
             )
         )
-        return 1
+        return 1, None
 
     chunk = audio[int(region.start * SAMPLE_RATE) : int(region.end * SAMPLE_RATE)]
     added = 0
-    for start, end, text in transcriber.transcribe(chunk, language):
+    transcription = transcriber.transcribe(chunk)
+    for start, end, text in transcription.segments:
         db.add(
             TranscriptSegment(
                 stream_id=stream.id,
@@ -328,4 +355,4 @@ def _persist_region(
             )
         )
         added += 1
-    return added
+    return added, transcription.language

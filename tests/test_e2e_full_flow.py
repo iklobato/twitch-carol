@@ -26,7 +26,7 @@ from tests.test_analysis_e2e import PromptAwareFakeLLM
 from workers.capture.collectors import ChatCollector, ViewerSampler
 from workers.capture.session import build_audit
 from workers.transcribe import pipeline as transcribe_pipeline
-from workers.transcribe.pipeline import SAMPLE_RATE, process_stream
+from workers.transcribe.pipeline import SAMPLE_RATE, Transcription, process_stream
 
 E2E_SECRET = "e2e-eventsub-secret"
 
@@ -84,11 +84,9 @@ class ScriptedTranscriber:
 
     def __init__(self) -> None:
         self._lines = iter(SPEECH_SCRIPT)
-        self.languages: list[str] = []
 
-    def transcribe(self, audio, language: str) -> list[tuple[float, float, str]]:
-        self.languages.append(language)
-        return [(0.0, 25.0, next(self._lines))]
+    def transcribe(self, audio) -> Transcription:
+        return Transcription(language="pt", segments=[(0.0, 25.0, next(self._lines))])
 
 
 def synthetic_audio(*args, **kwargs) -> np.ndarray:
@@ -221,11 +219,13 @@ def _process(db, stream: Stream, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     db.expire_all()
     assert stream.status == StreamStatus.QUEUED_ANALYSIS
-    # The language travels the whole way: Helix says "en" at login ->
-    # channels.language -> process_stream -> the model. Whisper told the wrong
-    # language transcribes phonetically, and the entire report is grounded on
-    # this text, so a hardcoded default here is a silently broken product.
-    assert set(transcriber.languages) == {"en"}
+    # The language travels the other way now: the model reports what it heard
+    # and that is stored on the channel. Sign-up says English (the product is
+    # served in English) while the audio is Portuguese, and both survive.
+    channel = db.get(Channel, stream.channel_id)
+    assert channel is not None
+    assert channel.language == "en"
+    assert channel.spoken_language == "pt"
 
     analyze_spec = WorkerSpec(
         job_type=JOB_ANALYZE,

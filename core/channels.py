@@ -8,53 +8,23 @@ from sqlalchemy.orm import Session
 
 from core.crypto import decrypt_secret, encrypt_secret
 from core.models import Channel
-from core.twitch import (
-    TokenGrant,
-    TwitchAuthError,
-    TwitchUser,
-    get_channels_by_ids,
-    refresh_grant,
-)
+from core.twitch import TokenGrant, TwitchAuthError, TwitchUser, refresh_grant
 
 TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
-DEFAULT_LANGUAGE = "pt"
+# The product is served in English. This is the screen and insight language only:
+# what the streamer SPEAKS is detected from their audio (channels.spoken_language),
+# so a Portuguese live still gets a real transcript.
+SIGNUP_LANGUAGE = "en"
 
 
-def channel_language(
-    twitch_user_id: int,
-    client: httpx.Client | None = None,
-    buscar=get_channels_by_ids,
-) -> str:
-    """Idioma que a Helix reporta, ou portugues se ela nao souber. Cai no padrao
-    de proposito: idioma vazio quebraria a escolha de lexico na analise de chat,
-    e todo canal cadastrado hoje e brasileiro."""
-    try:
-        infos = buscar([twitch_user_id], client)
-    except (TwitchAuthError, httpx.HTTPError):
-        return DEFAULT_LANGUAGE
-    return next(
-        (i.broadcaster_language for i in infos if i.broadcaster_language),
-        DEFAULT_LANGUAGE,
-    )
-
-
-def upsert_channel(
-    db: Session,
-    user: TwitchUser,
-    grant: TokenGrant,
-    language: str | None = None,
-) -> Channel:
+def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
     channel = db.scalar(select(Channel).where(Channel.twitch_user_id == int(user.id)))
     if channel is None:
         channel = Channel(
             twitch_user_id=int(user.id),
             login=user.login,
             display_name=user.display_name,
-            # Captured once, at sign-up, and never rewritten by a later login:
-            # a Brazilian channel tagged "English" on Twitch would otherwise
-            # flip the whole dashboard mid-use and hand Whisper the wrong
-            # language, turning working transcripts into noise.
-            language=language or DEFAULT_LANGUAGE,
+            language=SIGNUP_LANGUAGE,
         )
         db.add(channel)
     channel.login = user.login

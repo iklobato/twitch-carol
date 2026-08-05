@@ -12,9 +12,13 @@ LLM *prompts* are deliberately NOT here: they stay in English in their own
 modules and carry an "answer in <language>" instruction, so there is one prompt
 to maintain instead of one per language. Only the model's answer is localized.
 
-The channel's language comes from channels.language (Helix, see
-core.channels.channel_language); anything not English falls back to Portuguese,
-which is what every channel registered so far speaks.
+Two different languages live on a channel and must not be confused. Screen and
+insight text follow `channels.language`, fixed at sign-up (English: that is how
+the product is served). Stopwords and the sentiment lexicon follow
+`channels.spoken_language`, measured by Whisper from the audio, because a
+Brazilian streamer signed up in English still types Portuguese in chat. Use
+`chat_language()` for the second one; anything not English resolves to
+Portuguese, the only other catalog shipped.
 """
 
 from typing import Final
@@ -144,12 +148,20 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         ),
     },
     "fact.peak": {
-        "en": ("PEAK at {time}: chat ran {score}x normal while you were saying '{text}'"),
-        "pt": ("PICO às {time}: o chat foi {score}x o normal enquanto você falava '{text}'"),
+        "en": (
+            "PEAK at {time}: chat ran {score}x normal while you were saying '{text}'"
+        ),
+        "pt": (
+            "PICO às {time}: o chat foi {score}x o normal enquanto você falava '{text}'"
+        ),
     },
     "fact.dip": {
-        "en": ("DIP at {time}: lost {pct}% of the audience{cause} while you were saying '{text}'"),
-        "pt": ("QUEDA às {time}: perdeu {pct}% da audiência{cause} enquanto você falava '{text}'"),
+        "en": (
+            "DIP at {time}: lost {pct}% of the audience{cause} while you were saying '{text}'"
+        ),
+        "pt": (
+            "QUEDA às {time}: perdeu {pct}% da audiência{cause} enquanto você falava '{text}'"
+        ),
     },
     "fact.dip_cause": {
         "en": ", right after {cause},",
@@ -253,6 +265,17 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
 def resolve(language: str | None) -> str:
     """Any BCP-47 tag narrowed to a catalog we ship."""
     return "en" if (language or "").lower().startswith("en") else DEFAULT_LANGUAGE
+
+
+def chat_language(spoken: str | None, signup: str) -> str:
+    """Which stopword list and sentiment lexicon a channel's chat is read with.
+
+    Not the same question as which language the product is served in: a
+    Brazilian streamer signed up in English still types Portuguese in chat, and
+    reading it with the English lexicon returns no reaction at all. Follows what
+    Whisper measured from the audio, and only falls back to the sign-up language
+    while no live has been transcribed yet."""
+    return resolve(spoken or signup)
 
 
 def language_name(language: str | None) -> str:
