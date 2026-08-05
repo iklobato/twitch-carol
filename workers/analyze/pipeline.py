@@ -6,7 +6,6 @@ Every insight passes evidence validation before being stored: cited ids must
 have been shown in the prompt AND exist in the database.
 """
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -26,7 +25,7 @@ from core.config import get_settings
 from core.follower_ai import generate_follower_ai
 from core.follower_intel import build_follower_facts, generate_follower_recommendations
 from core.i18n import language_name, t
-from core.llm import LLMBackend, TokenBudget
+from core.llm import LLMBackend, TokenBudget, parse_json_object
 from core.models import (
     Channel,
     ChatMessage,
@@ -201,9 +200,9 @@ def _window_context(
         .limit(chat_sample)
     ).all()
 
-    lines = ["TRECHOS DA FALA (segment_id: texto):"]
+    lines = ["SPEECH EXCERPTS (segment_id: text):"]
     lines.extend(f"{s.id}: {s.text}" for s in segments if s.text)
-    lines.append("MENSAGENS DO CHAT (message_id: autor: texto):")
+    lines.append("CHAT MESSAGES (message_id: author: text):")
     lines.extend(f"{m.id}: {m.author_login}: {m.text}" for m in messages)
     return PromptContext(
         text="\n".join(lines),
@@ -228,7 +227,7 @@ def _call_and_store(
     out against the prompt candidates and the database."""
     response = backend.generate(prompt, output_tokens)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     if parsed is None or not str(parsed.get("content", "")).strip():
         stats.insights_discarded += 1
         logger.warning(
@@ -262,23 +261,6 @@ def _call_and_store(
     )
     stats.insights_stored += 1
     return str(parsed["content"]).strip()
-
-
-_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
-
-
-def _parse_json(response: str) -> dict | None:
-    # Some models (e.g. Anthropic via OpenRouter) wrap JSON in a markdown code
-    # fence despite response_format=json_object; unwrap before parsing.
-    fenced = _JSON_FENCE.match(response)
-    text = fenced.group(1) if fenced else response
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    return parsed
 
 
 def _explain_peak(
@@ -367,7 +349,7 @@ def _summarize_blocks(
         )
         response = backend.generate(prompt, BLOCK_OUTPUT_TOKENS)
         budget.spend(prompt, response)
-        parsed = _parse_json(response)
+        parsed = parse_json_object(response)
         if parsed is None or not str(parsed.get("content", "")).strip():
             logger.warning(
                 "block summary unparseable, block skipped",
@@ -388,7 +370,7 @@ def _evidence_segment_context(db: Session, stream: Stream) -> PromptContext:
     ).all()
     text = "\n".join(f"{s.id}: {s.text}" for s in segments if s.text)
     return PromptContext(
-        text=f"TRECHOS DA FALA (segment_id: texto):\n{text}",
+        text=f"SPEECH EXCERPTS (segment_id: text):\n{text}",
         message_ids=set(),
         segment_ids={s.id for s in segments},
     )
@@ -457,7 +439,7 @@ def _rank_topics(
     )
     response = backend.generate(prompt, TOPICS_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     topics = parsed.get("topics") if parsed else None
     if not isinstance(topics, list):
         stats.insights_discarded += 1
@@ -689,7 +671,7 @@ def _recommend(
     )
     response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     recommendations = parsed.get("recommendations") if parsed else None
     if not isinstance(recommendations, list):
         stats.insights_discarded += 1

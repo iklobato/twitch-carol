@@ -365,18 +365,31 @@ def wait_for_finalize(timeout_seconds: int = 180) -> Stream | None:
     return None
 
 
-def _refuse_remote_database() -> None:
+LOCAL_HOSTS = (None, "", "localhost", "127.0.0.1", "postgres", "valkey")
+
+
+def _refuse_remote_services() -> None:
     """This script writes a fake channel, fake chat and fake events straight
-    into whatever database core.config resolves. That is the repo's .env, which
-    on this machine points at production, so the harness has to check where it
-    is aiming before it invents a single message."""
-    url = make_url(get_settings().database_url)
-    if url.host not in (None, "localhost", "127.0.0.1", "postgres"):
-        raise SystemExit(
-            f"refusing to simulate against {url.host}: the harness writes fake "
-            "data and only ever runs on the local compose stack. Set "
-            "DATABASE_URL=postgresql+psycopg://app:app@localhost:5433/app"
-        )
+    into whatever database and Valkey core.config resolves. Those come from the
+    repo's .env, which on this machine points at the managed cluster and the
+    managed Valkey, so the harness checks where it is aiming before it invents
+    a single message."""
+    settings = get_settings()
+    for name, url, fix in (
+        (
+            "DATABASE_URL",
+            settings.database_url,
+            "postgresql+psycopg://app:app@localhost:5433/app",
+        ),
+        ("VALKEY_URL", settings.valkey_url, "redis://localhost:6380/0"),
+    ):
+        host = make_url(url).host
+        if host not in LOCAL_HOSTS:
+            raise SystemExit(
+                f"refusing to simulate against {host}: the harness writes fake "
+                f"data and only ever runs on the local compose stack. "
+                f"Set {name}={fix}"
+            )
 
 
 def main() -> None:
@@ -394,7 +407,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    _refuse_remote_database()
+    _refuse_remote_services()
     secret = get_settings().twitch_eventsub_secret or DEV_EVENTSUB_SECRET
     poster = WebhookPoster(args.base_url, secret)
     valkey = redis.Redis.from_url(get_settings().valkey_url, decode_responses=True)

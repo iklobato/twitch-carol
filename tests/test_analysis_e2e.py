@@ -28,10 +28,10 @@ class PromptAwareFakeLLM:
         message_ids: list[int] = []
         section = None
         for line in prompt.splitlines():
-            if "TRECHOS DA FALA" in line:
+            if "SPEECH EXCERPTS" in line:
                 section = "segments"
                 continue
-            if "MENSAGENS DO CHAT" in line:
+            if "CHAT MESSAGES" in line:
                 section = "messages"
                 continue
             match = re.match(r"^(\d+): ", line)
