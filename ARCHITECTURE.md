@@ -98,6 +98,28 @@ flowchart TB
 | 14 | **~~Valkey~~** (`financialdata-valkey`) | Managed, nyc1 | Fora de producao (fila e dedup foram pro PG) | Apenas chaves `sim:*` do simulador local | Nada em prod | Desativado em prod em 2026-07-16/17 |
 | 15 | **~~Droplet `stream-intel`~~** | (destruido) | Era o prod antigo (rsync + docker compose) | - | - | Destruido 2026-07-16; snapshot `stream-intel-pre-retire-20260716` guardado |
 
+## Idioma (duas coisas diferentes)
+
+Um canal carrega **dois** idiomas, e confundi-los ja quebrou o produto uma vez:
+
+| Coluna | O que decide | De onde vem |
+|---|---|---|
+| `channels.language` | idioma da tela e do texto que o LLM escreve | fixado em **ingles** no cadastro (`SIGNUP_LANGUAGE`); canal antigo mantem `pt` |
+| `channels.spoken_language` | stopwords e lexico de sentimento do chat | **declarado pelo streamer** na tela de cadastro; a deteccao do Whisper so preenche quem ainda nao declarou |
+
+O `broadcaster_language` da Twitch responde `en` para canal que fala portugues
+(medido no `iklobat`), e enquanto um campo so alimentava as duas coisas esse
+palpite nao trocava so a tela: mandava o Whisper transcrever audio em portugues
+como ingles. Ele nao traduz, transcreve foneticamente, e o validador de
+evidencia so confere se o id citado existe, nunca se o texto quer dizer algo.
+
+Hoje o Whisper roda **sem receber idioma** e reporta o que ouviu. Para canal que
+declarou, divergencia vira aviso no log, nunca sobrescrita.
+
+`channels.timezone` tambem vem do cadastro (lido do navegador, sem perguntar) e
+decide os chatters por dia, o agrupamento por dia na lista de lives, o periodo
+que mais rende e o melhor dia da semana.
+
 Resumo em uma frase: **DNS -> web -> api (login + registra EventSub) -> Twitch
 dispara `stream.online` -> capture (chat/viewers/audio) -> transcribe
 (audio->texto) -> analyze (texto->insights) -> api/web mostram o relatorio**,

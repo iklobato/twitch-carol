@@ -109,12 +109,25 @@ primeiro uso.
 ### Simulação de live (sem Twitch real)
 
 ```bash
-uv run python scripts/simulate_stream.py --minutes 4 --audio caminho/audio.mp3
+DATABASE_URL=postgresql+psycopg://app:app@localhost:5433/app \
+VALKEY_URL=redis://localhost:6380/0 \
+uv run python scripts/simulate_stream.py --idioma pt --audio caminho/audio.mp3 --minutes 4
 ```
 
 Publica chat/eventos/viewers/áudio pelos MESMOS caminhos de código da
 captura real (webhook assinado, parser IRC). Ao final, a live percorre
 transcrição -> análise -> `ready` sozinha.
+
+**Os dois overrides não são opcionais.** O script resolve banco e Valkey pelo
+`core.config`, que lê o `.env` do repo, e esse `.env` aponta para os serviços
+gerenciados de produção. Ele se recusa a rodar contra host que não seja local,
+porque inventa canal, chat e eventos: sem essa guarda, um run escreveria dado
+falso em produção.
+
+`--idioma` é o que o streamer **fala**, e escolhe o chat falso; ele precisa
+combinar com o áudio que você passar. O canal é criado como um cadastro real,
+servido em inglês, e o idioma da fala é preenchido pela transcrição, então o
+caso interessante (produto em inglês, streamer em português) é o padrão.
 
 Para popular o dashboard com todos os estados do pipeline (e uma live
 analisável pelo LLM):
@@ -154,7 +167,18 @@ Produção roda 100% no App Platform (spec em `deploy/app.yaml`): os componentes
 no Spaces; sem droplet e sem Valkey. A responsabilidade de cada peça está em
 [`ARCHITECTURE.md`](ARCHITECTURE.md), a fonte da verdade do que roda hoje.
 
-Deploy é git: **um push na `main` dispara o deploy** de cada componente
+Existem dois ambientes, e os dois deployam por push:
+
+| Branch | Ambiente | App |
+|---|---|---|
+| `dev` | https://dev.streamintel.cc | `3f70eb48-2543-4e97-a9ae-e008317dbbac` |
+| `main` | https://streamintel.cc | `9154182f-3392-4bfd-b76c-8da53ea52aa9` |
+
+O fluxo é `feat/* -> PR -> dev -> PR -> main`. O ambiente de dev tem banco e
+bucket próprios e modelos de LLM mais baratos; ele nunca deve seguir uma branch
+de feature, senão apagar a branch deixa o ambiente apontando para o vazio.
+
+Deploy é git: **um push na branch dispara o deploy** de cada componente
 (`deploy_on_push: true`). Antes de cada deploy, o job `migrate` roda
 `alembic upgrade head`; se a migração falhar, o deploy vira ERROR e a versão
 atual continua no ar (funciona como canário). Não há passo manual de migração.
