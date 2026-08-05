@@ -30,6 +30,7 @@ from pathlib import Path
 import httpx
 import redis
 from sqlalchemy import select
+from sqlalchemy.engine import make_url
 
 from core.config import get_settings
 from core.db import session_factory
@@ -364,6 +365,20 @@ def wait_for_finalize(timeout_seconds: int = 180) -> Stream | None:
     return None
 
 
+def _refuse_remote_database() -> None:
+    """This script writes a fake channel, fake chat and fake events straight
+    into whatever database core.config resolves. That is the repo's .env, which
+    on this machine points at production, so the harness has to check where it
+    is aiming before it invents a single message."""
+    url = make_url(get_settings().database_url)
+    if url.host not in (None, "localhost", "127.0.0.1", "postgres"):
+        raise SystemExit(
+            f"refusing to simulate against {url.host}: the harness writes fake "
+            "data and only ever runs on the local compose stack. Set "
+            "DATABASE_URL=postgresql+psycopg://app:app@localhost:5433/app"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--minutes", type=float, default=3.0)
@@ -379,6 +394,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    _refuse_remote_database()
     secret = get_settings().twitch_eventsub_secret or DEV_EVENTSUB_SECRET
     poster = WebhookPoster(args.base_url, secret)
     valkey = redis.Redis.from_url(get_settings().valkey_url, decode_responses=True)
