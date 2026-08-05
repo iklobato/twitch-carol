@@ -136,6 +136,18 @@ def test_upsert_mantem_portugues_quando_a_helix_nao_diz_o_idioma(db) -> None:
     assert channel.language == "pt"
 
 
+def test_upsert_keeps_the_language_captured_at_sign_up(db) -> None:
+    """broadcaster_language is a setting the streamer can flip on Twitch at any
+    time. Following it on every login would move a live Portuguese channel to
+    English mid-use and hand Whisper the wrong language for its audio, so the
+    value is captured once and left alone."""
+    upsert_channel(db, USER, GRANT, "pt")
+
+    channel = upsert_channel(db, USER, GRANT, "en")
+
+    assert channel.language == "pt"
+
+
 def test_idioma_cai_no_padrao_quando_a_helix_falha() -> None:
     """Login nao pode quebrar porque a Helix esta fora: idioma vazio quebraria a
     escolha de lexico depois."""

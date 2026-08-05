@@ -32,7 +32,10 @@ def channel_language(
         infos = buscar([twitch_user_id], client)
     except (TwitchAuthError, httpx.HTTPError):
         return DEFAULT_LANGUAGE
-    return next((i.broadcaster_language for i in infos if i.broadcaster_language), DEFAULT_LANGUAGE)
+    return next(
+        (i.broadcaster_language for i in infos if i.broadcaster_language),
+        DEFAULT_LANGUAGE,
+    )
 
 
 def upsert_channel(
@@ -47,12 +50,15 @@ def upsert_channel(
             twitch_user_id=int(user.id),
             login=user.login,
             display_name=user.display_name,
+            # Captured once, at sign-up, and never rewritten by a later login:
+            # a Brazilian channel tagged "English" on Twitch would otherwise
+            # flip the whole dashboard mid-use and hand Whisper the wrong
+            # language, turning working transcripts into noise.
+            language=language or DEFAULT_LANGUAGE,
         )
         db.add(channel)
     channel.login = user.login
     channel.display_name = user.display_name
-    if language:
-        channel.language = language
     _store_grant(channel, grant)
     db.flush()
     return channel
