@@ -8,10 +8,11 @@ the same collector code reading the sim sources.
 Run from the repo root with the stack up and SIMULATION=1 on worker-capture:
     uv run python scripts/simulate_stream.py --minutes 3
 
-The language drives the fake chat AND the channel's stored language, which is
-what the transcriber and the analysis read. Give it audio in that language,
-or the transcript is phonetic noise and every insight built on it is noise too:
-    uv run python scripts/simulate_stream.py --idioma en --audio talk.mp3
+The channel is created the way production creates one: served in English. What
+--idioma picks is what the fake streamer SPEAKS and what the fake chat types, so
+it must match the audio file you pass. That mismatch is the realistic case: a
+Brazilian streamer on an English product.
+    uv run python scripts/simulate_stream.py --idioma pt --audio fala.mp3
 """
 
 import argparse
@@ -32,6 +33,7 @@ import redis
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 
+from core.channels import SIGNUP_LANGUAGE
 from core.config import get_settings
 from core.db import session_factory
 from core.eventsub import compute_signature
@@ -176,10 +178,11 @@ class WebhookPoster:
         print(f"  event {sub_type} -> {response.status_code}")
 
 
-def ensure_sim_channel(language: str | None = None) -> int:
-    """The sim channel, created on first use. Unlike a real sign-up, a language
-    given here overwrites the stored one: rerunning the same harness in the
-    other language is the whole point of it."""
+def ensure_sim_channel() -> int:
+    """The sim channel, created on first use exactly like a real sign-up: served
+    in English, with no spoken language yet. The spoken one is left blank on
+    purpose, because watching the transcriber fill it in from the audio is part
+    of what this harness exists to check."""
     with session_factory()() as db:
         channel = db.scalar(
             select(Channel).where(Channel.twitch_user_id == SIM_TWITCH_USER_ID)
@@ -190,11 +193,10 @@ def ensure_sim_channel(language: str | None = None) -> int:
                 login=SIM_LOGIN,
                 display_name="Sim Streamer",
                 scopes=[],
+                language=SIGNUP_LANGUAGE,
             )
             db.add(channel)
-        if language:
-            channel.language = language
-        db.commit()
+            db.commit()
         return channel.id
 
 
@@ -403,7 +405,7 @@ def main() -> None:
         "--idioma",
         choices=sorted(CORPORA),
         default="pt",
-        help="channel language: picks the chat corpus and what Whisper is told",
+        help="what the streamer speaks: picks the chat corpus, must match --audio",
     )
     args = parser.parse_args()
 
@@ -413,7 +415,7 @@ def main() -> None:
     valkey = redis.Redis.from_url(get_settings().valkey_url, decode_responses=True)
     total_seconds = int(args.minutes * 60)
 
-    ensure_sim_channel(args.idioma)
+    ensure_sim_channel()
     reset_sim_state(valkey)
     prepare_audio(valkey, args.audio, total_seconds)
 
