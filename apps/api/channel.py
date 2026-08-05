@@ -22,6 +22,7 @@ from core.finance import (
 from core.i18n import SUPPORTED_LANGUAGES
 from core.models import (
     BitsLeader,
+    Channel,
     ChannelRecommendation,
     ChatMessage,
     Event,
@@ -556,9 +557,12 @@ def _ad_viewer_change(db: DbSession, ad_events: list[Event]) -> float | None:
     return round(sum(changes) / len(changes), 1)
 
 
-def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
+def _best_weekdays(db: DbSession, channel: Channel) -> list[WeekdaySlot]:
+    """Weekday in the channel's own timezone, not UTC. A Brazilian live that
+    starts at 22:30 on Sunday is already Monday in UTC, so grouping on the raw
+    timestamp told the streamer to go live on the wrong day."""
     # postgres dow: 0=Sunday..6=Saturday; shift to Monday=0
-    dow = func.extract("dow", Stream.started_at)
+    dow = func.extract("dow", func.timezone(channel.timezone, Stream.started_at))
     peak_per_stream = (
         select(
             Stream.id.label("stream_id"),
@@ -566,7 +570,7 @@ def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
             func.coalesce(func.max(ViewerSample.viewer_count), 0).label("peak"),
         )
         .join(ViewerSample, ViewerSample.stream_id == Stream.id, isouter=True)
-        .where(Stream.channel_id == channel_id)
+        .where(Stream.channel_id == channel.id)
         .where(Stream.status == StreamStatus.READY)
         .group_by(Stream.id, dow)
         .subquery()
@@ -803,7 +807,7 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         unique_chatters=int(unique_chatters),
         total_followers_gained=len(follower_logins),
         loyal_chatters=_loyal_chatters(db, channel.id, follower_logins),
-        best_weekdays=_best_weekdays(db, channel.id),
+        best_weekdays=_best_weekdays(db, channel),
         growth=_growth(db, channel.id),
         recurring_topics=_recurring_topics(db, ready_ids),
         finance=_channel_finance(db, channel.id, ready_ids),

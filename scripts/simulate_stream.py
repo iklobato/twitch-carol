@@ -348,6 +348,14 @@ def _fire_scheduled_events(
             fired.add(key)
 
 
+# Capture is done once the stream leaves CAPTURING. Waiting for exactly
+# QUEUED_TRANSCRIPTION was a race the harness lost regularly: the transcribe
+# worker picks the job up in under the 3s poll interval, the status is already
+# TRANSCRIBING by the next look, and a run where everything worked reported
+# "not finalized in time" three minutes later.
+FINALIZED = frozenset(StreamStatus) - {StreamStatus.CAPTURING}
+
+
 def wait_for_finalize(timeout_seconds: int = 180) -> Stream | None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -358,10 +366,7 @@ def wait_for_finalize(timeout_seconds: int = 180) -> Stream | None:
                 .where(Stream.channel_id == channel_id)
                 .order_by(Stream.started_at.desc())
             )
-            if (
-                stream is not None
-                and stream.status == StreamStatus.QUEUED_TRANSCRIPTION
-            ):
+            if stream is not None and stream.status in FINALIZED:
                 return stream
         time.sleep(3)
     return None
@@ -441,6 +446,10 @@ def main() -> None:
         raise SystemExit("stream was not finalized in time; check worker-capture logs")
     print(f"\nstream {stream.id} finalized with status {stream.status.value}")
     print("audit:", json.dumps(stream.audit, indent=2, ensure_ascii=False))
+    if stream.status is StreamStatus.FAILED:
+        # Now that any post-capture status ends the wait, a failed run would
+        # otherwise exit 0 and read as a pass in whatever started it.
+        raise SystemExit(f"stream {stream.id} failed; check the worker logs")
 
 
 if __name__ == "__main__":
