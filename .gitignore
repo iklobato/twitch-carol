@@ -32,8 +32,10 @@ emails_extracted.txt
 .claude/
 
 # Local screenshots
-/meu-canal-*.png
-/streamintel-*.png
+# Screenshots dropped in the repo root. The list used to be per-name and
+# still let access-error.png and grafana-access-login.png through on a
+# `git add -A`. No png is versioned anywhere in this repo, so ignore them all.
+/*.png
 
 # Secrets
 .env
