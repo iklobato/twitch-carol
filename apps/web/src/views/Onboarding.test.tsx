@@ -26,8 +26,13 @@ describe('Onboarding', () => {
 
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     const [path, init] = fetchMock.mock.calls[0]
-    expect(path).toBe('/api/channel/onboarding')
-    expect(JSON.parse(init.body)).toEqual({ stream_language: 'pt' })
+    expect(path).toBe('/api/channel/preferences')
+    expect(init.method).toBe('PATCH')
+    // the zone rides along without being asked: it decides the best weekday and
+    // hour to go live, and it defaulted to UTC for every channel until now
+    const sent = JSON.parse(init.body)
+    expect(sent.stream_language).toBe('pt')
+    expect(sent.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
   })
 
   it('keeps the gate closed when saving fails', async () => {

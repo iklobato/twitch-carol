@@ -13,6 +13,15 @@ const pt: Record<keyof typeof en, string> = {
   "onboarding.saving": "Salvando...",
   "onboarding.failed": "N\u00e3o deu para salvar. Tente de novo.",
 
+  // settings
+  "settings.title": "Configura\u00e7\u00f5es do canal",
+  "settings.streamLanguage": "Idioma em que voc\u00ea transmite",
+  "settings.screenLanguage": "Idioma deste painel",
+  "settings.save": "Salvar",
+  "settings.saved": "Salvo. Recarregue para ver o painel no novo idioma.",
+  "settings.failed": "N\u00e3o deu para salvar. Tente de novo.",
+  "settings.timezone": "Os hor\u00e1rios aparecem em {zone}, lido do seu navegador no cadastro.",
+
   // shell
   "app.loading": "Carregando...",
   "app.search.placeholder": "Buscar no chat e na fala...",

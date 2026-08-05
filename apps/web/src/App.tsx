@@ -171,7 +171,7 @@ export default function App() {
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">
         {route.view === "home" && <StreamsList />}
-        {route.view === "channel" && <ChannelView />}
+        {route.view === "channel" && <ChannelView me={me} />}
         {route.view === "followers" && <FollowersView />}
         {route.view === "finance" && <FinanceView />}
         {route.view === "stream" && <StreamReport streamId={route.streamId} />}

@@ -11,9 +11,10 @@ import {
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
+import LanguageSettings from '../components/LanguageSettings'
 import { fmtInt, fmtMoney, t, type MessageKey } from '../i18n'
 import { liveCount } from './StreamsList'
-import type { ChannelOverview, GoalOut, GrowthPoint } from '../types'
+import type { ChannelOverview, GoalOut, GrowthPoint, Me } from '../types'
 
 Chart.register(
   LineController,
@@ -712,7 +713,7 @@ function AccountSummary({ overview }: { overview: ChannelOverview }) {
   )
 }
 
-export default function ChannelView() {
+export default function ChannelView({ me }: { me: Me }) {
   const [overview, setOverview] = useState<ChannelOverview | null>(null)
 
   useEffect(() => {
@@ -729,6 +730,7 @@ export default function ChannelView() {
         {t('nav.back')}
       </a>
       <h2 className="mb-4 mt-2 text-xl font-bold">{t('channel.title')}</h2>
+      <LanguageSettings me={me} />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard label={t('channel.stat.streams')} value={fmtInt(overview.total_streams)} />
         <StatCard label={t('channel.stat.messages')} value={fmtInt(overview.total_messages)} />

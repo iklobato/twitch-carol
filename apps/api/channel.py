@@ -3,6 +3,7 @@ best time to go live, growth, and recurring topics. All numbers from SQL."""
 
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
@@ -815,25 +816,55 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
     )
 
 
-class OnboardingIn(BaseModel):
-    """What the streamer tells us on the way in. Only the spoken language for
-    now: it is the one thing the product cannot infer without being wrong
-    sometimes, and being wrong here means transcribing a language phonetically
-    into another one."""
+class PreferencesIn(BaseModel):
+    """Everything the streamer decides about their own channel. Every field is
+    optional because the same endpoint serves two callers: the onboarding gate,
+    which sends what it knows on the way in, and the settings section, which
+    sends only what just changed."""
 
-    stream_language: str
+    # The language spoken on stream. Picks the stopword list and the sentiment
+    # lexicon, and it is what the product cannot infer without being wrong
+    # sometimes: wrong here means a transcript rendered phonetically.
+    stream_language: str | None = None
+    # Screen and insight language.
+    screen_language: str | None = None
+    # IANA zone, read off the streamer's browser. Decides the best weekday and
+    # hour to go live, the per-day chatter counts and the monetization period,
+    # all of which were computed in UTC for everyone until now.
+    timezone: str | None = None
 
 
-@router.post("/onboarding", status_code=204)
-def complete_onboarding(
-    body: OnboardingIn, channel: CurrentChannel, db: DbSession
-) -> Response:
-    if body.stream_language not in SUPPORTED_LANGUAGES:
+def _validated_zone(zone: str) -> str:
+    """An unknown zone is refused rather than quietly kept as UTC: silently
+    falling back to UTC is the exact bug this field exists to fix."""
+    if zone not in available_timezones():
+        raise HTTPException(status_code=422, detail=f"unknown timezone {zone!r}")
+    return zone
+
+
+def _validated_language(language: str, field: str) -> str:
+    if language not in SUPPORTED_LANGUAGES:
         raise HTTPException(
-            status_code=422,
-            detail=f"stream_language must be one of {SUPPORTED_LANGUAGES}",
+            status_code=422, detail=f"{field} must be one of {SUPPORTED_LANGUAGES}"
         )
-    channel.spoken_language = body.stream_language
-    channel.onboarded_at = datetime.now(UTC)
+    return language
+
+
+@router.patch("/preferences", status_code=204)
+def update_preferences(
+    body: PreferencesIn, channel: CurrentChannel, db: DbSession
+) -> Response:
+    """Also closes the onboarding gate: answering it once is what the gate is
+    waiting for, and a later edit from the settings section is harmless."""
+    if body.stream_language is not None:
+        channel.spoken_language = _validated_language(
+            body.stream_language, "stream_language"
+        )
+    if body.screen_language is not None:
+        channel.language = _validated_language(body.screen_language, "screen_language")
+    if body.timezone is not None:
+        channel.timezone = _validated_zone(body.timezone)
+    if channel.spoken_language and channel.onboarded_at is None:
+        channel.onboarded_at = datetime.now(UTC)
     db.commit()
     return Response(status_code=204)
