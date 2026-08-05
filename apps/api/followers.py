@@ -513,7 +513,7 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
     notable = [f for f in followers if f.broadcaster_type in (AFFILIATE, PARTNER)]
     notable.sort(key=lambda f: f.followed_at, reverse=True)
 
-    profiles = build_follower_profiles(db, channel.id)
+    profiles = build_follower_profiles(db, channel.id, followers)
 
     return FollowersOverview(
         kpis=_kpis(followers, now),

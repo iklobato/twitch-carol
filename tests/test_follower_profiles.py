@@ -1,8 +1,10 @@
 """Per-follower feature rows crossing followers with chat, money, and subs."""
 
 import pytest
+from sqlalchemy import select
 
 from core.follower_profiles import build_follower_profiles
+from core.models import Follower
 from tests.factories import (
     add_chat,
     add_event,
@@ -74,3 +76,20 @@ def test_profiles_ordered_by_value_then_messages(db) -> None:
 def test_no_followers_returns_empty(db) -> None:
     channel = make_channel(db)
     assert build_follower_profiles(db, channel.id) == []
+
+
+def test_profiles_can_reuse_followers_the_caller_already_loaded(db) -> None:
+    """The followers endpoint holds the rows before it asks for profiles.
+    Without this, the same 20k rows were queried and turned into ORM objects
+    twice in one request."""
+    channel = make_channel(db)
+    add_follower(db, channel, "veterano")
+    add_follower(db, channel, "novato")
+    db.flush()
+    followers = list(db.scalars(select(Follower).where(Follower.channel_id == channel.id)))
+
+    reused = build_follower_profiles(db, channel.id, followers)
+
+    assert [p.login for p in reused] == [
+        p.login for p in build_follower_profiles(db, channel.id)
+    ]
