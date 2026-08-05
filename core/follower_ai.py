@@ -7,7 +7,6 @@ and the nudges, grounded in that data. Persisted to follower_ai_insights so the
 page reads generated text without running the model per request.
 """
 
-import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from core.follower_profiles import FollowerProfile, build_follower_profiles
 from core.i18n import language_name
-from core.llm import LLMBackend, TokenBudget
+from core.llm import LLMBackend, TokenBudget, parse_json_object
 from core.models import Follower, FollowerAiInsight
 
 logger = logging.getLogger(__name__)
@@ -157,14 +156,6 @@ def _bio_sample(db: Session, channel_id: int) -> list[str]:
     return [bio.strip() for bio in rows if bio and bio.strip()]
 
 
-def _parse_json(text: str) -> dict | None:
-    try:
-        parsed = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
 def generate_follower_ai(
     db: Session,
     channel_id: int,
@@ -187,7 +178,7 @@ def generate_follower_ai(
         return 0
     response = backend.generate(prompt, OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     if parsed is None:
         logger.warning(
             "follower AI discarded: unparseable", extra={"channel_id": channel_id}

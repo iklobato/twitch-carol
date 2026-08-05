@@ -7,14 +7,13 @@ The facts cover four decision areas the streamer asked for: reactivation of
 silent followers, collab candidates (followers who are themselves streamers),
 fake-follow risk (very young accounts), and timing (when follows arrive)."""
 
-import json
 import logging
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from core.i18n import language_name, t
-from core.llm import LLMBackend, TokenBudget
+from core.llm import LLMBackend, TokenBudget, parse_json_object
 from core.models import ChatMessage, Follower, FollowerRecommendation
 
 logger = logging.getLogger(__name__)
@@ -148,14 +147,6 @@ def _add_follow_timing(followers: list[Follower], add, language: str | None) -> 
     )
 
 
-def _parse_json(text: str) -> dict | None:
-    try:
-        parsed = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
 def generate_follower_recommendations(
     db: Session,
     channel_id: int,
@@ -189,7 +180,7 @@ def generate_follower_recommendations(
     )
     response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     recommendations = parsed.get("recommendations") if parsed else None
     if not isinstance(recommendations, list):
         logger.warning(

@@ -8,7 +8,6 @@ count) are deliberately excluded here: alone they can only produce tautological
 advice ("raise revenue by raising revenue"). Those totals still reach the user
 as plain stats via the finance/channel API, not as LLM grounding."""
 
-import json
 import logging
 from collections import defaultdict
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from core.finance import MONEY_EVENT_TYPES, SUBSCRIBE, event_contributor, event_usd
 from core.i18n import language_name, t
-from core.llm import LLMBackend, TokenBudget
+from core.llm import LLMBackend, TokenBudget, parse_json_object
 from core.models import (
     Channel,
     ChannelRecommendation,
@@ -323,14 +322,6 @@ def _add_top_reward(
     add(t(language, "fact.top_reward", title=top, times=times))
 
 
-def _parse_json(text: str) -> dict | None:
-    try:
-        parsed = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
-
-
 def generate_channel_recommendations(
     db: Session,
     channel_id: int,
@@ -364,7 +355,7 @@ def generate_channel_recommendations(
     )
     response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     recommendations = parsed.get("recommendations") if parsed else None
     if not isinstance(recommendations, list):
         logger.warning(

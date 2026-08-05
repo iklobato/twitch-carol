@@ -5,7 +5,9 @@ The local backend budgets with the model's real tokenizer; the remote one has
 no local tokenizer, so it approximates (see OpenAICompatBackend.count_tokens).
 """
 
+import json
 import logging
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
@@ -18,6 +20,23 @@ logger = logging.getLogger(__name__)
 
 # context = full input budget + output + prompt-template slack
 N_CTX_SLACK_TOKENS = 512
+
+_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
+def parse_json_object(response: str) -> dict | None:
+    """Every JSON answer from a model goes through here, because unwrapping the
+    fence in only some of the readers is how the channel recommendations and the
+    follower AI ended up silently discarded on every run: Anthropic through
+    OpenRouter wraps its answer in a ```json block even with
+    response_format=json_object, and json.loads then rejects the whole thing."""
+    fenced = _JSON_FENCE.match(response or "")
+    text = fenced.group(1) if fenced else response
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 class LLMBackend(Protocol):

@@ -1,4 +1,15 @@
-from core.llm import TokenBudget, truncate_to_tokens
+from core.llm import TokenBudget, parse_json_object, truncate_to_tokens
+
+
+def test_parse_json_object_unwraps_markdown_fence() -> None:
+    """Anthropic through OpenRouter fences its answer even with
+    response_format=json_object. Every reader shares this parser because the
+    three that had their own copy silently discarded every recommendation."""
+    assert parse_json_object('```json\n{"content": "oi"}\n```') == {"content": "oi"}
+    assert parse_json_object('```\n{"a": 1}\n```') == {"a": 1}
+    assert parse_json_object('{"plain": true}') == {"plain": True}
+    assert parse_json_object("not json at all") is None
+    assert parse_json_object("[1, 2]") is None
 
 
 class FakeBackend:
