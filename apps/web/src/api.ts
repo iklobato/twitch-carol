@@ -9,6 +9,17 @@ export async function apiGet<T>(path: string): Promise<T> {
   return response.json();
 }
 
+export async function apiPatch(path: string, body: unknown): Promise<void> {
+  const response = await fetch(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`PATCH ${path}: ${response.status}`);
+  }
+}
+
 export async function apiPost(path: string, body: unknown): Promise<void> {
   const response = await fetch(path, {
     method: "POST",

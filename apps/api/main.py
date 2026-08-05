@@ -54,6 +54,9 @@ class MeResponse(BaseModel):
     # answered has no declared spoken language, and everything downstream would
     # be guessing at it.
     needs_onboarding: bool = False
+    # What the settings section shows as current values.
+    stream_language: str | None = None
+    timezone: str = "UTC"
     is_admin: bool = False
     impersonating: Impersonation | None = None
     streamelements_connected: bool = False
@@ -81,6 +84,8 @@ def me(session: CurrentSession, channel: CurrentChannel, db: DbSession) -> MeRes
         scopes=channel.scopes,
         language=channel.language,
         needs_onboarding=channel.onboarded_at is None,
+        stream_language=channel.spoken_language,
+        timezone=channel.timezone,
         is_admin=is_admin,
         impersonating=impersonating,
         streamelements_connected=channel.streamelements_account_id is not None,

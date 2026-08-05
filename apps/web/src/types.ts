@@ -8,6 +8,10 @@ export type Me = {
   language: string;
   /** True until the streamer has declared what language they stream in. */
   needs_onboarding: boolean;
+  /** channels.spoken_language: what they declared they speak on stream. */
+  stream_language: string | null;
+  /** IANA zone every time on screen is rendered in. */
+  timezone: string;
   impersonating: { as_login: string; admin_login: string } | null;
 };
 

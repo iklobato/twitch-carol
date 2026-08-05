@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { apiPost } from "../api";
+import { apiPatch } from "../api";
 import { t } from "../i18n";
 
 /** Languages the analysis actually ships a stopword list and a sentiment
@@ -16,6 +16,14 @@ function guessLanguage(): string {
   return navigator.language?.toLowerCase().startsWith("pt") ? "pt" : "en";
 }
 
+/** Sent without asking. The zone decides the best weekday and hour to go live
+ * and the per-day chatter counts, and it defaulted to UTC for everyone, which
+ * is three hours off for a Brazilian channel. Nothing to confirm here: the
+ * browser knows it and the streamer would only be retyping it. */
+function browserTimezone(): string | undefined {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+}
+
 export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [language, setLanguage] = useState(guessLanguage);
   const [saving, setSaving] = useState(false);
@@ -25,7 +33,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     setSaving(true);
     setFailed(false);
     try {
-      await apiPost("/api/channel/onboarding", { stream_language: language });
+      await apiPatch("/api/channel/preferences", {
+        stream_language: language,
+        timezone: browserTimezone(),
+      });
       onDone();
     } catch {
       setFailed(true);

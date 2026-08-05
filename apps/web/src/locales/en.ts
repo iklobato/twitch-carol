@@ -12,6 +12,15 @@ export default {
   "onboarding.saving": "Saving...",
   "onboarding.failed": "Could not save that. Try again.",
 
+  // settings
+  "settings.title": "Channel settings",
+  "settings.streamLanguage": "Language you stream in",
+  "settings.screenLanguage": "Language of this dashboard",
+  "settings.save": "Save",
+  "settings.saved": "Saved. Reload to see the dashboard in the new language.",
+  "settings.failed": "Could not save that. Try again.",
+  "settings.timezone": "Times are shown in {zone}, read from your browser when you signed up.",
+
   // shell
   "app.loading": "Loading...",
   "app.search.placeholder": "Search chat and speech...",
