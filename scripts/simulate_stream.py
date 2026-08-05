@@ -7,6 +7,11 @@ the same collector code reading the sim sources.
 
 Run from the repo root with the stack up and SIMULATION=1 on worker-capture:
     uv run python scripts/simulate_stream.py --minutes 3
+
+The language drives the fake chat AND the channel's stored language, which is
+what the transcriber and the analysis read. Give it audio in that language,
+or the transcript is phonetic noise and every insight built on it is noise too:
+    uv run python scripts/simulate_stream.py --idioma en --audio talk.mp3
 """
 
 import argparse
@@ -18,6 +23,7 @@ import struct
 import time
 import uuid
 import wave
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,30 +54,79 @@ BURST_VIEWERS = 120
 TWO_BURSTS_MIN_SECONDS = 360
 
 CHAT_USERS = [f"viewer_{i:02d}" for i in range(40)]
-CALM_MESSAGES = [
-    "boa noite pessoal",
-    "esse framework parece bom",
-    "alguém sabe o link do repo?",
-    "primeira vez aqui na live",
-    "o que é injeção de dependência?",
-    "streamer joga muito",
-    "faz um tutorial disso depois",
-    "LUL",
-    "esse bug tá difícil hein",
-    "concordo com o chat",
-    "usa docker pra isso?",
-    "qual teclado você usa?",
-]
-BURST_MESSAGES = [
-    "KKKKKKKK",
-    "NÃO ACREDITO",
-    "CLIPA ISSO",
-    "GG GG GG",
-    "que jogada absurda",
-    "POGGERS",
-    "melhor momento da live",
-    "vai dar certo vai dar certo",
-]
+
+
+@dataclass(frozen=True)
+class ChatCorpus:
+    """What the fake chat types, in one language. The three pieces live in one
+    object so a language can never be half added: a missing burst list would
+    only blow up minutes into a run, right at the peak it was meant to test."""
+
+    calm: list[str]
+    burst: list[str]
+    cheer: str
+
+
+# One corpus per language, because the two things this harness exists to prove
+# are language-bound: the stopword list has to leave real subjects standing,
+# and the sentiment lexicon has to match actual words. English chat scored with
+# the Portuguese lexicon comes back empty, which is the bug worth catching here.
+CORPORA: dict[str, ChatCorpus] = {
+    "pt": ChatCorpus(
+        calm=[
+            "boa noite pessoal",
+            "esse framework parece bom",
+            "alguém sabe o link do repo?",
+            "primeira vez aqui na live",
+            "o que é injeção de dependência?",
+            "streamer joga muito",
+            "faz um tutorial disso depois",
+            "LUL",
+            "esse bug tá difícil hein",
+            "concordo com o chat",
+            "usa docker pra isso?",
+            "qual teclado você usa?",
+        ],
+        burst=[
+            "KKKKKKKK",
+            "NÃO ACREDITO",
+            "CLIPA ISSO",
+            "GG GG GG",
+            "que jogada absurda",
+            "POGGERS",
+            "melhor momento da live",
+            "vai dar certo vai dar certo",
+        ],
+        cheer="toma esses bits",
+    ),
+    "en": ChatCorpus(
+        calm=[
+            "good evening everyone",
+            "this framework looks nice",
+            "anyone got the repo link?",
+            "first time here on stream",
+            "what is dependency injection?",
+            "streamer is cracked at this game",
+            "make a tutorial about this later",
+            "LUL",
+            "that bug looks annoying",
+            "chat is right about this",
+            "do you use docker for this?",
+            "what keyboard do you use?",
+        ],
+        burst=[
+            "LMAOOOO",
+            "NO WAY",
+            "CLIP IT",
+            "GG GG GG",
+            "that play was insane",
+            "POGGERS",
+            "best moment of the stream",
+            "lets go lets go",
+        ],
+        cheer="take these bits",
+    ),
+}
 
 
 def irc_line(author: str, text: str, sent_at: datetime) -> str:
@@ -120,7 +175,10 @@ class WebhookPoster:
         print(f"  event {sub_type} -> {response.status_code}")
 
 
-def ensure_sim_channel() -> int:
+def ensure_sim_channel(language: str | None = None) -> int:
+    """The sim channel, created on first use. Unlike a real sign-up, a language
+    given here overwrites the stored one: rerunning the same harness in the
+    other language is the whole point of it."""
     with session_factory()() as db:
         channel = db.scalar(
             select(Channel).where(Channel.twitch_user_id == SIM_TWITCH_USER_ID)
@@ -133,7 +191,9 @@ def ensure_sim_channel() -> int:
                 scopes=[],
             )
             db.add(channel)
-            db.commit()
+        if language:
+            channel.language = language
+        db.commit()
         return channel.id
 
 
@@ -183,7 +243,7 @@ def burst_windows(total_seconds: int) -> list[range]:
 
 
 def run_chat_and_viewers(
-    valkey: redis.Redis, poster: WebhookPoster, total_seconds: int
+    valkey: redis.Redis, poster: WebhookPoster, total_seconds: int, language: str
 ) -> int:
     bursts = burst_windows(total_seconds)
     sent = 0
@@ -199,17 +259,25 @@ def run_chat_and_viewers(
         valkey.set(f"sim:viewers:{SIM_LOGIN}", viewers, ex=300)
 
         author = random.choice(CHAT_USERS)
-        corpus = BURST_MESSAGES if in_burst else CALM_MESSAGES
-        line = irc_line(author, random.choice(corpus), datetime.now(UTC))
+        corpus = CORPORA[language]
+        messages = corpus.burst if in_burst else corpus.calm
+        line = irc_line(author, random.choice(messages), datetime.now(UTC))
         valkey.xadd(f"sim:irc:{SIM_LOGIN}", {"line": line})
         sent += 1
 
-        _fire_scheduled_events(poster, elapsed, total_seconds, in_burst, fired_events)
+        _fire_scheduled_events(
+            poster, elapsed, total_seconds, in_burst, fired_events, language
+        )
         time.sleep(1.0 / rate)
 
 
 def _fire_scheduled_events(
-    poster: WebhookPoster, elapsed: int, total: int, in_burst: bool, fired: set[str]
+    poster: WebhookPoster,
+    elapsed: int,
+    total: int,
+    in_burst: bool,
+    fired: set[str],
+    language: str,
 ) -> None:
     broadcaster = {"broadcaster_user_id": str(SIM_TWITCH_USER_ID)}
     schedule = {
@@ -244,7 +312,7 @@ def _fire_scheduled_events(
                 "user_id": "44",
                 "user_login": "generoso",
                 "bits": 500,
-                "message": "toma esses bits",
+                "message": CORPORA[language].cheer,
             },
             "1",
         ),
@@ -303,6 +371,12 @@ def main() -> None:
         "--audio", type=Path, default=None, help="mp3/ogg/wav input file"
     )
     parser.add_argument("--base-url", default="http://localhost:8080")
+    parser.add_argument(
+        "--idioma",
+        choices=sorted(CORPORA),
+        default="pt",
+        help="channel language: picks the chat corpus and what Whisper is told",
+    )
     args = parser.parse_args()
 
     secret = get_settings().twitch_eventsub_secret or DEV_EVENTSUB_SECRET
@@ -310,7 +384,7 @@ def main() -> None:
     valkey = redis.Redis.from_url(get_settings().valkey_url, decode_responses=True)
     total_seconds = int(args.minutes * 60)
 
-    ensure_sim_channel()
+    ensure_sim_channel(args.idioma)
     reset_sim_state(valkey)
     prepare_audio(valkey, args.audio, total_seconds)
 
@@ -325,7 +399,7 @@ def main() -> None:
         },
     )
 
-    sent = run_chat_and_viewers(valkey, poster, total_seconds)
+    sent = run_chat_and_viewers(valkey, poster, total_seconds, args.idioma)
     print(f"chat finished: {sent} messages sent")
 
     print("stream.offline ->")
