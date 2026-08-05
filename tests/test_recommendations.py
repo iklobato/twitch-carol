@@ -86,7 +86,7 @@ def test_recommendations_are_stored_and_grounded(db) -> None:
     stream = _seed_stream_with_facts(db)
     backend = GroundedFakeLLM()
     stats = AnalysisStats()
-    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats)
+    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats, "pt")
     db.flush()
 
     recs = db.scalars(
@@ -113,7 +113,7 @@ def test_ungrounded_recommendations_are_discarded(db) -> None:
     stream = _seed_stream_with_facts(db)
     backend = UngroundedFakeLLM()
     stats = AnalysisStats()
-    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats)
+    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats, "pt")
     db.flush()
 
     recs = db.scalars(
@@ -131,7 +131,7 @@ def test_no_recommendations_without_facts(db) -> None:
     stream = make_stream(db, channel)  # no viewers, no peaks, no speech
     backend = GroundedFakeLLM()
     stats = AnalysisStats()
-    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats)
+    _recommend(db, stream, backend, TokenBudget(backend, 30000, 3000), stats, "pt")
     db.flush()
     assert stats.insights_stored == 0
 
@@ -145,7 +145,7 @@ def test_retention_line_compares_to_channel_median(db) -> None:
     this = make_stream(db, channel, duration_minutes=20)
     db.flush()
 
-    line = _retention_line(db, this, retained_pct=80.0)
+    line = _retention_line(db, this, 80.0, "pt")
 
     assert "sua média (50%)" in line
     assert "30 pontos acima" in line
@@ -156,6 +156,6 @@ def test_retention_line_falls_back_without_history(db) -> None:
     stream = make_stream(db, channel, duration_minutes=20)
     db.flush()
 
-    line = _retention_line(db, stream, retained_pct=42.0)
+    line = _retention_line(db, stream, 42.0, "pt")
 
     assert line == "[contexto] RETENÇÃO: você segurou 42.0% do pico de audiência"

@@ -26,7 +26,7 @@ from tests.test_analysis_e2e import PromptAwareFakeLLM
 from workers.capture.collectors import ChatCollector, ViewerSampler
 from workers.capture.session import build_audit
 from workers.transcribe import pipeline as transcribe_pipeline
-from workers.transcribe.pipeline import SAMPLE_RATE, process_stream
+from workers.transcribe.pipeline import SAMPLE_RATE, Transcription, process_stream
 
 E2E_SECRET = "e2e-eventsub-secret"
 
@@ -85,8 +85,8 @@ class ScriptedTranscriber:
     def __init__(self) -> None:
         self._lines = iter(SPEECH_SCRIPT)
 
-    def transcribe(self, audio) -> list[tuple[float, float, str]]:
-        return [(0.0, 25.0, next(self._lines))]
+    def transcribe(self, audio) -> Transcription:
+        return Transcription(language="pt", segments=[(0.0, 25.0, next(self._lines))])
 
 
 def synthetic_audio(*args, **kwargs) -> np.ndarray:
@@ -219,6 +219,13 @@ def _process(db, stream: Stream, monkeypatch: pytest.MonkeyPatch) -> None:
     )
     db.expire_all()
     assert stream.status == StreamStatus.QUEUED_ANALYSIS
+    # The language travels the other way now: the model reports what it heard
+    # and that is stored on the channel. Sign-up says English (the product is
+    # served in English) while the audio is Portuguese, and both survive.
+    channel = db.get(Channel, stream.channel_id)
+    assert channel is not None
+    assert channel.language == "en"
+    assert channel.spoken_language == "pt"
 
     analyze_spec = WorkerSpec(
         job_type=JOB_ANALYZE,
@@ -281,12 +288,19 @@ def test_full_flow_login_processing_visualization(
         }
     }
     fake_twitch.channel_infos = {
+        # the streamer's own channel: this is where channels.language comes from
+        FAKE_USER["id"]: {
+            "broadcaster_id": FAKE_USER["id"],
+            "broadcaster_language": "en",
+            "game_name": "Just Chatting",
+            "title": "just chatting",
+        },
         "301": {
             "broadcaster_id": "301",
-            "broadcaster_language": "pt",
+            "broadcaster_language": "en",
             "game_name": "Just Chatting",
             "title": "bate-papo",
-        }
+        },
     }
     fake_twitch.videos = [
         {
@@ -373,7 +387,7 @@ def test_full_flow_login_processing_visualization(
     chatters = api_client.get(f"/api/streams/{stream.id}/chatters").json()
     raider = next(c for c in chatters if c["author_login"] == "raider_1")
     assert raider["followed_during_stream"] is True
-    assert "seguiu durante a live" in raider["labels"]
+    assert "followed" in raider["labels"]
 
     community = api_client.get(f"/api/streams/{stream.id}/community").json()
     assert community["sentiment_overall"] is not None

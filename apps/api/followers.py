@@ -37,24 +37,20 @@ DAYS_PER_YEAR = 365
 AFFILIATE = "affiliate"
 PARTNER = "partner"
 
-# (label, upper bound in days); the last bucket catches everything older.
+# (key, upper bound in days); the last bucket catches everything older. Keys, not
+# display text: the web app words them in the reader's language.
 AGE_BUCKETS = (
-    ("menos de 1 mês", DAYS_PER_MONTH),
-    ("1 a 6 meses", 6 * DAYS_PER_MONTH),
-    ("6 a 12 meses", DAYS_PER_YEAR),
-    ("1 a 2 anos", 2 * DAYS_PER_YEAR),
+    ("under_1m", DAYS_PER_MONTH),
+    ("1m_to_6m", 6 * DAYS_PER_MONTH),
+    ("6m_to_12m", DAYS_PER_YEAR),
+    ("1y_to_2y", 2 * DAYS_PER_YEAR),
 )
-AGE_BUCKET_OLDEST = "mais de 2 anos"
+AGE_BUCKET_OLDEST = "over_2y"
 
 TOP_VALUE_LIMIT = 15
 LOYAL_LIMIT = 15
 # Funnel stages from widest to deepest; each implies the ones above it.
-FUNNEL_STAGES = (
-    ("seguidor", "Só seguem"),
-    ("engajado", "Já deram chat"),
-    ("inscrito", "Inscritos"),
-    ("pagante", "Já pagaram (bits/subs)"),
-)
+FUNNEL_STAGES = ("follower", "engaged", "subscriber", "paying")
 
 
 class FollowerKpis(BaseModel):
@@ -108,7 +104,6 @@ class RecommendationOut(BaseModel):
 
 class FunnelStage(BaseModel):
     stage: str
-    label: str
     count: int
 
 
@@ -170,9 +165,10 @@ class SegmentMemberOut(BaseModel):
 
 
 class SegmentOut(BaseModel):
+    # Only the key travels: the persona name and blurb are fixed per key, so the
+    # web app words them. `action` is model-written and already in the channel's
+    # language.
     key: str
-    label: str
-    description: str
     count: int
     members: list[SegmentMemberOut]
     action: str | None
@@ -286,8 +282,8 @@ def _composition(
     for follower in followers:
         if follower.broadcaster_type is None:
             continue
-        label = {AFFILIATE: "Afiliados", PARTNER: "Parceiros"}.get(
-            follower.broadcaster_type, "Comuns"
+        label = {AFFILIATE: "affiliates", PARTNER: "partners"}.get(
+            follower.broadcaster_type, "regular"
         )
         type_counts[label] += 1
 
@@ -317,13 +313,13 @@ def _ordered_age_slices(age_counts: Counter[str]) -> list[AgeSlice]:
 
 def _funnel(profiles: list[FollowerProfile]) -> list[FunnelStage]:
     """Cumulative funnel: each stage counts everyone who reached it OR deeper,
-    so 'engajado' includes subscribers and payers too."""
-    order = [stage for stage, _ in FUNNEL_STAGES]
+    so 'engaged' includes subscribers and payers too."""
+    order = list(FUNNEL_STAGES)
     reached: Counter[str] = Counter(profile.stage for profile in profiles)
     stages: list[FunnelStage] = []
-    for depth, (stage, label) in enumerate(FUNNEL_STAGES):
+    for depth, stage in enumerate(FUNNEL_STAGES):
         count = sum(reached[s] for s in order[depth:])
-        stages.append(FunnelStage(stage=stage, label=label, count=count))
+        stages.append(FunnelStage(stage=stage, count=count))
     return stages
 
 
@@ -422,7 +418,7 @@ def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> Foll
             select(FollowerAiInsight).where(FollowerAiInsight.channel_id == channel_id)
         )
     )
-    action_by_label = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
+    action_by_key = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
     summary = next((r.content for r in rows if r.kind == KIND_BIO), None)
     reactivations = [
         ReactivationOut(who=r.title or "", message=r.content)
@@ -432,14 +428,12 @@ def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> Foll
     segments = [
         SegmentOut(
             key=s.key,
-            label=s.label,
-            description=s.description,
             count=s.count,
             members=[
                 SegmentMemberOut(login=m.login, display_name=m.display_name)
                 for m in s.members
             ],
-            action=action_by_label.get(s.label),
+            action=action_by_key.get(s.key),
         )
         for s in build_segments(profiles)
     ]

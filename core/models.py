@@ -85,6 +85,14 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # Screen language and the language the LLM writes insights in, fixed at
+    # sign-up. NOT the language spoken on the channel: Twitch's
+    # broadcaster_language says "en" for plenty of Brazilian channels.
+    language: Mapped[str] = mapped_column(String(8), default="pt")
+    # What the streamer actually speaks, measured by Whisper on the first
+    # transcription instead of guessed. Drives the chat stopwords and sentiment
+    # lexicon, so a Portuguese live signed up in English still reads correctly.
+    spoken_language: Mapped[str | None] = mapped_column(String(8))
     # StreamElements connector (external tips). Legacy manual path stores the
     # JWT; the OAuth "Connect" flow stores access/refresh tokens instead.
     streamelements_account_id: Mapped[str | None] = mapped_column(String(64))
@@ -94,8 +102,12 @@ class Channel(Base):
     streamelements_token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    streamelements_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    streamelements_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Follower(Base):
@@ -123,7 +135,9 @@ class Follower(Base):
     # Streamer-only enrichment (affiliate/partner), from Get Channel Information.
     stream_category: Mapped[str | None] = mapped_column(String(128))
     stream_language: Mapped[str | None] = mapped_column(String(16))
-    streamer_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    streamer_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class PastBroadcast(Base):
@@ -155,7 +169,9 @@ class Vip(Base):
     """Channel VIPs, seeded from Helix on connect."""
 
     __tablename__ = "vips"
-    __table_args__ = (Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),)
+    __table_args__ = (
+        Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
@@ -273,7 +289,9 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
     __table_args__ = (
         Index("ix_transcript_segments_stream_started", "stream_id", "started_at"),
-        Index("ix_transcript_segments_text_search", "text_search", postgresql_using="gin"),
+        Index(
+            "ix_transcript_segments_text_search", "text_search", postgresql_using="gin"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -290,7 +308,9 @@ class TranscriptSegment(Base):
 
 class ViewerSample(Base):
     __tablename__ = "viewer_samples"
-    __table_args__ = (Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),)
+    __table_args__ = (
+        Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
@@ -323,7 +343,9 @@ class Insight(Base):
     model_used: Mapped[str] = mapped_column(String(128))
     tokens_in: Mapped[int]
     tokens_out: Mapped[int]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class StreamRecord(Base):
@@ -332,7 +354,9 @@ class StreamRecord(Base):
     per (channel_id, metric)."""
 
     __tablename__ = "stream_records"
-    __table_args__ = (Index("ix_stream_records_channel_metric", "channel_id", "metric"),)
+    __table_args__ = (
+        Index("ix_stream_records_channel_metric", "channel_id", "metric"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
@@ -353,7 +377,9 @@ class ChannelRecommendation(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class FollowerRecommendation(Base):
@@ -368,7 +394,9 @@ class FollowerRecommendation(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class FollowerAiInsight(Base):
@@ -385,7 +413,9 @@ class FollowerAiInsight(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ExternalTip(Base):
@@ -393,7 +423,9 @@ class ExternalTip(Base):
     finance view can show total revenue, not just the Twitch slice."""
 
     __tablename__ = "external_tips"
-    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_external_tips_source_id"),)
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_external_tips_source_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
@@ -439,7 +471,9 @@ class TwitchClip(Base):
     reason: Mapped[str | None] = mapped_column(String(128))
     title: Mapped[str | None] = mapped_column(String(140))
     kept: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class EventSubMessage(Base):
@@ -475,4 +509,6 @@ class Job(Base):
     last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

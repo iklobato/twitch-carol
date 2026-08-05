@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { apiGet, apiPost, formatDate, formatTime, STATUS_LABELS } from '../api'
+import { apiGet, apiPost, formatDate, formatTime, statusLabel } from '../api'
+import { fmtInt, t, type MessageKey } from '../i18n'
 import ActionableSection from '../components/ActionableSection'
 import ChattersSection from '../components/ChattersSection'
 import FinanceSection from '../components/FinanceSection'
@@ -29,28 +30,22 @@ function scrollToPeak(peakId: number) {
 const PROCESSING_POLL_MS = 10000
 const TERMINAL_STATUSES = new Set(['ready', 'failed'])
 
-const NUMBER_LABELS: Record<string, string> = {
-  duration_minutes: 'Duração (min)',
-  messages: 'Mensagens',
-  chatters: 'Chatters únicos',
-  peak_viewers: 'Pico de viewers',
-  avg_viewers: 'Média de viewers',
-  events: 'Eventos',
-}
-
 function NumbersRow({ report }: { report: Report }) {
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-6">
       {Object.entries(report.numbers).map(([key, comparison]) => (
         <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">{NUMBER_LABELS[key] ?? key}</p>
-          <p className="text-lg font-bold">{comparison.value.toLocaleString('pt-BR')}</p>
+          <p className="text-xs text-zinc-500">{t(`numbers.${key}` as MessageKey)}</p>
+          <p className="text-lg font-bold">{fmtInt(comparison.value)}</p>
           {comparison.delta_pct != null ? (
-            <p className={`text-xs ${comparison.delta_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-              {comparison.delta_pct >= 0 ? '▲' : '▼'} {Math.abs(comparison.delta_pct)}% vs últimas 10
+            <p
+              className={`text-xs ${comparison.delta_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+            >
+              {comparison.delta_pct >= 0 ? '▲' : '▼'} {Math.abs(comparison.delta_pct)}%{' '}
+              {t('report.vsLast10')}
             </p>
           ) : (
-            <p className="text-xs text-zinc-600">sem histórico</p>
+            <p className="text-xs text-zinc-600">{t('report.noHistory')}</p>
           )}
         </div>
       ))}
@@ -58,30 +53,44 @@ function NumbersRow({ report }: { report: Report }) {
   )
 }
 
-function FeedbackButtons({ insight, onFeedback }: { insight: InsightOut; onFeedback: (value: string | null) => void }) {
+function FeedbackButtons({
+  insight,
+  onFeedback,
+}: {
+  insight: InsightOut
+  onFeedback: (value: string | null) => void
+}) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <button
         onClick={() => onFeedback(insight.feedback === 'useful' ? null : 'useful')}
         className={`rounded border px-2 py-0.5 ${insight.feedback === 'useful' ? 'border-emerald-600 text-emerald-400' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
       >
-        👍 Útil
+        {t('feedback.useful')}
       </button>
       <button
         onClick={() => onFeedback(insight.feedback === 'not_useful' ? null : 'not_useful')}
         className={`rounded border px-2 py-0.5 ${insight.feedback === 'not_useful' ? 'border-red-700 text-red-400' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
       >
-        👎 Inútil
+        {t('feedback.notUseful')}
       </button>
     </div>
   )
 }
 
-function SummaryHero({ insight, onFeedback }: { insight: InsightOut; onFeedback: (value: string | null) => void }) {
+function SummaryHero({
+  insight,
+  onFeedback,
+}: {
+  insight: InsightOut
+  onFeedback: (value: string | null) => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <section className="mb-6 rounded-xl border border-purple-900/70 bg-gradient-to-b from-purple-950/40 to-zinc-900 p-6">
-      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-purple-400">Resumo da live</p>
+      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-purple-400">
+        {t('report.summary')}
+      </p>
       <p className="mb-4 max-w-3xl text-base leading-relaxed">{insight.content}</p>
       {insight.cited_segments.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
@@ -91,8 +100,12 @@ function SummaryHero({ insight, onFeedback }: { insight: InsightOut; onFeedback:
               onClick={() => setOpen(!open)}
               className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:border-purple-500 hover:text-zinc-200"
             >
-              🎙 <span className="font-semibold text-purple-400">{formatTime(segment.started_at)}</span>{' '}
-              "{(segment.text ?? '').slice(0, 42)}{(segment.text ?? '').length > 42 ? '…' : ''}"
+              🎙{' '}
+              <span className="font-semibold text-purple-400">
+                {formatTime(segment.started_at)}
+              </span>{' '}
+              "{(segment.text ?? '').slice(0, 42)}
+              {(segment.text ?? '').length > 42 ? '…' : ''}"
             </button>
           ))}
         </div>
@@ -116,17 +129,18 @@ function Sparkline({ timeline, peak }: { timeline: Timeline; peak: PeakOut }) {
   const start = new Date(peak.window_start).getTime() - 3 * 60000
   const end = new Date(peak.window_end).getTime() + 3 * 60000
   const points = timeline.chat.filter((point) => {
-    const t = new Date(point.t).getTime()
-    return t >= start && t <= end
+    const time = new Date(point.t).getTime()
+    return time >= start && time <= end
   })
   if (points.length === 0) return null
   const max = Math.max(...points.map((point) => point.value))
   return (
     <div className="mt-2 flex h-7 items-end gap-0.5">
       {points.map((point) => {
-        const t = new Date(point.t).getTime()
+        const time = new Date(point.t).getTime()
         const hot =
-          t >= new Date(peak.window_start).getTime() && t < new Date(peak.window_end).getTime()
+          time >= new Date(peak.window_start).getTime() &&
+          time < new Date(peak.window_end).getTime()
         return (
           <span
             key={point.t}
@@ -171,17 +185,19 @@ function MomentCard({
     >
       <div className="flex flex-wrap gap-x-6 gap-y-2 md:flex-nowrap">
         <div className="w-24 shrink-0">
-          <p className="text-lg font-bold tabular-nums text-orange-400">{formatTime(peak.window_start)}</p>
-          <p className="text-xs text-zinc-500">{peak.score.toFixed(1)}x o ritmo</p>
+          <p className="text-lg font-bold tabular-nums text-orange-400">
+            {formatTime(peak.window_start)}
+          </p>
+          <p className="text-xs text-zinc-500">
+            {t('moment.rate', { score: peak.score.toFixed(1) })}
+          </p>
           {timeline && <Sparkline timeline={timeline} peak={peak} />}
         </div>
         <div className="min-w-0 flex-1">
           {insight ? (
             <p className="mb-3 text-sm leading-relaxed">{insight.content}</p>
           ) : (
-            <p className="mb-3 text-sm text-zinc-500">
-              Pico detectado; sem explicação publicada (evidência não verificável ou orçamento).
-            </p>
+            <p className="mb-3 text-sm text-zinc-500">{t('moment.noExplanation')}</p>
           )}
           <div className="flex flex-wrap items-center gap-2">
             {insight && insight.cited_messages.length > 0 && (
@@ -189,16 +205,21 @@ function MomentCard({
                 onClick={() => setShowCited(!showCited)}
                 className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:border-orange-500 hover:text-zinc-200"
               >
-                💬 {insight.cited_messages.length} mensagens citadas
+                {t('moment.citedMessages', { n: insight.cited_messages.length })}
               </button>
             )}
             <button
               onClick={() => setFullChat(!fullChat)}
               className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:border-orange-500 hover:text-zinc-200"
             >
-              abrir transcrição + chat
+              {t('moment.openTranscript')}
             </button>
-            {insight && <FeedbackButtons insight={insight} onFeedback={(value) => onFeedback(insight, value)} />}
+            {insight && (
+              <FeedbackButtons
+                insight={insight}
+                onFeedback={(value) => onFeedback(insight, value)}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -217,22 +238,37 @@ function MomentCard({
       {fullChat && detail && (
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">O que você estava falando</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {t('moment.youWereSaying')}
+            </p>
             <div className="max-h-64 space-y-2 overflow-y-auto pr-2 text-sm">
-              {detail.segments.length === 0 && <p className="text-zinc-500">Sem transcrição nesta janela.</p>}
+              {detail.segments.length === 0 && (
+                <p className="text-zinc-500">{t('moment.noTranscript')}</p>
+              )}
               {detail.segments.map((segment) => (
                 <p key={segment.id}>
-                  <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
-                  {segment.kind === 'speech' ? segment.text : <em className="text-zinc-500">[{segment.kind}]</em>}
+                  <span className="tabular-nums text-zinc-500">
+                    {formatTime(segment.started_at)}
+                  </span>{' '}
+                  {segment.kind === 'speech' ? (
+                    segment.text
+                  ) : (
+                    <em className="text-zinc-500">[{segment.kind}]</em>
+                  )}
                 </p>
               ))}
             </div>
           </div>
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">O que o chat dizia</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              {t('moment.chatWasSaying')}
+            </p>
             <div className="max-h-64 space-y-1 overflow-y-auto pr-2 text-sm">
               {detail.messages.map((message) => (
-                <p key={message.id} className={citedIds.has(message.id) ? 'rounded bg-purple-950/50 px-1' : ''}>
+                <p
+                  key={message.id}
+                  className={citedIds.has(message.id) ? 'rounded bg-purple-950/50 px-1' : ''}
+                >
                   <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
                   <span className="text-purple-400">{message.author_login}:</span> {message.text}
                 </p>
@@ -254,18 +290,22 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
       .catch(() => setDetail(null))
   }, [streamId, insightId])
 
-  if (detail === null) return <p className="ml-10 mt-2 text-xs text-zinc-500">Carregando detalhes...</p>
+  if (detail === null)
+    return <p className="ml-10 mt-2 text-xs text-zinc-500">{t('topic.loadingDetails')}</p>
 
   return (
     <div className="ml-10 mt-2 space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
       <p className="text-xs text-zinc-400">
-        Janela {formatTime(detail.window_start)}–{formatTime(detail.window_end)} ·{' '}
-        {detail.messages_in_window.toLocaleString('pt-BR')} mensagens
-        {detail.chat_rate_lift != null && ` · ${detail.chat_rate_lift}x o ritmo da live`}
+        {t('topic.window', {
+          start: formatTime(detail.window_start),
+          end: formatTime(detail.window_end),
+          n: fmtInt(detail.messages_in_window),
+        })}
+        {detail.chat_rate_lift != null && t('topic.lift', { n: detail.chat_rate_lift })}
       </p>
       {detail.top_chatters.length > 0 && (
         <p className="text-xs text-zinc-400">
-          Quem mais falou aqui:{' '}
+          {t('topic.topChatters')}{' '}
           {detail.top_chatters.map((chatter) => (
             <span key={chatter.author_login} className="mr-2 text-purple-400">
               {chatter.author_login} ({chatter.messages})
@@ -276,13 +316,13 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
       {detail.top_words.length > 0 && (
         <div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Palavras mais usadas neste assunto
+            {t('topic.words')}
           </p>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             {detail.top_words.map((word) => (
               <span
                 key={word.word}
-                title={`${word.count} vezes`}
+                title={t('words.times', { n: word.count })}
                 className="text-sky-300"
                 style={{ fontSize: `${12 + Math.min(word.count, 10)}px` }}
               >
@@ -293,7 +333,9 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
         </div>
       )}
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">O que você falou</p>
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          {t('topic.youSaid')}
+        </p>
         {detail.cited_segments.map((segment) => (
           <p key={segment.id}>
             <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
@@ -303,7 +345,9 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
       </div>
       {detail.sample_messages.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">O chat na hora</p>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {t('topic.chatThen')}
+          </p>
           {detail.sample_messages.map((message) => (
             <p key={message.id}>
               <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
@@ -333,20 +377,29 @@ function TopicRow({
     <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900 p-3">
       <div className="flex items-center gap-3">
         <span className="w-7 shrink-0 text-sm font-bold tabular-nums text-zinc-500">
-          {rank != null ? `${rank}º` : '·'}
+          {rank != null ? `${rank}.` : '·'}
         </span>
         <div className="min-w-0 flex-1">
-          <button onClick={() => setOpen(!open)} className="text-left text-sm font-semibold hover:text-purple-300">
-            {name} <span className="text-xs font-normal text-zinc-600">{open ? '▲' : '▼ detalhes'}</span>
+          <button
+            onClick={() => setOpen(!open)}
+            className="text-left text-sm font-semibold hover:text-purple-300"
+          >
+            {name}{' '}
+            <span className="text-xs font-normal text-zinc-600">
+              {open ? '▲' : t('topic.details')}
+            </span>
           </button>
           {description && <p className="text-xs text-zinc-500">{description}</p>}
         </div>
         {insight.engagement_pct != null && (
           <div className="hidden w-44 shrink-0 md:block">
             <div className="h-2 overflow-hidden rounded bg-zinc-800">
-              <div className="h-full rounded bg-purple-500" style={{ width: `${insight.engagement_pct}%` }} />
+              <div
+                className="h-full rounded bg-purple-500"
+                style={{ width: `${insight.engagement_pct}%` }}
+              />
             </div>
-            <p className="mt-0.5 text-right text-[10px] text-zinc-600">engajamento do chat</p>
+            <p className="mt-0.5 text-right text-[10px] text-zinc-600">{t('topic.engagement')}</p>
           </div>
         )}
         <FeedbackButtons insight={insight} onFeedback={onFeedback} />
@@ -362,15 +415,20 @@ function AuditNotes({ audit }: { audit: Record<string, unknown> | null }) {
   const viewers = audit.viewers as { samples?: number; expected?: number } | undefined
   const notes: string[] = []
   if (chat?.disconnects) {
-    notes.push(`chat teve ${chat.disconnects} desconexão(ões), ~${Math.round(chat.gap_seconds ?? 0)}s perdidos`)
+    notes.push(
+      t('audit.chatDisconnects', {
+        n: chat.disconnects,
+        seconds: Math.round(chat.gap_seconds ?? 0),
+      }),
+    )
   }
   if (viewers?.samples != null && viewers?.expected != null && viewers.samples < viewers.expected) {
-    notes.push(`amostras de viewers incompletas (${viewers.samples}/${viewers.expected})`)
+    notes.push(t('audit.viewerSamples', { got: viewers.samples, expected: viewers.expected }))
   }
   if (notes.length === 0) return null
   return (
     <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm text-amber-200/90">
-      Lacunas de captura: {notes.join('; ')}.
+      {t('audit.gaps', { notes: notes.join('; ') })}
     </div>
   )
 }
@@ -392,12 +450,15 @@ function TldrCard({
       icon: '🔥',
       text: (
         <>
-          Melhor momento:{' '}
+          {t('tldr.bestMoment')}{' '}
           <button
             onClick={() => scrollToPeak(topPeak.id)}
             className="font-semibold text-orange-300 underline hover:text-orange-200"
           >
-            {formatTime(topPeak.window_start)} · {topPeak.score.toFixed(1)}x o chat
+            {t('tldr.peakScore', {
+              time: formatTime(topPeak.window_start),
+              score: topPeak.score.toFixed(1),
+            })}
           </button>
         </>
       ),
@@ -408,7 +469,7 @@ function TldrCard({
       icon: '💬',
       text: (
         <>
-          Assunto que mais engajou:{' '}
+          {t('tldr.topTopic')}{' '}
           <span className="font-semibold">{topics[0].content.split('\n')[0]}</span>
         </>
       ),
@@ -419,8 +480,9 @@ function TldrCard({
       icon: '📉',
       text: (
         <>
-          Retenção de <span className="font-semibold">{actionable.retention.retained_pct}%</span> do
-          pico de audiência
+          {t('tldr.retention')}{' '}
+          <span className="font-semibold">{actionable.retention.retained_pct}%</span>{' '}
+          {t('tldr.retentionSuffix')}
         </>
       ),
     })
@@ -431,9 +493,12 @@ function TldrCard({
       icon: '📊',
       text: (
         <>
-          <span className="font-semibold">{messages.value.toLocaleString('pt-BR')}</span> mensagens
+          <span className="font-semibold">{fmtInt(messages.value)}</span> {t('tldr.messages')}
           {messages.delta_pct != null &&
-            ` (${messages.delta_pct >= 0 ? '+' : ''}${messages.delta_pct}% vs últimas 10)`}
+            t('tldr.messagesDelta', {
+              sign: messages.delta_pct >= 0 ? '+' : '',
+              pct: messages.delta_pct,
+            })}
         </>
       ),
     })
@@ -443,7 +508,7 @@ function TldrCard({
   return (
     <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
       <p className="mb-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
-        Resumo rápido
+        {t('tldr.title')}
       </p>
       <ul className="grid gap-x-6 gap-y-1.5 text-sm md:grid-cols-2">
         {bullets.map((bullet, index) => (
@@ -484,16 +549,18 @@ export default function StreamReport({ streamId }: { streamId: number }) {
   async function sendFeedback(insight: InsightOut, value: string | null) {
     await apiPost(`/api/insights/${insight.id}/feedback`, { feedback: value })
     setReport((current) =>
-      current && {
-        ...current,
-        insights: current.insights.map((item) =>
-          item.id === insight.id ? { ...item, feedback: value } : item,
-        ),
-      },
+      current
+        ? {
+            ...current,
+            insights: current.insights.map((item) =>
+              item.id === insight.id ? { ...item, feedback: value } : item,
+            ),
+          }
+        : current,
     )
   }
 
-  if (report === null) return <p className="text-zinc-400">Carregando relatório...</p>
+  if (report === null) return <p className="text-zinc-400">{t('report.loading')}</p>
 
   const summary = report.insights.find((insight) => insight.type === 'summary')
   const peakInsights = new Map(
@@ -517,12 +584,15 @@ export default function StreamReport({ streamId }: { streamId: number }) {
 
   return (
     <div>
-      <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">← voltar</a>
-      <h2 className="mb-1 mt-2 text-xl font-bold">{report.title ?? `Live #${report.id}`}</h2>
+      <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">
+        {t('nav.back')}
+      </a>
+      <h2 className="mb-1 mt-2 text-xl font-bold">
+        {report.title ?? t('live.number', { id: report.id })}
+      </h2>
       <p className="mb-4 text-sm text-zinc-400">
         {formatDate(report.started_at)} {formatTime(report.started_at)}
-        {report.ended_at && ` – ${formatTime(report.ended_at)}`} ·{' '}
-        {STATUS_LABELS[report.status] ?? report.status}
+        {report.ended_at && ` – ${formatTime(report.ended_at)}`} · {statusLabel(report.status)}
       </p>
 
       <PipelineStepper status={report.status} queue={queue} />
@@ -530,7 +600,9 @@ export default function StreamReport({ streamId }: { streamId: number }) {
       {report.status === 'ready' && (
         <TldrCard report={report} actionable={actionable} topics={topics} topPeak={topPeak} />
       )}
-      {summary && <SummaryHero insight={summary} onFeedback={(value) => sendFeedback(summary, value)} />}
+      {summary && (
+        <SummaryHero insight={summary} onFeedback={(value) => sendFeedback(summary, value)} />
+      )}
       <NumbersRow report={report} />
 
       {timeline && (
@@ -541,7 +613,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
 
       {momentPeaks.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">Momentos da live</h3>
+          <h3 className="mb-3 text-lg font-bold">{t('report.moments')}</h3>
           {momentPeaks.map((peak) => (
             <MomentCard
               key={peak.id}
@@ -561,7 +633,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
 
       {recommendations.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">Recomendações</h3>
+          <h3 className="mb-3 text-lg font-bold">{t('report.recommendations')}</h3>
           <div className="space-y-2">
             {recommendations.map((rec) => (
               <div
@@ -581,15 +653,13 @@ export default function StreamReport({ streamId }: { streamId: number }) {
               </div>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-zinc-600">
-            Geradas pelo modelo a partir dos picos e quedas medidos por SQL desta live.
-          </p>
+          <p className="mt-2 text-[11px] text-zinc-600">{t('report.recoNote')}</p>
         </div>
       )}
 
       {topics.length > 0 && (
         <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">Assuntos da live</h3>
+          <h3 className="mb-3 text-lg font-bold">{t('report.topics')}</h3>
           {topics.map((topic) => (
             <TopicRow
               key={topic.id}
@@ -605,9 +675,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
       <ChattersSection streamId={report.id} />
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (
-        <p className="text-sm text-zinc-500">
-          Nenhum insight publicado para esta live (sem evidência verificável ou análise pendente).
-        </p>
+        <p className="text-sm text-zinc-500">{t('report.noInsights')}</p>
       )}
     </div>
   )

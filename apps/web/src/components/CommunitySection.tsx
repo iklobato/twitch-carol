@@ -10,7 +10,8 @@ import {
   Tooltip,
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
-import { EVENT_LABELS, apiGet, formatTime } from '../api'
+import { apiGet, eventLabel, formatTime } from '../api'
+import { t } from '../i18n'
 import type { CommunityOut, EventMarker } from '../types'
 
 Chart.register(
@@ -25,9 +26,9 @@ Chart.register(
 )
 
 function sentimentLabel(score: number): { text: string; color: string } {
-  if (score > 0.15) return { text: 'positivo', color: 'text-emerald-400' }
-  if (score < -0.15) return { text: 'negativo', color: 'text-red-400' }
-  return { text: 'neutro', color: 'text-zinc-400' }
+  if (score > 0.15) return { text: t('sentiment.positive'), color: 'text-emerald-400' }
+  if (score < -0.15) return { text: t('sentiment.negative'), color: 'text-red-400' }
+  return { text: t('sentiment.neutral'), color: 'text-zinc-400' }
 }
 
 function SentimentGauge({ score }: { score: number }) {
@@ -44,9 +45,9 @@ function SentimentGauge({ score }: { score: number }) {
         />
       </div>
       <div className="mt-0.5 flex justify-between text-[10px] text-zinc-600">
-        <span>negativo</span>
-        <span>neutro</span>
-        <span>positivo</span>
+        <span>{t('sentiment.negative')}</span>
+        <span>{t('sentiment.neutral')}</span>
+        <span>{t('sentiment.positive')}</span>
       </div>
     </div>
   )
@@ -80,7 +81,7 @@ function SentimentChart({
           nearest = index
         }
       })
-      const name = EVENT_LABELS[event.type] ?? event.type
+      const name = eventLabel(event.type)
       const text = event.amount != null ? `${name} (${event.amount})` : name
       eventsByIndex.set(nearest, [...(eventsByIndex.get(nearest) ?? []), text])
     }
@@ -91,7 +92,7 @@ function SentimentChart({
         labels: points.map((point) => formatTime(point.t)),
         datasets: [
           {
-            label: 'Sentimento (janelas de 30s)',
+            label: t('community.sentimentSeries'),
             data: points.map((point) => point.score),
             borderColor: '#a855f7',
             segment: {
@@ -106,7 +107,7 @@ function SentimentChart({
             tension: 0.3,
           },
           {
-            label: 'Eventos',
+            label: t('chart.events'),
             data: points.map((_, index) => (eventsByIndex.has(index) ? 0 : null)) as number[],
             showLine: false,
             pointStyle: 'triangle',
@@ -165,14 +166,14 @@ function SentimentBlock({
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Sentimento do chat
+        {t('community.sentimentTitle')}
         <span className="ml-2 normal-case tracking-normal">
-          média{' '}
+          {t('community.average')}{' '}
           <b className={overall.color}>
             {community.sentiment_overall > 0 ? '+' : ''}
             {community.sentiment_overall} ({overall.text})
           </b>
-          <span className="ml-2 text-zinc-600">▲ = evento</span>
+          <span className="ml-2 text-zinc-600">{t('community.eventMarker')}</span>
         </span>
       </p>
       <SentimentGauge score={community.sentiment_overall} />
@@ -181,7 +182,7 @@ function SentimentBlock({
       </div>
       {community.sentiment_by_chatter.length > 0 && (
         <p className="mt-2 text-xs text-zinc-500">
-          Por chatter:{' '}
+          {t('community.byChatter')}{' '}
           {community.sentiment_by_chatter.map((chatter) => {
             const label = sentimentLabel(chatter.score)
             return (
@@ -206,13 +207,13 @@ function WordCloud({ community }: { community: CommunityOut }) {
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Palavras mais usadas
+        {t('words.mostUsed')}
       </p>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {community.words.map((word, index) => (
           <span
             key={word.word}
-            title={`${word.count} vezes`}
+            title={t('words.times', { n: word.count })}
             className={index % 3 === 0 ? 'text-purple-300' : index % 3 === 1 ? 'text-zinc-300' : 'text-sky-300'}
             style={{ fontSize: `${12 + 20 * Math.sqrt(word.count / max)}px` }}
           >
@@ -251,7 +252,7 @@ function EmoteChips({ community }: { community: CommunityOut }) {
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Emotes mais usados
+        {t('community.emotes')}
       </p>
       <div className="flex flex-wrap gap-2">
         {community.emotes.map((emote) => (
@@ -268,7 +269,7 @@ function PresenceHeatmap({ community }: { community: CommunityOut }) {
   return (
     <div>
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Presença ao longo da live (top {community.presence.rows.length})
+        {t('community.presence', { n: community.presence.rows.length })}
       </p>
       <div className="space-y-1 overflow-x-auto">
         {community.presence.rows.map((row) => (
@@ -278,7 +279,10 @@ function PresenceHeatmap({ community }: { community: CommunityOut }) {
               {row.cells.map((count, index) => (
                 <div
                   key={index}
-                  title={`${formatTime(community.presence.slots[index])}: ${count} msgs`}
+                  title={t('community.presenceCell', {
+                    time: formatTime(community.presence.slots[index]),
+                    count,
+                  })}
                   className="h-4 flex-1 rounded-sm"
                   style={{
                     backgroundColor:
@@ -320,7 +324,7 @@ export default function CommunitySection({
 
   return (
     <div className="mb-6">
-      <h3 className="mb-3 text-lg font-bold">Comunidade</h3>
+      <h3 className="mb-3 text-lg font-bold">{t('community.title')}</h3>
       <div className="space-y-5 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
         <SentimentBlock community={community} events={events} />
         <EmoteChips community={community} />

@@ -41,6 +41,7 @@ def test_transcribe_posts_audio_and_parses_segments() -> None:
         return httpx.Response(
             200,
             json={
+                "language": "pt",
                 "segments": [
                     {"start": 0.0, "end": 1.5, "text": " olá mundo "},
                     {"start": 1.5, "end": 2.0, "text": "   "},
@@ -51,14 +52,18 @@ def test_transcribe_posts_audio_and_parses_segments() -> None:
     transcriber = RemoteTranscriber(_settings(), client=_client(handler))
     out = transcriber.transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32))
 
-    assert out == [(0.0, 1.5, "olá mundo")]  # blank-text segment dropped
+    assert out.segments == [(0.0, 1.5, "olá mundo")]  # blank-text segment dropped
+    assert out.language == "pt"  # reported by the model, not asked for
     assert str(seen["url"]).endswith("/audio/transcriptions")
     assert seen["auth"] == "Bearer gsk-key"
     body = seen["body"]
     assert isinstance(body, bytes)
     assert b"whisper-large-v3-turbo" in body
     assert b'name="file"' in body
-    assert b'name="language"' in body
+    # no language is sent at all: telling Whisper the wrong one makes it
+    # transcribe phonetically, and every insight is then built on nonsense.
+    # It reads the audio; we read its answer.
+    assert b'name="language"' not in body
 
 
 def test_missing_config_raises() -> None:
@@ -83,7 +88,7 @@ def test_retries_on_429_then_succeeds() -> None:
         _settings(), client=_client(handler), retry_backoff=0
     )
     out = transcriber.transcribe(np.zeros(1600, dtype=np.float32))
-    assert out == [(0, 1, "oi")]
+    assert out.segments == [(0, 1, "oi")]
     assert calls["n"] == 2  # first 429, retried once
 
 

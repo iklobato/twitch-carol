@@ -6,7 +6,6 @@ Every insight passes evidence validation before being stored: cited ids must
 have been shown in the prompt AND exist in the database.
 """
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -25,8 +24,10 @@ from core.analytics import (
 from core.config import get_settings
 from core.follower_ai import generate_follower_ai
 from core.follower_intel import build_follower_facts, generate_follower_recommendations
-from core.llm import LLMBackend, TokenBudget
+from core.i18n import language_name, t
+from core.llm import LLMBackend, TokenBudget, parse_json_object
 from core.models import (
+    Channel,
     ChatMessage,
     Insight,
     InsightType,
@@ -71,12 +72,18 @@ FINAL_STEPS_OUTPUT_RESERVE = (
 RECOMMEND_MAX = 3
 RECOMMEND_TOP_PEAKS = 3
 
-JSON_INSTRUCTION = (
-    'Responda APENAS um JSON válido: {"content": "<texto em português do Brasil>", '
-    '"message_ids": [ids das mensagens citadas], "segment_ids": [ids dos trechos citados]}. '
-    "Use somente ids listados acima e cite pelo menos uma evidência real. "
-    "O campo content deve ter no máximo 400 caracteres; não repita mensagens do chat."
-)
+
+def _json_instruction(language: str | None) -> str:
+    """Prompts stay English whatever the channel speaks; only the model's answer
+    is written in the channel's language."""
+    return (
+        'Reply with valid JSON ONLY: {"content": "<text written in '
+        f'{language_name(language)}>", '
+        '"message_ids": [ids of the chat messages you cite], '
+        '"segment_ids": [ids of the speech segments you cite]}. '
+        "Use only ids listed above and cite at least one real piece of evidence. "
+        "The content field is at most 400 characters; do not repeat chat messages."
+    )
 
 
 @dataclass
@@ -107,21 +114,27 @@ def run_analysis(
         backend, settings.llm_max_input_tokens, settings.llm_max_output_tokens
     )
     stats = AnalysisStats()
+    # Everything the streamer reads out of this run is written in their own
+    # channel's language: the model answers in it, and the SQL facts we store
+    # alongside are built in it too.
+    language = db.scalar(
+        select(Channel.language).where(Channel.id == stream.channel_id)
+    )
 
     db.execute(delete(Insight).where(Insight.stream_id == stream.id))
     broke_records = update_stream_records(db, stream)
     peaks = compute_and_store_peaks(db, stream)
 
     for peak in peaks:
-        _explain_peak(db, stream, backend, budget, peak, stats)
+        _explain_peak(db, stream, backend, budget, peak, stats, language)
 
-    block_summaries = _summarize_blocks(db, stream, backend, budget, stats)
+    block_summaries = _summarize_blocks(db, stream, backend, budget, stats, language)
     if block_summaries:
-        _final_summary(db, stream, backend, budget, block_summaries, stats)
-        _rank_topics(db, stream, backend, budget, block_summaries, stats)
+        _final_summary(db, stream, backend, budget, block_summaries, stats, language)
+        _rank_topics(db, stream, backend, budget, block_summaries, stats, language)
 
-    _recommend(db, stream, strong, budget, stats)
-    _recommend_channel(db, stream, strong, budget, broke_records)
+    _recommend(db, stream, strong, budget, stats, language)
+    _recommend_channel(db, stream, strong, budget, broke_records, language)
 
     db.flush()
     logger.info(
@@ -142,6 +155,7 @@ def _recommend_channel(
     backend: LLMBackend,
     budget: TokenBudget,
     broke_records: list[RecordMetric],
+    language: str | None,
 ) -> None:
     """Refresh the account-level monetization recommendations after each stream
     is analyzed, grounded in the channel's SQL facts (records included)."""
@@ -152,14 +166,16 @@ def _recommend_channel(
             .where(Stream.status == StreamStatus.READY)
         )
     )
-    facts = build_monetization_facts(db, stream.channel_id, ready_ids)
-    add_record_facts(db, stream.channel_id, broke_records, facts)
-    generate_channel_recommendations(db, stream.channel_id, facts, backend, budget)
-    follower_facts = build_follower_facts(db, stream.channel_id)
-    generate_follower_recommendations(
-        db, stream.channel_id, follower_facts, backend, budget
+    facts = build_monetization_facts(db, stream.channel_id, ready_ids, language)
+    add_record_facts(db, stream.channel_id, broke_records, facts, language)
+    generate_channel_recommendations(
+        db, stream.channel_id, facts, backend, budget, language
     )
-    generate_follower_ai(db, stream.channel_id, backend, budget)
+    follower_facts = build_follower_facts(db, stream.channel_id, language)
+    generate_follower_recommendations(
+        db, stream.channel_id, follower_facts, backend, budget, language
+    )
+    generate_follower_ai(db, stream.channel_id, backend, budget, language)
 
 
 def _window_context(
@@ -184,9 +200,9 @@ def _window_context(
         .limit(chat_sample)
     ).all()
 
-    lines = ["TRECHOS DA FALA (segment_id: texto):"]
+    lines = ["SPEECH EXCERPTS (segment_id: text):"]
     lines.extend(f"{s.id}: {s.text}" for s in segments if s.text)
-    lines.append("MENSAGENS DO CHAT (message_id: autor: texto):")
+    lines.append("CHAT MESSAGES (message_id: author: text):")
     lines.extend(f"{m.id}: {m.author_login}: {m.text}" for m in messages)
     return PromptContext(
         text="\n".join(lines),
@@ -211,7 +227,7 @@ def _call_and_store(
     out against the prompt candidates and the database."""
     response = backend.generate(prompt, output_tokens)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     if parsed is None or not str(parsed.get("content", "")).strip():
         stats.insights_discarded += 1
         logger.warning(
@@ -247,23 +263,6 @@ def _call_and_store(
     return str(parsed["content"]).strip()
 
 
-_JSON_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
-
-
-def _parse_json(response: str) -> dict | None:
-    # Some models (e.g. Anthropic via OpenRouter) wrap JSON in a markdown code
-    # fence despite response_format=json_object; unwrap before parsing.
-    fenced = _JSON_FENCE.match(response)
-    text = fenced.group(1) if fenced else response
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict):
-        return None
-    return parsed
-
-
 def _explain_peak(
     db: Session,
     stream: Stream,
@@ -271,6 +270,7 @@ def _explain_peak(
     budget: TokenBudget,
     peak: Peak,
     stats: AnalysisStats,
+    language: str | None,
 ) -> None:
     if not budget.can_afford(PEAK_PROMPT_INPUT_CAP, PEAK_OUTPUT_TOKENS):
         stats.skipped_for_budget.append(f"peak@{peak.window_start:%H:%M}")
@@ -280,9 +280,10 @@ def _explain_peak(
     )
     fitted = budget.fit_input(context.text, PEAK_PROMPT_INPUT_CAP)
     prompt = (
-        f"O chat de uma live na Twitch atingiu {peak.score:.1f}x o ritmo normal entre "
-        f"{peak.window_start:%H:%M:%S} e {peak.window_end:%H:%M:%S} (UTC).\n{fitted}\n"
-        f"Explique em 2 ou 3 frases o que causou esse pico de chat. {JSON_INSTRUCTION}"
+        f"The chat of a Twitch live hit {peak.score:.1f}x its normal pace between "
+        f"{peak.window_start:%H:%M:%S} and {peak.window_end:%H:%M:%S} (UTC).\n{fitted}\n"
+        "Explain in 2 or 3 sentences what caused this chat peak. "
+        + _json_instruction(language)
     )
     _call_and_store(
         db,
@@ -322,6 +323,7 @@ def _summarize_blocks(
     backend: LLMBackend,
     budget: TokenBudget,
     stats: AnalysisStats,
+    language: str | None,
 ) -> list[str]:
     summaries: list[str] = []
     for start, end in _stream_blocks(stream):
@@ -338,15 +340,16 @@ def _summarize_blocks(
         context = _window_context(db, stream, start, end, BLOCK_CHAT_SAMPLE)
         fitted = budget.fit_input(context.text, BLOCK_PROMPT_INPUT_CAP)
         previous = (
-            f"Resumo do que aconteceu antes: {summaries[-1]}\n" if summaries else ""
+            f"Summary of what happened before: {summaries[-1]}\n" if summaries else ""
         )
         prompt = (
-            f"{previous}Bloco de {start:%H:%M} a {end:%H:%M} (UTC) de uma live na Twitch.\n"
-            f"{fitted}\nResuma este bloco em até 3 frases. {JSON_INSTRUCTION}"
+            f"{previous}Block from {start:%H:%M} to {end:%H:%M} (UTC) of a Twitch live.\n"
+            f"{fitted}\nSummarize this block in at most 3 sentences. "
+            + _json_instruction(language)
         )
         response = backend.generate(prompt, BLOCK_OUTPUT_TOKENS)
         budget.spend(prompt, response)
-        parsed = _parse_json(response)
+        parsed = parse_json_object(response)
         if parsed is None or not str(parsed.get("content", "")).strip():
             logger.warning(
                 "block summary unparseable, block skipped",
@@ -367,7 +370,7 @@ def _evidence_segment_context(db: Session, stream: Stream) -> PromptContext:
     ).all()
     text = "\n".join(f"{s.id}: {s.text}" for s in segments if s.text)
     return PromptContext(
-        text=f"TRECHOS DA FALA (segment_id: texto):\n{text}",
+        text=f"SPEECH EXCERPTS (segment_id: text):\n{text}",
         message_ids=set(),
         segment_ids={s.id for s in segments},
     )
@@ -380,6 +383,7 @@ def _final_summary(
     budget: TokenBudget,
     block_summaries: list[str],
     stats: AnalysisStats,
+    language: str | None,
 ) -> None:
     if not budget.can_afford(TOPICS_PROMPT_INPUT_CAP, SUMMARY_OUTPUT_TOKENS):
         stats.skipped_for_budget.append("summary")
@@ -389,8 +393,9 @@ def _final_summary(
         "\n".join(f"- {s}" for s in block_summaries), TOPICS_PROMPT_INPUT_CAP
     )
     prompt = (
-        f"Resumos por bloco de uma live na Twitch, em ordem:\n{joined}\n{context.text}\n"
-        f"Escreva o resumo geral da live em um parágrafo. {JSON_INSTRUCTION}"
+        f"Block-by-block summaries of a Twitch live, in order:\n{joined}\n{context.text}\n"
+        f"Write the overall summary of the live in one paragraph. "
+        + _json_instruction(language)
     )
     _call_and_store(
         db,
@@ -412,6 +417,7 @@ def _rank_topics(
     budget: TokenBudget,
     block_summaries: list[str],
     stats: AnalysisStats,
+    language: str | None,
 ) -> None:
     """One insight per topic, ranked; each topic validates its own evidence."""
     if not budget.can_afford(TOPICS_PROMPT_INPUT_CAP, TOPICS_OUTPUT_TOKENS):
@@ -422,17 +428,18 @@ def _rank_topics(
         "\n".join(f"- {s}" for s in block_summaries), TOPICS_PROMPT_INPUT_CAP
     )
     prompt = (
-        f"Resumos por bloco de uma live na Twitch:\n{joined}\n{context.text}\n"
-        "Identifique os principais assuntos da live, do mais ao menos comentado. "
-        'Responda APENAS um JSON válido: {"topics": [{"name": "<assunto em poucas palavras>", '
-        '"description": "<1 frase em português do Brasil>", "segment_ids": [ids dos trechos], '
-        '"message_ids": []}]}. Use somente ids listados acima, máximo '
-        f"{TOPIC_MAX} assuntos DISTINTOS (não fatie o mesmo assunto), cite pelo menos "
-        "um id por assunto. O name é um rótulo curto, nunca uma mensagem do chat."
+        f"Block-by-block summaries of a Twitch live:\n{joined}\n{context.text}\n"
+        "Identify the main topics of the live, from most to least talked about. "
+        'Reply with valid JSON ONLY: {"topics": [{"name": "<topic in a few words>", '
+        f'"description": "<1 sentence written in {language_name(language)}>", '
+        '"segment_ids": [ids of the speech segments], "message_ids": []}]}. '
+        f"Use only ids listed above, at most {TOPIC_MAX} DISTINCT topics (do not "
+        "slice the same topic), cite at least one id per topic. The name is a "
+        "short label, never a chat message."
     )
     response = backend.generate(prompt, TOPICS_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     topics = parsed.get("topics") if parsed else None
     if not isinstance(topics, list):
         stats.insights_discarded += 1
@@ -562,17 +569,23 @@ def _channel_median_retention(
     return median(rates) if rates else None
 
 
-def _retention_line(db: Session, stream: Stream, retained_pct: float) -> str:
+def _retention_line(
+    db: Session, stream: Stream, retained_pct: float, language: str | None
+) -> str:
     """A retention number alone only invites 'improve retention'; compared to
     the channel's own median it says whether THIS live held better or worse."""
     channel_median = _channel_median_retention(db, stream.channel_id, stream.id)
     if channel_median is None:
-        return f"[contexto] RETENÇÃO: você segurou {retained_pct}% do pico de audiência"
+        return t(language, "fact.retention", pct=retained_pct)
     delta = retained_pct - channel_median
-    direction = "acima" if delta >= 0 else "abaixo"
-    return (
-        f"[contexto] RETENÇÃO: você segurou {retained_pct}% do pico, "
-        f"{abs(delta):.0f} pontos {direction} da sua média ({channel_median:.0f}%)"
+    direction = "direction.above" if delta >= 0 else "direction.below"
+    return t(
+        language,
+        "fact.retention_vs_median",
+        pct=retained_pct,
+        points=f"{abs(delta):.0f}",
+        direction=t(language, direction),
+        median=f"{channel_median:.0f}",
     )
 
 
@@ -582,6 +595,7 @@ def _recommend(
     backend: LLMBackend,
     budget: TokenBudget,
     stats: AnalysisStats,
+    language: str | None,
 ) -> None:
     """Grounded recommendations: the LLM only phrases advice around SQL facts
     (peaks, dips, retention), and each recommendation must cite a real speech
@@ -612,8 +626,14 @@ def _recommend(
             number = len(lines) + 1
             fact_segment[number] = segment.id
             lines.append(
-                f"[{number}] PICO às {peak.window_start:%H:%M}: o chat foi "
-                f"{peak.score:.1f}x o normal enquanto você falava '{segment.text}'"
+                f"[{number}] "
+                + t(
+                    language,
+                    "fact.peak",
+                    time=f"{peak.window_start:%H:%M}",
+                    score=f"{peak.score:.1f}",
+                    text=segment.text,
+                )
             )
     for dip in dips:
         segment = _segment_near(speech, dip.at)
@@ -621,29 +641,37 @@ def _recommend(
             number = len(lines) + 1
             fact_segment[number] = segment.id
             cause = dip_cause(db, stream.id, dip.at)
-            cause_text = f", logo após {cause}," if cause else ""
+            cause_text = t(language, "fact.dip_cause", cause=cause) if cause else ""
             lines.append(
-                f"[{number}] QUEDA às {dip.at:%H:%M}: perdeu {dip.pct_drop}% da "
-                f"audiência{cause_text} enquanto você falava '{segment.text}'"
+                f"[{number}] "
+                + t(
+                    language,
+                    "fact.dip",
+                    time=f"{dip.at:%H:%M}",
+                    pct=dip.pct_drop,
+                    cause=cause_text,
+                    text=segment.text,
+                )
             )
     if retention is not None:
-        lines.append(_retention_line(db, stream, retention.retained_pct))
+        lines.append(_retention_line(db, stream, retention.retained_pct, language))
 
     if not fact_segment:
         return  # nothing SQL-grounded to recommend on
 
     prompt = (
-        "FATOS medidos desta live na Twitch (cada um com um número entre colchetes):\n"
+        "FACTS measured from this Twitch live (each numbered in brackets):\n"
         + "\n".join(lines)
-        + "\nCom base SOMENTE nesses fatos, dê recomendações práticas para as próximas "
-        "lives (faça mais do que funcionou, ajuste o que esvaziou). Responda APENAS um "
-        'JSON válido: {"recommendations": [{"content": "<recomendação em 1-2 frases, '
-        'português do Brasil>", "fact_ids": [números dos fatos que embasam]}]}. Cite pelo '
-        f"menos um número de fato por recomendação, máximo {RECOMMEND_MAX}, seja concreto."
+        + "\nBased ONLY on these facts, give practical recommendations for the "
+        "next lives (do more of what worked, fix what emptied the room). Reply "
+        'with valid JSON ONLY: {"recommendations": [{"content": "<recommendation '
+        f'in 1-2 sentences, written in {language_name(language)}>", '
+        '"fact_ids": [numbers of the facts behind it]}]}. Cite at least one fact '
+        f"number per recommendation, at most {RECOMMEND_MAX}, be concrete."
     )
     response = backend.generate(prompt, RECOMMEND_OUTPUT_TOKENS)
     budget.spend(prompt, response)
-    parsed = _parse_json(response)
+    parsed = parse_json_object(response)
     recommendations = parsed.get("recommendations") if parsed else None
     if not isinstance(recommendations, list):
         stats.insights_discarded += 1

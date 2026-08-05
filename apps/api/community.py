@@ -11,6 +11,7 @@ from sqlalchemy import select
 
 from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
+from core.i18n import chat_language
 from core.models import ChatMessage, Stream
 from core.text import (
     emote_occurrences,
@@ -105,6 +106,7 @@ def stream_community(
     stream_id: int, channel: CurrentChannel, db: DbSession
 ) -> CommunityOut:
     stream = _owned_stream(db, channel, stream_id)
+    language = chat_language(channel.spoken_language, channel.language)
     ended_at = stream.ended_at if stream.ended_at is not None else stream.started_at
     total_minutes = ceil(max((ended_at - stream.started_at).total_seconds() / 60, 1))
 
@@ -135,8 +137,8 @@ def stream_community(
         for emote_id, name in emote_occurrences(text, message_emotes):
             emotes[(emote_id, name)] += 1
         tokens = tokenize(strip_emotes(text, message_emotes))
-        words.update(meaningful_words(text, message_emotes))
-        score = message_sentiment(tokens)
+        words.update(meaningful_words(text, message_emotes, language))
+        score = message_sentiment(tokens, language)
         if score is not None:
             all_scores.append(score)
             bucket_sentiment[sentiment_bucket].append(score)

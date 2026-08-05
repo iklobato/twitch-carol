@@ -112,10 +112,10 @@ describe('OverviewSection', () => {
 
     render(<OverviewSection streams={[READY_STREAM]} />)
 
-    await screen.findByText('Visão geral')
-    expect(screen.getByText('12.400')).toBeTruthy() // seguidores
-    expect(screen.getByText((t) => t.includes('546,00'))).toBeTruthy() // arrecadado
-    expect(screen.getByText('Speedrun de Elden Ring')).toBeTruthy() // última live
+    await screen.findByText('Overview')
+    expect(screen.getByText('12,400')).toBeTruthy() // followers
+    expect(screen.getByText((t) => t.includes('546.00'))).toBeTruthy() // earned
+    expect(screen.getByText('Speedrun de Elden Ring')).toBeTruthy() // last live
     await waitFor(() =>
       expect(screen.getByText((t) => t.includes('Just Chatting'))).toBeTruthy(),
     ) // destaque = recomendação

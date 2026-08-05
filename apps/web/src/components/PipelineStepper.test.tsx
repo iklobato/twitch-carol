@@ -20,26 +20,26 @@ describe('PipelineStepper', () => {
 
   it('mostra captura ativa com os eventos de início e fim', () => {
     render(<PipelineStepper status="capturing" queue={null} />)
-    expect(screen.getByText('Live em processamento')).toBeTruthy()
-    expect(screen.getByText('começa: stream.online')).toBeTruthy()
-    expect(screen.getByText('termina: stream.offline')).toBeTruthy()
+    expect(screen.getByText('Live being processed')).toBeTruthy()
+    expect(screen.getByText('starts: stream.online')).toBeTruthy()
+    expect(screen.getByText('ends: stream.offline')).toBeTruthy()
   })
 
   it('mostra posição e estimativa quando na fila', () => {
     render(<PipelineStepper status="queued_transcription" queue={queueItem} />)
-    expect(screen.getByText('Transcrição · na fila')).toBeTruthy()
-    expect(screen.getByText(/posição 3/)).toBeTruthy()
+    expect(screen.getByText('Transcription · queued')).toBeTruthy()
+    expect(screen.getByText(/position 3/)).toBeTruthy()
     expect(screen.getByText(/~5 min/)).toBeTruthy()
   })
 
   it('análise ativa mostra a dependência da transcrição', () => {
     render(<PipelineStepper status="analyzing" queue={null} />)
-    expect(screen.getByText('depende: transcrição pronta')).toBeTruthy()
-    expect(screen.getByText('termina: insights validados')).toBeTruthy()
+    expect(screen.getByText('needs: transcription done')).toBeTruthy()
+    expect(screen.getByText('ends: insights validated')).toBeTruthy()
   })
 
   it('estado de falha aparece em destaque', () => {
     render(<PipelineStepper status="failed" queue={null} />)
-    expect(screen.getByText('Processamento falhou')).toBeTruthy()
+    expect(screen.getByText('Processing failed')).toBeTruthy()
   })
 })

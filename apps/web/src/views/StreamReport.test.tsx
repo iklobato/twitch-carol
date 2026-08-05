@@ -124,7 +124,7 @@ describe('StreamReport', () => {
     render(<StreamReport streamId={6} />)
     await screen.findByText('Resumo da live de teste.')
 
-    const useful = screen.getAllByRole('button', { name: /Útil/ })[0]
+    const useful = screen.getAllByRole('button', { name: /Useful/ })[0]
     fireEvent.click(useful)
 
     await waitFor(() => {
@@ -139,7 +139,7 @@ describe('StreamReport', () => {
     render(<StreamReport streamId={6} />)
     await screen.findByText('O chat explodiu com a raid.')
 
-    fireEvent.click(screen.getByRole('button', { name: /1 mensagens citadas/ }))
+    fireEvent.click(screen.getByRole('button', { name: /1 cited messages/ }))
     expect(screen.getByText(/HYPE/)).toBeTruthy()
   })
 })
