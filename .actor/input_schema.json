@@ -73,8 +73,8 @@
     "min_seguidores": {
       "title": "Minimo de seguidores",
       "type": "integer",
-      "description": "Canal menor que isso quase nunca vira assinante. A primeira leva usou 100 e esgotou.",
-      "default": 5000,
+      "description": "Medido em 2026-08-09 na Helix: dos 446 canais em pt com email publico e sem contato, 5000 deixava so 37 de fora da fila, e a faixa de 1000 a 5000 traz outros 125. Nao ha dado sustentando que canal pequeno converte pior: dos contatados com contagem conhecida, abaixo de 1000 foram 2 cadastros em 10 contatos, contra 3 em 284 na faixa de cima.",
+      "default": 1000,
       "editor": "number"
     },
     "max_seguidores": {

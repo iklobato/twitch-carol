@@ -8,6 +8,11 @@ E daqui que sai o portao antes de disparar o proximo lote: bounce duro abaixo de
 relatorio, ele so decide: sai com 0 se pode enviar, com 1 se nao pode. E o que o
 systemd do droplet roda antes de cada disparo agendado.
 
+Bounce duro quer dizer caixa que nao existe. Caixa cheia e falha temporaria voltam
+do Resend com o mesmo `last_event: bounced`, e so o tipo em `GET /emails/{id}` as
+separa. Contar as duas juntas nao mede reputacao nenhuma: barrou o lote-15 medindo
+o lote-14 em 3,1% quando o duro dele era 2,5%.
+
 Abertura nao aparece aqui de proposito: o rastreamento esta desligado no dominio
 (pixel de rastreio pesa contra um dominio novo, e o numero vem inflado pelo Gmail
 e pelo Apple Mail). Quem responde pela conversao e cadastro no app e resposta no
@@ -31,24 +36,35 @@ from send_campaign_batch import BATCH_DIR, read_batch  # noqa: E402
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 PAGE_SIZE = 100
 BOUNCE_LIMIT = 0.03
-BAD_EVENTS = ("bounced", "complained")
+HARD_BOUNCE = "bounced"
+SOFT_BOUNCE = "bounced_temporario"
+BAD_EVENTS = (HARD_BOUNCE, "complained")
 OUTSIDE = "fora dos lotes"
 
 
-def fetch_emails(api_key: str) -> list[dict]:
-    headers = {"Authorization": f"Bearer {api_key}"}
+def fetch_emails(client: httpx.Client) -> list[dict]:
     emails: list[dict] = []
     after = None
-    with httpx.Client(headers=headers, timeout=30) as client:
-        while True:
-            params = {"limit": PAGE_SIZE} | ({"after": after} if after else {})
-            response = client.get(RESEND_EMAILS_URL, params=params)
-            response.raise_for_status()
-            page = response.json()
-            emails += page["data"]
-            if not page.get("has_more") or not page["data"]:
-                return emails
-            after = page["data"][-1]["id"]
+    while True:
+        params = {"limit": PAGE_SIZE} | ({"after": after} if after else {})
+        response = client.get(RESEND_EMAILS_URL, params=params)
+        response.raise_for_status()
+        page = response.json()
+        emails += page["data"]
+        if not page.get("has_more") or not page["data"]:
+            return emails
+        after = page["data"][-1]["id"]
+
+
+def classify_bounce(client: httpx.Client, email_id: str) -> str:
+    """Uma chamada a mais por bounce, nao por email: sao dezenas contra milhares.
+
+    Sem tipo o email conta como duro, que e o lado seguro: barrar atrasa um dia,
+    liberar queima o dominio."""
+    response = client.get(f"{RESEND_EMAILS_URL}/{email_id}")
+    response.raise_for_status()
+    tipo = (response.json().get("bounce") or {}).get("type")
+    return SOFT_BOUNCE if tipo == "Transient" else HARD_BOUNCE
 
 
 def trilha_e_numero(name: str) -> tuple[str, int]:
@@ -83,13 +99,24 @@ def batch_of(recipient: str, batches: dict[str, set[str]]) -> str:
     )
 
 
-def tally(api_key: str, batches: dict[str, set[str]]) -> dict[str, collections.Counter]:
+def tally(
+    api_key: str,
+    batches: dict[str, set[str]],
+    client: httpx.Client | None = None,
+) -> dict[str, collections.Counter]:
+    """`client` existe para o teste injetar um transporte falso; em producao ele
+    e criado aqui e fechado no fim."""
     events: dict[str, collections.Counter] = collections.defaultdict(
         collections.Counter
     )
-    for email in fetch_emails(api_key):
-        recipient = (email["to"] or [""])[0].lower()
-        events[batch_of(recipient, batches)][email["last_event"]] += 1
+    headers = {"Authorization": f"Bearer {api_key}"}
+    with client or httpx.Client(headers=headers, timeout=30) as http:
+        for email in fetch_emails(http):
+            recipient = (email["to"] or [""])[0].lower()
+            event = email["last_event"]
+            if event == HARD_BOUNCE:
+                event = classify_bounce(http, email["id"])
+            events[batch_of(recipient, batches)][event] += 1
     return events
 
 

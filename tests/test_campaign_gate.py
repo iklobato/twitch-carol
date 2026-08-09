@@ -8,11 +8,12 @@ import collections
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from campaign_stats import gate, load_batches  # noqa: E402
+from campaign_stats import gate, load_batches, tally  # noqa: E402
 
 BATCHES = {f"lote-{n}": {f"pessoa{n}@exemplo.com"} for n in range(6, 11)}
 
@@ -69,6 +70,48 @@ def test_barra_lote_que_nao_existe():
 def test_limite_de_bounce_e_3_porcento(bounces, esperado):
     counts = {"delivered": 100 - bounces, "bounced": bounces}
     assert gate("lote-8", events(**{"lote-7": counts}), BATCHES) == esperado
+
+
+BOUNCES = {
+    "id-cheia": {"bounce": {"type": "Transient", "subType": "MailboxFull"}},
+    "id-inexistente": {"bounce": {"type": "Permanent", "subType": "General"}},
+    "id-sem-tipo": {},
+}
+
+
+def resend_falso(request: httpx.Request) -> httpx.Response:
+    email_id = request.url.path.rsplit("/", 1)[-1]
+    if email_id in BOUNCES:
+        return httpx.Response(200, json=BOUNCES[email_id])
+    return httpx.Response(
+        200,
+        json={
+            "has_more": False,
+            "data": [
+                {
+                    "id": email_id,
+                    "to": ["pessoa8@exemplo.com"],
+                    "last_event": "bounced",
+                }
+                for email_id in BOUNCES
+            ],
+        },
+    )
+
+
+def test_caixa_cheia_nao_conta_como_bounce_duro():
+    """Caixa cheia volta do Resend como `bounced`, igual a caixa que nao existe,
+    e so o tipo em `GET /emails/{id}` separa as duas. Somadas, o lote-14 media
+    3,1% quando o duro dele era 2,5%, e o portao barrava o lote-15 por nada.
+
+    Bounce sem tipo continua duro: barrar por engano custa um dia, liberar por
+    engano custa o dominio."""
+    cliente = httpx.Client(transport=httpx.MockTransport(resend_falso))
+
+    counts = tally("chave", BATCHES, client=cliente)["lote-8"]
+
+    assert counts["bounced"] == 2  # inexistente + sem tipo
+    assert counts["bounced_temporario"] == 1
 
 
 TRILHAS = {
