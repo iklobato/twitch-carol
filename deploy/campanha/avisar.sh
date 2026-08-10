@@ -16,7 +16,7 @@ curl -sS -X POST https://api.resend.com/emails \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg assunto "campanha: ${lote} nao saiu" --arg corpo "${corpo}" '{
         from: "Henrique <henrique@send.streamintel.cc>",
-        to: ["tiktachack@gmail.com"],
+        to: ["henrique@send.streamintel.cc"],
         subject: $assunto,
         text: $corpo
       }')"

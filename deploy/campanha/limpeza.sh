@@ -33,7 +33,7 @@ curl -sS -X POST https://api.resend.com/emails \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg corpo "$resumo" '{
         from: "Henrique <henrique@send.streamintel.cc>",
-        to: ["tiktachack@gmail.com"],
+        to: ["henrique@send.streamintel.cc"],
         subject: "campanha: lotes enviados, apagando os dados do droplet",
         text: $corpo
       }')" >/dev/null

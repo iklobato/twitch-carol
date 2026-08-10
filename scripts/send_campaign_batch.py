@@ -37,7 +37,11 @@ SUBJECT = {
 }
 DEFAULT_LANGUAGE = "pt"
 FROM = "Henrique <henrique@send.streamintel.cc>"
-REPLY_TO = "tiktachack@gmail.com"
+# Mesmo endereco do remetente, e uma caixa de verdade: IMAP no droplet
+# mail.iklobato.com, com o MX de send.streamintel.cc apontando para la desde
+# 2026-08-09. Antes disso a resposta ia para um gmail pessoal, o que deixava o
+# From e o Reply-To em dominios diferentes, coisa que filtro de spam nota.
+REPLY_TO = "henrique@send.streamintel.cc"
 BROADCAST_UNSUBSCRIBE_TOKEN = "{{{RESEND_UNSUBSCRIBE_URL}}}"
 BROADCAST_UNSUBSCRIBE_BLOCK = re.compile(
     r"\s*<p[^>]*>(?:(?!</p>).)*\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}(?:(?!</p>).)*</p>",
@@ -76,7 +80,9 @@ def body_for_api(html: str) -> str:
     return stripped
 
 
-def build_payloads(destinatarios: list[tuple[str, str]], corpos: dict[str, str]) -> list[dict]:
+def build_payloads(
+    destinatarios: list[tuple[str, str]], corpos: dict[str, str]
+) -> list[dict]:
     return [
         {
             "from": FROM,
