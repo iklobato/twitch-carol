@@ -120,6 +120,43 @@ responder, a exceção sobe e o envio não acontece.
 O portão mede entrega, não tamanho. Quem segura a rampa (no máximo +33% por
 degrau) é o `maximo_por_dia` da entrada do agendamento.
 
+**Bounce duro quer dizer caixa que não existe, e o Resend não te conta isso na
+listagem.** `GET /emails` devolve `last_event: bounced` tanto para caixa cheia
+quanto para caixa inexistente; só `GET /emails/{id}` traz `bounce.type`
+(`Permanent` ou `Transient`). Contar os dois juntos levou o lote-14 a marcar 3,1%
+quando o duro dele era 2,5%, e o portão ia barrar o lote-15 por causa de uma
+caixa cheia. Desde 2026-08-09 o `tally` classifica cada bounce (uma chamada a
+mais por bounce, não por email) e bounce sem tipo continua contando como duro,
+que é o lado seguro.
+
+**O que segura o volume não é o teto diário, é a oferta de lead.** Medido em
+2026-08-09: a fila tinha 332 endereços e a colheita repunha 4 a 8 por dia contra
+160 saindo. O funil do dia mostra por quê: 226 mil candidatos, 12,4 mil com email
+e sem contato, mas só 1,2 mil em português. Subir `maximo_por_dia` não muda nada
+enquanto a fila for o teto.
+
+O `min_seguidores` saiu de 5000 para 1000 no mesmo dia, e a colheita seguinte
+trouxe 366 leads de uma vez (fila 332 -> 698). A descrição do campo no
+`input_schema.json` carrega os números e a data em vez da afirmação antiga, que
+era chute: dos 446 canais em pt com email público e sem contato, o corte em 5000
+deixava 37 alcançáveis.
+
+**Publicar o actor sem o CLI da Apify:** `PUT /v2/acts/{id}/versions/0.1` com
+`{sourceType, sourceFiles}` e depois
+`POST /v2/acts/{id}/builds?version=0.1&tag=latest`. **Omita `envVars` no PUT**: a
+leitura devolve segredo como `valueHash` e reenviar isso responde 400; sem o
+campo, as quatro variáveis ficam intactas. E **compare os `sourceFiles` com o
+worktree antes de confiar**: em 2026-08-09 o actor servia código de antes de
+05/08, cinco de doze arquivos atrasados, enquanto o build rodava todo dia
+parecendo atual.
+
+**Resposta do streamer não vai mais para um Gmail pessoal.** Desde 2026-08-09 o
+`REPLY_TO` é `henrique@send.streamintel.cc`, uma caixa de verdade com IMAP no
+droplet `mail.iklobato.com`; o MX de `send.streamintel.cc` aponta para lá. Assim
+o `From` e o `Reply-To` ficam no mesmo domínio, coisa que filtro de spam nota.
+Cuidado para não confundir com **`send.send.streamintel.cc`**, que é outro
+registro: é o return-path de bounce do Resend, e é dele que o portão vive.
+
 **O droplet morreu no meio da rampa (2026-08-03).** Ele foi destruído sem ter
 enviado os lotes 11 a 14, mas o histórico do actor já tinha sido semeado contando
 esses lotes como enviados. 657 pessoas ficaram marcadas como contatadas sem nunca
