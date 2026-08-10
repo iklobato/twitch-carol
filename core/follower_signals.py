@@ -17,7 +17,7 @@ from statistics import mean, pstdev
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from core.models import Event, Follower, Insight, InsightType, TranscriptSegment
+from core.models import Event, Follower, Insight, InsightType, Stream, TranscriptSegment
 
 FOLLOW_EVENT = "channel.follow"
 RAID_EVENT = "channel.raid"
@@ -123,6 +123,8 @@ _REASON_WEIGHT = {
     "no_avatar": SCORE_NO_AVATAR,
     "no_bio": SCORE_NO_BIO,
 }
+
+
 def suspicious_followers(
     db: Session, channel_id: int, now: datetime | None = None
 ) -> list[SuspiciousFollower]:
@@ -186,7 +188,20 @@ def topic_to_follows(db: Session, channel_id: int) -> list[TopicFollows]:
     )
     if not follows:
         return []
-    topics = list(db.scalars(select(Insight).where(Insight.type == InsightType.TOPIC)))
+    # Join on Stream: an Insight only knows its stream, so without this the
+    # topics come from every channel on the platform and a follow of yours gets
+    # credited to whatever someone else happened to be talking about at that
+    # minute. Measured in production before the join existed: three of these,
+    # including another streamer's live titled "Falas incoerentes e confusao"
+    # showing up as what earned a follow.
+    topics = list(
+        db.scalars(
+            select(Insight)
+            .join(Stream, Stream.id == Insight.stream_id)
+            .where(Stream.channel_id == channel_id)
+            .where(Insight.type == InsightType.TOPIC)
+        )
+    )
     segment_ids = {i for t in topics for i in _cited_ids(t, "segment_ids")}
     if not segment_ids:
         return []

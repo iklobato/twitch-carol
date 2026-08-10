@@ -13,9 +13,16 @@ import re
 
 import pytest
 
-from core.models import TwitchClip
+from core.follower_signals import topic_to_follows
+from core.models import InsightType, TwitchClip
 from tests.conftest import login_as
-from tests.factories import make_channel, make_stream
+from tests.factories import (
+    add_event,
+    add_insight,
+    add_segment,
+    make_channel,
+    make_stream,
+)
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -85,3 +92,37 @@ def test_a_clip_cannot_be_curated_by_another_channel(api_client, db) -> None:
     assert response.status_code == 404
     db.refresh(clip)
     assert clip.title is None
+
+
+def test_follows_are_never_credited_to_another_channels_topic(db) -> None:
+    """An Insight only knows its stream, so a query that filters on the insight
+    alone reaches every channel. This one credited a follow to whatever anyone
+    on the platform was talking about that minute: measured in production, one
+    streamer's panel named another's live, titled "Falas incoerentes e
+    confusao", as the subject that earned them a follower.
+
+    Both lives run at the same moment on purpose, because overlapping in time is
+    the whole condition for the mix-up.
+    """
+    mine = make_channel(db)
+    other = make_channel(db)
+    minha_live = make_stream(db, mine, started_minutes_ago=60)
+    live_alheia = make_stream(db, other, started_minutes_ago=60)
+
+    for stream, assunto in (
+        (minha_live, "Meu assunto"),
+        (live_alheia, "Assunto alheio"),
+    ):
+        segmento = add_segment(db, stream, offset_seconds=100)
+        add_insight(
+            db,
+            stream,
+            insight_type=InsightType.TOPIC,
+            content=assunto,
+            evidence={"message_ids": [], "segment_ids": [segmento.id]},
+        )
+    add_event(db, minha_live, event_type="channel.follow", offset_seconds=105)
+
+    assuntos = {t.topic for t in topic_to_follows(db, mine.id)}
+
+    assert assuntos == {"Meu assunto"}
