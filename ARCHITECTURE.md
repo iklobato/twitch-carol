@@ -82,7 +82,7 @@ flowchart TB
 
 | # | Componente | Onde roda | Responsabilidade | Consome (input) | Gera (output) | Inicia / Termina |
 |---|---|---|---|---|---|---|
-| 1 | **DNS (Cloudflare)** | Managed | Resolve `streamintel.cc` pra borda do app e emite TLS; encaminha o email do domínio pro Gmail (Email Routing) | Query DNS, email de entrada | Registros A/AAAA/CNAME (DNS-only, sem proxy: a borda do App Platform já é Cloudflare) e MX | Sempre ativo (zona provisionada) |
+| 1 | **DNS (Cloudflare)** | Managed | Resolve `streamintel.cc` pra borda do app e emite TLS; encaminha o email do apex (Email Routing). O subdomínio `send.` saiu daqui em 2026-08-09: o MX dele aponta pro droplet `mail.iklobato.com`, onde vive a caixa `henrique@send.streamintel.cc` | Query DNS, email de entrada | Registros A/AAAA/CNAME (DNS-only, sem proxy: a borda do App Platform já é Cloudflare) e MX | Sempre ativo (zona provisionada) |
 | 2 | **web** (React) | App Platform, static site | Renderiza o dashboard no navegador | JSON da `api` (`/api/*`) | HTML/UI no browser | Servido por request; buildado no deploy |
 | 3 | **api** (FastAPI) | App Platform, service | OAuth, registro de EventSub, ingestão de webhook, serve o dashboard | Requests HTTP, tokens OAuth, notificações EventSub assinadas, leitura do PG | Respostas JSON; linhas `Stream`/`Event`/`Follower`; subs registradas na Twitch | Sobe no deploy; long-running (`/healthz`) |
 | 4 | **Twitch** (EventSub/Helix/IRC/OAuth) | Externo | A fonte de tudo: eventos de live, chat, viewers, auth; e o destino dos clips criados | Nossos pedidos de subscription, OAuth e criação de clips (Helix `/clips`) | Webhooks (online/offline/follow/sub/bits), Helix, chat IRC, tokens, o clip criado | Sempre ativo; emite conforme a live |
@@ -119,6 +119,38 @@ declarou, divergencia vira aviso no log, nunca sobrescrita.
 `channels.timezone` tambem vem do cadastro (lido do navegador, sem perguntar) e
 decide os chatters por dia, o agrupamento por dia na lista de lives, o periodo
 que mais rende e o melhor dia da semana.
+
+## Isolamento entre contas
+
+O produto e multi-tenant e o dado e do streamer. **Nenhum canal pode ler ou
+escrever dado de outro.**
+
+Como isso e garantido hoje:
+
+| Camada | Mecanismo |
+|---|---|
+| Sessao | cookie assinado -> `CurrentChannel` (`apps/api/deps.py`) |
+| Rota com `{stream_id}` | `_owned_stream()` compara `stream.channel_id` com o da sessao |
+| Id aninhado (`peak_id`, `insight_id`) | conferido contra o stream do dono, nao so contra o proprio id |
+| Consulta agregada | filtra por `channel.id` na propria query |
+
+Toda recusa responde **404, nunca 403**: 403 ja informa que o id existe e
+pertence a outra pessoa.
+
+Tres lugares olham fora do canal de proposito: `/api/queue` (le os jobs de todos
+para calcular sua posicao, mas devolve so o seu e uma contagem anonima),
+`/api/stats` (agregado publico da plataforma; com poucos canais isso ja e um
+numero pequeno, atencao conforme crescer) e `admin/impersonate` (allowlist em
+`ADMIN_LOGINS`, exige login real e gera log).
+
+**A armadilha desta base:** `Insight` so conhece o `stream_id`, entao consulta
+que filtra apenas pelo insight varre a plataforma inteira. Foi assim que
+`topic_to_follows` creditou a um streamer o assunto da live de outro. Sempre faca
+join com `Stream` e filtre por `channel_id`.
+
+`tests/test_isolation.py` e a rede: le as rotas do schema OpenAPI da aplicacao e
+tenta todas as que recebem `{stream_id}` como outro canal, entao endpoint novo
+entra na varredura no dia em que e escrito.
 
 Resumo em uma frase: **DNS -> web -> api (login + registra EventSub) -> Twitch
 dispara `stream.online` -> capture (chat/viewers/audio) -> transcribe
