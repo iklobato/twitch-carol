@@ -1,19 +1,19 @@
 """follower sync state, last_seen marker and the unfollows table
 
-Numbered 0024 on purpose, leaving 0023 free: two other branches already claim it
-(chat_channel_index and backfill_canais_existentes), and all three hang off 0022.
-Whichever of them merges first, the next one has to repoint its down_revision or
-alembic ends up with several heads and `upgrade head` refuses to run.
+Chained onto 0023 (backfill_canais_existentes), which landed on dev first. The
+still-uncommitted chat_channel_index migration also calls itself 0023 and hangs off
+0022; it has to be renumbered past this one, or alembic sees a duplicate revision
+id and refuses to run at all.
 
 Revision ID: 0024
-Revises: 0022
+Revises: 0023
 """
 
 import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0024"
-down_revision: str | None = "0022"
+down_revision: str | None = "0023"
 branch_labels: str | None = None
 depends_on: str | None = None
 
