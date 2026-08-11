@@ -19,6 +19,7 @@ import type {
   CohortRow,
   CollabCandidate,
   FollowerAi,
+  FollowerKpis,
   FollowerProfile,
   FollowersOverview,
   FollowerSignals,
@@ -26,6 +27,7 @@ import type {
   GrowthBucket,
   SegmentMember,
   TopFollower,
+  Unfollow,
   VelocityDay,
 } from '../types'
 
@@ -203,6 +205,65 @@ function ProfileGrid({
         ))}
       </div>
     </div>
+  )
+}
+
+function UnfollowGrid({ unfollows }: { unfollows: Unfollow[] }) {
+  if (unfollows.length === 0) return null
+  return (
+    <div className="mb-6">
+      <h3 className="mb-1 text-lg font-bold">{t('followers.unfollows.title')}</h3>
+      <p className="mb-3 text-sm text-zinc-500">{t('followers.unfollows.subtitle')}</p>
+      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+        {unfollows.map((person) => (
+          <div
+            key={`${person.login}-${person.detected_at}`}
+            className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 p-3"
+          >
+            {person.profile_image_url ? (
+              <img
+                src={person.profile_image_url}
+                alt={person.login}
+                className="h-10 w-10 shrink-0 rounded-full opacity-60"
+              />
+            ) : (
+              <div className="h-10 w-10 shrink-0 rounded-full bg-zinc-800" />
+            )}
+            <div className="min-w-0 flex-1">
+              <a
+                href={`https://twitch.tv/${person.login}`}
+                target="_blank"
+                rel="noreferrer"
+                className="block truncate text-sm font-semibold text-zinc-300 hover:underline"
+              >
+                {person.display_name ?? person.login}
+              </a>
+              <p className="truncate text-xs text-zinc-500">
+                {t('followers.unfollows.stayed', { n: person.days_followed })}
+              </p>
+            </div>
+            <span className="shrink-0 text-[10px] text-zinc-600">
+              {formatDate(person.detected_at)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// The charts below describe the followers we hold rows for, which trails Twitch's
+// own count until the sync worker finishes a channel. Saying so beats a chart that
+// looks complete and is not.
+function SyncNotice({ kpis }: { kpis: FollowerKpis }) {
+  if (kpis.stored >= kpis.total) return null
+  return (
+    <p className="mb-4 rounded-lg border border-amber-900 bg-amber-950/40 p-3 text-xs text-amber-300">
+      {t('followers.syncing', {
+        stored: fmtInt(kpis.stored),
+        total: fmtInt(kpis.total),
+      })}
+    </p>
   )
 }
 
@@ -754,6 +815,7 @@ export default function FollowersView() {
       ) : (
         <>
           <Kpis overview={overview} />
+          <SyncNotice kpis={overview.kpis} />
           <Recommendations overview={overview} />
           <AiSection ai={overview.ai} />
           <Funnel funnel={overview.funnel} />
@@ -779,6 +841,7 @@ export default function FollowersView() {
             subtitle={t('followers.recentSub')}
             profiles={overview.recent}
           />
+          <UnfollowGrid unfollows={overview.unfollows} />
         </>
       )}
     </div>

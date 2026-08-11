@@ -362,6 +362,7 @@ export type FinanceOverview = {
 
 export type FollowerKpis = {
   total: number;
+  stored: number;
   enriched: number;
   streamers: number;
   affiliates: number;
@@ -471,6 +472,15 @@ export type CollabCandidate = {
   followed_at: string;
 };
 
+export type Unfollow = {
+  login: string;
+  display_name: string | null;
+  profile_image_url: string | null;
+  followed_at: string;
+  detected_at: string;
+  days_followed: number;
+};
+
 export type FollowersOverview = {
   kpis: FollowerKpis;
   growth: GrowthBucket[];
@@ -485,6 +495,7 @@ export type FollowersOverview = {
   ai: FollowerAi;
   collab: CollabCandidate[];
   recommendations: Recommendation[];
+  unfollows: Unfollow[];
 };
 
 export type QueueItem = {

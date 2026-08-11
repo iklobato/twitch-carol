@@ -805,7 +805,14 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         total_streams=len(ready_ids),
         total_messages=int(total_messages),
         unique_chatters=int(unique_chatters),
-        total_followers_gained=len(follower_logins),
+        # The screen labels this "total followers", so it is Twitch's own count
+        # when we have it. The login union below stays as the set it always was:
+        # _loyal_chatters needs the names, not the size.
+        total_followers_gained=(
+            channel.follower_total
+            if channel.follower_total is not None
+            else len(follower_logins)
+        ),
         loyal_chatters=_loyal_chatters(db, channel.id, follower_logins),
         best_weekdays=_best_weekdays(db, channel),
         growth=_growth(db, channel.id),
