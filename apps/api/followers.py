@@ -25,12 +25,15 @@ from core.models import (
     FollowerRecommendation,
     Stream,
     StreamStatus,
+    Unfollow,
+    UnfollowReason,
 )
 
 router = APIRouter(prefix="/api/followers")
 
 RECENT_LIMIT = 24
 NOTABLE_LIMIT = 24
+UNFOLLOW_LIMIT = 24
 NEW_WINDOW_DAYS = (7, 30)
 DAYS_PER_MONTH = 30
 DAYS_PER_YEAR = 365
@@ -55,6 +58,10 @@ FUNNEL_STAGES = ("follower", "engaged", "subscriber", "paying")
 
 class FollowerKpis(BaseModel):
     total: int
+    # How many of `total` we hold rows for. Every distribution below is computed
+    # over these, so when it trails `total` the charts describe a subset and the
+    # screen has to say so rather than look complete.
+    stored: int
     enriched: int
     streamers: int
     affiliates: int
@@ -196,6 +203,19 @@ class CollabCandidate(BaseModel):
     followed_at: datetime
 
 
+class UnfollowOut(BaseModel):
+    """Someone who left. Accounts Twitch removed (banned or deleted) are stored
+    with their own reason and never appear here: they did not choose to leave, and
+    naming them as unfollowers would tell the streamer something untrue."""
+
+    login: str
+    display_name: str | None
+    profile_image_url: str | None
+    followed_at: datetime
+    detected_at: datetime
+    days_followed: int
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -210,6 +230,7 @@ class FollowersOverview(BaseModel):
     ai: FollowerAi
     collab: list[CollabCandidate]
     recommendations: list[RecommendationOut]
+    unfollows: list[UnfollowOut]
 
 
 def _profile(follower: Follower) -> ProfileOut:
@@ -224,7 +245,17 @@ def _profile(follower: Follower) -> ProfileOut:
     )
 
 
-def _kpis(followers: list[Follower], now: datetime) -> FollowerKpis:
+def _kpis(
+    followers: list[Follower], now: datetime, reported_total: int | None
+) -> FollowerKpis:
+    """`reported_total` is the count Twitch reports for the channel.
+
+    It is preferred over len(followers) because our rows drift both ways: they
+    keep anyone who unfollowed before the sync worker existed, and they miss
+    anyone who followed while nothing was watching. Measured across production on
+    2026-08-11, that gap ran from -51.9% to +4.8% per channel. It falls back to
+    the row count only until the first sync pass fills the column.
+    """
     enriched = [f for f in followers if f.enriched_at is not None]
     affiliates = sum(1 for f in followers if f.broadcaster_type == AFFILIATE)
     partners = sum(1 for f in followers if f.broadcaster_type == PARTNER)
@@ -241,7 +272,8 @@ def _kpis(followers: list[Follower], now: datetime) -> FollowerKpis:
     ]
     avg_age = round(sum(ages) / len(ages)) if ages else None
     return FollowerKpis(
-        total=len(followers),
+        total=reported_total if reported_total is not None else len(followers),
+        stored=len(followers),
         enriched=len(enriched),
         streamers=affiliates + partners,
         affiliates=affiliates,
@@ -501,6 +533,30 @@ def _recommendations(db: DbSession, channel_id: int) -> list[RecommendationOut]:
     ]
 
 
+def _unfollows(db: DbSession, channel_id: int) -> list[UnfollowOut]:
+    """Who left, most recent first. Only detectable from the first sync pass on:
+    Twitch has no unfollow event and no history endpoint, so anything before the
+    worker's first walk is simply not knowable."""
+    rows = db.scalars(
+        select(Unfollow)
+        .where(Unfollow.channel_id == channel_id)
+        .where(Unfollow.reason == UnfollowReason.UNFOLLOWED)
+        .order_by(Unfollow.detected_at.desc())
+        .limit(UNFOLLOW_LIMIT)
+    )
+    return [
+        UnfollowOut(
+            login=row.login,
+            display_name=row.display_name,
+            profile_image_url=row.profile_image_url,
+            followed_at=row.followed_at,
+            detected_at=row.detected_at,
+            days_followed=max(0, (row.detected_at - row.followed_at).days),
+        )
+        for row in rows
+    ]
+
+
 @router.get("")
 def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverview:
     now = datetime.now(UTC)
@@ -516,7 +572,7 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
     profiles = build_follower_profiles(db, channel.id, followers)
 
     return FollowersOverview(
-        kpis=_kpis(followers, now),
+        kpis=_kpis(followers, now, channel.follower_total),
         growth=_growth(followers),
         recent=[_profile(f) for f in recent],
         notable=[_profile(f) for f in notable[:NOTABLE_LIMIT]],
@@ -529,4 +585,5 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         ai=_ai(db, channel.id, profiles),
         collab=_collab(db, channel.id),
         recommendations=_recommendations(db, channel.id),
+        unfollows=_unfollows(db, channel.id),
     )

@@ -18,6 +18,7 @@ import core.twitch
 import core.worker_loop
 from core.channels import ensure_fresh_token
 from core.crypto import decrypt_secret
+from core.follower_sync import sync_channel
 from core.models import Channel, Stream, StreamStatus
 from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE, enqueue_job
 from core.worker_loop import WorkerSpec, _run_job, pick_next_job
@@ -322,17 +323,25 @@ def test_full_flow_login_processing_visualization(
     assert len(fake_twitch.subscriptions) == len(core.eventsub.SUBSCRIPTION_SPECS)
     assert {s["status"] for s in fake_twitch.subscriptions} == {"enabled"}
 
-    # backfill seeded follower history and past VODs before any live capture
+    # backfill seeded the one-call histories before any live capture
     overview = api_client.get("/api/channel").json()
-    assert overview["total_followers_gained"] == 1
     assert overview["past_broadcasts"][0]["title"] == "Live antiga"
     assert overview["past_broadcasts"][0]["duration_seconds"] == 90 * 60
 
-    # connect also enriched the follower from Helix Get Users
+    # Followers are NOT fetched during login: walking a large channel is hundreds
+    # of Helix calls, so connect only queues the channel for the sync worker.
+    assert channel.followers_synced_at is None
+    assert api_client.get("/api/followers").json()["kpis"]["total"] == 0
+
+    # what the worker does when it reaches this channel
+    sync_channel(db, channel, sleep=lambda _seconds: None)
+    db.commit()
+
     followers = api_client.get("/api/followers").json()
     assert followers["kpis"]["total"] == 1
     assert followers["kpis"]["partners"] == 1
     assert followers["recent"][0]["display_name"] == "Veterano"
+    assert api_client.get("/api/channel").json()["total_followers_gained"] == 1
     assert followers["notable"][0]["login"] == "veterano"
     # streamer enrichment ran too: the partner shows up as a collab candidate
     assert followers["collab"][0]["login"] == "veterano"

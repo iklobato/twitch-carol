@@ -9,9 +9,9 @@ from core.twitch import (
     TwitchAuthError,
     build_authorize_url,
     exchange_code,
+    get_followers_page,
     get_user,
     get_videos,
-    iter_followers,
 )
 
 pytestmark = pytest.mark.usefixtures("twitch_env")
@@ -86,40 +86,59 @@ def test_get_user_empty_response_raises() -> None:
         get_user("some-access", client=_mock_client(handler))
 
 
-def test_iter_followers_paginates_until_cursor_ends() -> None:
-    pages = [
-        {
-            "data": [
-                {
-                    "user_id": "1",
-                    "user_login": "a",
-                    "followed_at": "2026-01-01T00:00:00Z",
-                }
-            ],
-            "pagination": {"cursor": "next"},
-        },
-        {
-            "data": [
-                {
-                    "user_id": "2",
-                    "user_login": "b",
-                    "followed_at": "2026-02-01T00:00:00Z",
-                }
-            ],
-            "pagination": {},
-        },
-    ]
-    seen_cursors = []
+def test_get_followers_page_returns_cursor_and_reported_total() -> None:
+    """The `total` field is the whole reason this endpoint is read at all: it is
+    the channel's real follower count, independent of how many rows we hold."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         params = parse_qs(urlparse(str(request.url)).query)
-        seen_cursors.append(params.get("after", [None])[0])
-        return httpx.Response(200, json=pages[len(seen_cursors) - 1])
+        assert params.get("after", [None])[0] == "cur-1"
+        return httpx.Response(
+            200,
+            json={
+                "total": 41605,
+                "data": [
+                    {
+                        "user_id": "1",
+                        "user_login": "a",
+                        "followed_at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+                "pagination": {"cursor": "cur-2"},
+            },
+        )
 
-    followers = list(iter_followers(999, "tok", client=_mock_client(handler)))
+    page = get_followers_page(999, "tok", "cur-1", client=_mock_client(handler))
 
-    assert [f.user_login for f in followers] == ["a", "b"]
-    assert seen_cursors == [None, "next"]  # second request carried the cursor
+    assert page.total == 41605
+    assert page.cursor == "cur-2"
+    assert [f.user_login for f in page.followers] == ["a"]
+
+
+def test_get_followers_page_reports_end_of_list_as_no_cursor() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"total": 3, "data": [], "pagination": {}})
+
+    page = get_followers_page(999, "tok", client=_mock_client(handler))
+
+    assert page.cursor is None
+
+
+def test_helix_waits_out_a_rate_limit_instead_of_failing() -> None:
+    """A 429 in the middle of a channel's walk used to raise, and the caller threw
+    away every page it had already paid for."""
+    calls = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(429, headers={"Ratelimit-Reset": "0"})
+        return httpx.Response(200, json={"total": 1, "data": [], "pagination": {}})
+
+    page = get_followers_page(999, "tok", client=_mock_client(handler))
+
+    assert page.total == 1
+    assert len(calls) == 2
 
 
 def test_get_videos_parses_duration_to_seconds() -> None:

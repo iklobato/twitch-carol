@@ -190,6 +190,21 @@ workers:
     instance_size_slug: apps-s-1vcpu-1gb # leve: LLM remoto (OpenRouter)
     instance_count: 1
 
+  # Sincroniza a lista de seguidores de cada canal a cada 6h. Processo separado
+  # de propósito: uma varredura leva minutos e não pode nunca atrasar a captura
+  # de uma live. Só faz chamada de Helix + escrita no banco, então é o menor
+  # tamanho que existe (US$ 5,00/mês).
+  - name: worker-followers
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+      deploy_on_push: true
+    run_command: python -m workers.followers.main
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    instance_count: 1
+
 # --- Migração antes de cada deploy (idempotente) ---
 jobs:
   - name: migrate

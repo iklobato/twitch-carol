@@ -1,150 +1,32 @@
-"""One-time backfill on channel connect. Twitch serves follower history (with
-followed_at) and past VODs (with created_at) over REST, so a freshly connected
-account shows real data before any live capture. Everything else (chat,
-viewers, money, engagement) is forward-only and cannot be backfilled."""
+"""One-time backfill on channel connect. Twitch serves past VODs (with
+created_at) over REST, so a freshly connected account shows real data before any
+live capture. Everything else (chat, viewers, money, engagement) is forward-only
+and cannot be backfilled.
+
+Each of these is one Helix call and commits on its own. They used to share a
+single commit, which is why one production channel connected with zero VIPs, zero
+goals and zero subscriptions: the follower walk ahead of them failed and rolled
+back the lot. Followers left this module for core.follower_sync, because they are
+not a one-time job.
+"""
 
 import logging
-from datetime import UTC, datetime
 
 import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from core.channels import ensure_fresh_token
-from core.models import (
-    BitsLeader,
-    Channel,
-    Follower,
-    Goal,
-    PastBroadcast,
-    Subscription,
-    Vip,
-)
+from core.models import BitsLeader, Channel, Goal, PastBroadcast, Subscription, Vip
 from core.twitch import (
     get_bits_leaderboard,
-    get_channels_by_ids,
     get_goals,
     get_subscriptions,
-    get_users_by_ids,
     get_videos,
     get_vips,
-    iter_followers,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def backfill_followers(
-    db: Session, channel: Channel, client: httpx.Client | None = None
-) -> int:
-    """Seed the followers table from Helix. Returns how many new rows were added
-    (already-known followers are skipped, so re-connecting is cheap)."""
-    token = ensure_fresh_token(db, channel, client)
-    known = set(
-        db.scalars(
-            select(Follower.twitch_user_id).where(Follower.channel_id == channel.id)
-        )
-    )
-    added = 0
-    for record in iter_followers(channel.twitch_user_id, token, client):
-        user_id = int(record.user_id)
-        if user_id in known:
-            continue
-        known.add(user_id)
-        db.add(
-            Follower(
-                channel_id=channel.id,
-                twitch_user_id=user_id,
-                login=record.user_login,
-                followed_at=record.followed_at,
-            )
-        )
-        added += 1
-    return added
-
-
-ENRICH_BATCH_SIZE = 100
-
-
-def enrich_followers(
-    db: Session, channel: Channel, client: httpx.Client | None = None
-) -> int:
-    """Fill profile fields (name, avatar, bio, broadcaster_type, account age)
-    for followers not yet enriched, via Helix Get Users. Resumable: only rows
-    with enriched_at IS NULL are fetched, so a partial run picks up where it
-    stopped. Returns how many followers were enriched."""
-    pending = list(
-        db.scalars(
-            select(Follower)
-            .where(Follower.channel_id == channel.id)
-            .where(Follower.enriched_at.is_(None))
-        )
-    )
-    if not pending:
-        return 0
-    by_id = {follower.twitch_user_id: follower for follower in pending}
-    now = datetime.now(UTC)
-    enriched = 0
-    for start in range(0, len(pending), ENRICH_BATCH_SIZE):
-        batch = pending[start : start + ENRICH_BATCH_SIZE]
-        profiles = get_users_by_ids([f.twitch_user_id for f in batch], client)
-        for profile in profiles:
-            follower = by_id.get(int(profile.id))
-            if follower is None:
-                continue
-            follower.login = profile.login
-            follower.display_name = profile.display_name
-            follower.profile_image_url = profile.profile_image_url
-            follower.description = profile.description
-            follower.broadcaster_type = profile.broadcaster_type
-            follower.account_created_at = profile.created_at
-            follower.enriched_at = now
-            enriched += 1
-        # Stamp the rest of the batch too: an id Twitch dropped (banned/deleted)
-        # must not be retried forever.
-        for follower in batch:
-            if follower.enriched_at is None:
-                follower.enriched_at = now
-    return enriched
-
-
-STREAMER_TYPES = ("affiliate", "partner")
-
-
-def enrich_streamer_followers(
-    db: Session, channel: Channel, client: httpx.Client | None = None
-) -> int:
-    """Fill category/language for followers who are themselves streamers, via
-    Helix Get Channel Information, to score collab fit. Only affiliate/partner
-    rows not yet streamer-enriched are fetched. Returns how many were enriched."""
-    pending = list(
-        db.scalars(
-            select(Follower)
-            .where(Follower.channel_id == channel.id)
-            .where(Follower.broadcaster_type.in_(STREAMER_TYPES))
-            .where(Follower.streamer_enriched_at.is_(None))
-        )
-    )
-    if not pending:
-        return 0
-    by_id = {follower.twitch_user_id: follower for follower in pending}
-    now = datetime.now(UTC)
-    enriched = 0
-    for start in range(0, len(pending), ENRICH_BATCH_SIZE):
-        batch = pending[start : start + ENRICH_BATCH_SIZE]
-        infos = get_channels_by_ids([f.twitch_user_id for f in batch], client)
-        for info in infos:
-            follower = by_id.get(int(info.broadcaster_id))
-            if follower is None:
-                continue
-            follower.stream_category = info.game_name or None
-            follower.stream_language = info.broadcaster_language or None
-            follower.streamer_enriched_at = now
-            enriched += 1
-        for follower in batch:
-            if follower.streamer_enriched_at is None:
-                follower.streamer_enriched_at = now
-    return enriched
 
 
 def backfill_vips(

@@ -1,4 +1,5 @@
-"""Connect-time backfill: seed followers and past broadcasts from Helix."""
+"""Connect-time backfill: the one-call histories. Followers moved to
+tests/test_follower_sync.py when they stopped being a connect-time job."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -8,25 +9,21 @@ from sqlalchemy import func, select
 
 from core.backfill import (
     backfill_bits_leaders,
-    backfill_followers,
     backfill_goals,
     backfill_subscriptions,
     backfill_videos,
     backfill_vips,
-    enrich_followers,
-    enrich_streamer_followers,
 )
 from core.crypto import encrypt_secret
 from core.models import (
     BitsLeader,
     Channel,
-    Follower,
     Goal,
     PastBroadcast,
     Subscription,
     Vip,
 )
-from tests.factories import add_follower, make_channel
+from tests.factories import make_channel
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -46,39 +43,6 @@ def _followers_handler(records: list[dict]):
         return httpx.Response(200, json={"data": records, "pagination": {}})
 
     return handler
-
-
-def test_backfill_followers_inserts_and_is_idempotent(db) -> None:
-    channel = make_channel(db)
-    _with_fresh_token(db, channel)
-    records = [
-        {"user_id": "11", "user_login": "ana", "followed_at": "2026-01-01T00:00:00Z"},
-        {"user_id": "22", "user_login": "bruno", "followed_at": "2026-01-02T00:00:00Z"},
-    ]
-
-    added = backfill_followers(
-        db, channel, client=_mock_client(_followers_handler(records))
-    )
-    db.flush()
-    assert added == 2
-
-    logins = set(
-        db.scalars(select(Follower.login).where(Follower.channel_id == channel.id))
-    )
-    assert logins == {"ana", "bruno"}
-
-    # re-connecting must not duplicate
-    again = backfill_followers(
-        db, channel, client=_mock_client(_followers_handler(records))
-    )
-    db.flush()
-    assert again == 0
-    total = db.scalar(
-        select(func.count())
-        .select_from(Follower)
-        .where(Follower.channel_id == channel.id)
-    )
-    assert total == 2
 
 
 def test_backfill_videos_inserts_then_refreshes_views(db) -> None:
@@ -251,93 +215,3 @@ def test_backfill_bits_leaders_replaces_snapshot(db) -> None:
         .order_by(BitsLeader.rank)
     )
     assert top == "whale"
-
-
-def test_enrich_followers_fills_profiles_and_stamps_missing(db) -> None:
-    channel = make_channel(db)
-    _with_fresh_token(db, channel)
-    ana = add_follower(db, channel, "ana")
-    bruno = add_follower(db, channel, "bruno")
-    db.flush()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/oauth2/token"):
-            return httpx.Response(200, json={"access_token": "app", "expires_in": 3600})
-        # Twitch returns only ana; bruno is absent (e.g. banned/deleted)
-        return httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "id": str(ana.twitch_user_id),
-                        "login": "ana",
-                        "display_name": "Ana",
-                        "profile_image_url": "https://cdn/ana.png",
-                        "description": "streamer de variedades",
-                        "broadcaster_type": "affiliate",
-                        "created_at": "2020-01-01T00:00:00Z",
-                    }
-                ]
-            },
-        )
-
-    enriched = enrich_followers(db, channel, client=_mock_client(handler))
-    db.flush()
-    assert enriched == 1
-
-    ana_row = db.scalar(
-        select(Follower).where(Follower.twitch_user_id == ana.twitch_user_id)
-    )
-    assert ana_row.display_name == "Ana"
-    assert ana_row.broadcaster_type == "affiliate"
-    assert ana_row.account_created_at == datetime(2020, 1, 1, tzinfo=UTC)
-    assert ana_row.enriched_at is not None
-
-    # bruno was not returned, but must be stamped so it is not retried forever
-    bruno_row = db.scalar(
-        select(Follower).where(Follower.twitch_user_id == bruno.twitch_user_id)
-    )
-    assert bruno_row.enriched_at is not None
-    assert bruno_row.broadcaster_type is None
-
-    # a second run has nothing pending
-    assert enrich_followers(db, channel, client=_mock_client(handler)) == 0
-
-
-def test_enrich_streamer_followers_fills_category(db) -> None:
-    channel = make_channel(db)
-    _with_fresh_token(db, channel)
-    # two followers who are streamers, one who isn't
-    streamer = add_follower(db, channel, "streamerx", broadcaster_type="affiliate")
-    add_follower(db, channel, "common")  # broadcaster_type None -> skipped
-    db.flush()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/oauth2/token"):
-            return httpx.Response(200, json={"access_token": "app", "expires_in": 3600})
-        return httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "broadcaster_id": str(streamer.twitch_user_id),
-                        "broadcaster_language": "pt",
-                        "game_name": "Valorant",
-                        "title": "ranqueada",
-                    }
-                ]
-            },
-        )
-
-    enriched = enrich_streamer_followers(db, channel, client=_mock_client(handler))
-    db.flush()
-    assert enriched == 1
-
-    row = db.scalar(
-        select(Follower).where(Follower.twitch_user_id == streamer.twitch_user_id)
-    )
-    assert row.stream_category == "Valorant"
-    assert row.stream_language == "pt"
-    assert row.streamer_enriched_at is not None
-    # a second run has nothing pending
-    assert enrich_streamer_followers(db, channel, client=_mock_client(handler)) == 0
