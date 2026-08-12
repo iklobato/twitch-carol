@@ -481,3 +481,48 @@ def test_a_believable_number_of_departures_still_goes_through(db) -> None:
 
     assert result.unfollowed == 1
     assert channel.follower_sync_error is None
+
+
+def test_a_dead_refresh_token_is_recorded_not_raised(db) -> None:
+    """Production, 2026-08-12: omassoni's refresh token was refused with a 400.
+    The token fetch sat outside the try, so it raised out of sync_channel, the
+    channel kept the null followers_synced_at that made it due, and the worker
+    re-selected it about twice a second against Twitch's token endpoint."""
+    channel = make_channel(db)
+    channel.refresh_token_encrypted = encrypt_secret("revogado")
+    channel.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/oauth2/token"):
+            return httpx.Response(400, json={"message": "Invalid refresh token"})
+        raise AssertionError("must not reach Helix without a token")
+
+    result = sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert result.completed is False
+    assert channel.follower_sync_error is not None
+    assert "token" in channel.follower_sync_error
+
+
+def test_a_failed_channel_is_not_attempted_again_immediately(db) -> None:
+    """The regression that hammered Twitch: `channels_due` keeps returning a
+    channel that failed, because failing is what leaves it due. Without a cooldown
+    the worker re-selected it on the very next iteration, about twice a second."""
+    from workers.followers.main import FAILURE_COOLDOWN_SECONDS, attemptable
+
+    broken = make_channel(db)
+    healthy = make_channel(db)
+    db.flush()
+    due = [broken, healthy]
+
+    assert [c.id for c in attemptable(due, {}, 1000.0)] == [broken.id, healthy.id]
+
+    cooling_off = {broken.id: 1000.0 + FAILURE_COOLDOWN_SECONDS}
+    assert [c.id for c in attemptable(due, cooling_off, 1000.0)] == [healthy.id]
+    # ...and it comes back once the cooldown has passed.
+    later = 1000.0 + FAILURE_COOLDOWN_SECONDS + 1
+    assert [c.id for c in attemptable(due, cooling_off, later)] == [
+        broken.id,
+        healthy.id,
+    ]

@@ -31,6 +31,7 @@ from core.channels import ensure_fresh_token
 from core.models import Channel, Follower, Unfollow, UnfollowReason
 from core.twitch import (
     FollowerRecord,
+    TwitchAuthError,
     get_channels_by_ids,
     get_followers_page,
     get_users_by_ids,
@@ -96,7 +97,25 @@ def sync_channel(
     sleep: Callable[[float], None] = time.sleep,
 ) -> SyncResult:
     """Walk Twitch's follower list for one channel, committing every page."""
-    token = ensure_fresh_token(db, channel, client)
+    try:
+        token = ensure_fresh_token(db, channel, client)
+    except (httpx.HTTPError, TwitchAuthError) as err:
+        # A channel whose refresh token Twitch no longer accepts (revoked access,
+        # or expired past refreshing) cannot be synced by anyone but its owner
+        # signing in again. Recorded rather than raised, so the caller sees a
+        # failed pass instead of an exception, and the reason is visible on the
+        # channel. omassoni hit exactly this in production on 2026-08-12.
+        db.rollback()
+        channel.follower_sync_error = f"token: {type(err).__name__}: {err}"
+        db.commit()
+        logger.warning(
+            "follower sync cannot start: %s",
+            channel.follower_sync_error,
+            extra={"channel_id": channel.id},
+        )
+        return SyncResult(
+            channel.follower_total or 0, 0, 0, 0, 0, 0, 0, completed=False
+        )
 
     if channel.follower_sync_cursor is None or channel.follower_sync_started_at is None:
         channel.follower_sync_started_at = datetime.now(UTC)
