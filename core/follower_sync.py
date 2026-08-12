@@ -50,6 +50,10 @@ SYNC_INTERVAL = timedelta(hours=6)
 # deferred is logged and returned: a cap that hides what it dropped reads as
 # "nothing left to do".
 UNFOLLOW_CONFIRM_LIMIT = 200
+# Marks the one sync failure the streamer can actually fix. Written and read
+# through this constant so there is a single definition rather than a string
+# prefix matched by eye in two places.
+TOKEN_ERROR_PREFIX = "token: "
 
 
 @dataclass(frozen=True)
@@ -85,6 +89,17 @@ def channels_due(db: Session, now: datetime) -> list[Channel]:
     )
 
 
+def needs_reconnect(channel: Channel) -> bool:
+    """Whether this channel's last sync failed for a reason only its owner can fix.
+
+    Twitch refusing the refresh token is not recoverable from here: no retry helps,
+    only the streamer signing in again. Until 2026-08-12 that failure lived in a
+    column no screen read, so a channel silently stopped updating while still
+    showing the follower count it had days earlier.
+    """
+    return (channel.follower_sync_error or "").startswith(TOKEN_ERROR_PREFIX)
+
+
 def request_sync(channel: Channel) -> None:
     """Put a channel at the front of the sync queue. The caller commits."""
     channel.followers_synced_at = None
@@ -106,7 +121,9 @@ def sync_channel(
         # failed pass instead of an exception, and the reason is visible on the
         # channel. omassoni hit exactly this in production on 2026-08-12.
         db.rollback()
-        channel.follower_sync_error = f"token: {type(err).__name__}: {err}"
+        channel.follower_sync_error = (
+            f"{TOKEN_ERROR_PREFIX}{type(err).__name__}: {err}"
+        )
         db.commit()
         logger.warning(
             "follower sync cannot start: %s",

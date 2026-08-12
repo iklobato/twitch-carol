@@ -19,6 +19,7 @@ from core.follower_signals import (
     suspicious_followers,
     topic_to_follows,
 )
+from core.follower_sync import needs_reconnect
 from core.models import (
     ChatMessage,
     Follower,
@@ -252,6 +253,10 @@ class FollowersOverview(BaseModel):
     collab: list[CollabCandidate]
     recommendations: list[RecommendationOut]
     unfollows: list[UnfollowOut]
+    # True when Twitch refused this channel's token, which nothing here can fix:
+    # every number on the page is frozen wherever the last successful sync left it,
+    # and only the streamer signing in again clears it.
+    needs_reconnect: bool
 
 
 def _profile(follower: Follower) -> ProfileOut:
@@ -616,4 +621,5 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         collab=_collab(db, channel.id),
         recommendations=_recommendations(db, channel.id),
         unfollows=_unfollows(db, channel.id),
+        needs_reconnect=needs_reconnect(channel),
     )

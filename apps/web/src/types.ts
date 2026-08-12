@@ -506,6 +506,7 @@ export type FollowersOverview = {
   collab: CollabCandidate[];
   recommendations: Recommendation[];
   unfollows: Unfollow[];
+  needs_reconnect: boolean;
 };
 
 export type QueueItem = {

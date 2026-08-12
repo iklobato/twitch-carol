@@ -17,6 +17,7 @@ from core.follower_sync import (
     channels_due,
     enrich_followers,
     enrich_streamer_followers,
+    needs_reconnect,
     sync_channel,
 )
 from core.models import Channel, Follower, Unfollow, UnfollowReason
@@ -526,3 +527,41 @@ def test_a_failed_channel_is_not_attempted_again_immediately(db) -> None:
         broken.id,
         healthy.id,
     ]
+
+
+def test_a_dead_token_is_flagged_for_the_streamer_to_fix(db) -> None:
+    """omassoni hit this in production on 2026-08-12 and nothing told him: the
+    reason sat in a column no screen read, while the page kept showing the 533
+    followers it had counted days earlier."""
+    channel = make_channel(db)
+    channel.refresh_token_encrypted = encrypt_secret("revogado")
+    channel.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/oauth2/token"):
+            return httpx.Response(400, json={"message": "Invalid refresh token"})
+        raise AssertionError("must not reach Helix without a token")
+
+    sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert needs_reconnect(channel) is True
+
+
+def test_an_ordinary_sync_failure_does_not_ask_for_a_reconnect(db) -> None:
+    """A page that failed mid-walk is our problem to retry, not the streamer's to
+    fix, so it must not send them off to sign in again for nothing."""
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        app = _app_token(request)
+        if app is not None:
+            return app
+        return httpx.Response(500)
+
+    result = sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert result.completed is False
+    assert channel.follower_sync_error is not None
+    assert needs_reconnect(channel) is False

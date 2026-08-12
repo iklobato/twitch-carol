@@ -324,6 +324,9 @@ export default {
   "tldr.messagesDelta": " ({sign}{pct}% vs last 10)",
 
   // followers
+  "followers.reconnect.title": "Your Twitch connection has expired",
+  "followers.reconnect.body": "Twitch stopped accepting this account's access, so the numbers below are frozen wherever the last successful sync left them. Connecting again fixes it and updating resumes on its own.",
+  "followers.reconnect.action": "Connect with Twitch again",
   "followers.title": "My followers",
   "followers.loading": "Loading your followers...",
   "followers.empty":
