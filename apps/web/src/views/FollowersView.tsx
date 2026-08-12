@@ -556,7 +556,8 @@ function VelocitySparkline({ velocity }: { velocity: VelocityDay[] }) {
 }
 
 function Signals({ signals }: { signals: FollowerSignals }) {
-  const { raids, suspicious, suspicious_total, velocity, topic_follows } = signals
+  const { raids, suspicious, suspicious_total, velocity, topic_follows, base_age } =
+    signals
   const hasAny =
     raids.length > 0 || suspicious.length > 0 || velocity.length > 0 || topic_follows.length > 0
   if (!hasAny) return null
@@ -605,6 +606,22 @@ function Signals({ signals }: { signals: FollowerSignals }) {
           </div>
         )}
       </div>
+      {base_age.is_concentrated && (
+        <div className="mt-4 rounded-lg border border-amber-900/50 bg-amber-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-400">
+            {t('signals.baseAge')}
+          </p>
+          <p className="text-xs text-zinc-400">
+            {t('signals.baseAgeFact', {
+              pct: Math.round(base_age.window_share * 100),
+              n: fmtInt(base_age.window_followers),
+              total: fmtInt(base_age.followers_dated),
+              since: base_age.window_start ?? '',
+            })}
+          </p>
+          <p className="mt-2 text-xs text-zinc-500">{t('signals.baseAgeNote')}</p>
+        </div>
+      )}
       {suspicious.length > 0 && (
         <div className="mt-4 rounded-lg border border-red-900/50 bg-red-950/20 p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">
