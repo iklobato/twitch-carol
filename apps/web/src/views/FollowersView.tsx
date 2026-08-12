@@ -642,13 +642,21 @@ const SEGMENT_COLOR: Record<string, string> = {
 
 const MEMBERS_PER_PAGE = 5
 
-function MemberList({ members }: { members: SegmentMember[] }) {
+// `total` is the segment's real size, which is larger than the list whenever the
+// segment has more members than the response carries.
+function MemberList({ members, total }: { members: SegmentMember[]; total: number }) {
   const [page, setPage] = useState(0)
   const pages = Math.ceil(members.length / MEMBERS_PER_PAGE)
   const start = page * MEMBERS_PER_PAGE
   const slice = members.slice(start, start + MEMBERS_PER_PAGE)
+  const listed = members.length
   return (
     <div className="mb-2">
+      {total > listed && (
+        <p className="mb-1 text-[11px] text-zinc-600">
+          {t('members.sample', { listed: fmtInt(listed), total: fmtInt(total) })}
+        </p>
+      )}
       <ul className="mb-1 space-y-0.5 text-xs">
         {slice.map((member) => (
           <li key={member.login}>
@@ -677,7 +685,7 @@ function MemberList({ members }: { members: SegmentMember[] }) {
             {t('members.range', {
               from: start + 1,
               to: start + slice.length,
-              total: members.length,
+              total: fmtInt(members.length),
             })}
           </span>
           <button
@@ -723,7 +731,9 @@ function AiSection({ ai }: { ai: FollowerAi }) {
                 <span className="tabular-nums text-zinc-400">{fmtInt(segment.count)}</span>
               </div>
               <p className="mb-2 text-xs text-zinc-500">{segment.description}</p>
-              {segment.members.length > 0 && <MemberList members={segment.members} />}
+              {segment.members.length > 0 && (
+                <MemberList members={segment.members} total={segment.count} />
+              )}
               {segment.action && (
                 <p className="rounded bg-black/30 p-2 text-sm text-zinc-200">→ {segment.action}</p>
               )}

@@ -421,6 +421,7 @@ const pt: Record<keyof typeof en, string> = {
     "A base agrupada em personas. Ações e mensagens são geradas quando uma live é analisada.",
   "ai.whoFollows": "Quem te segue",
   "ai.reactivations": "Trazer de volta (mensagens sugeridas)",
+  "members.sample": "Mostrando {listed} nomes de {total}.",
   "members.range": "{from}–{to} de {total}",
   "collab.title": "Candidatos a collab",
   "collab.subtitle": "Streamers que te seguem, com o que transmitem.",
