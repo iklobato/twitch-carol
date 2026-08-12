@@ -13,6 +13,7 @@ from apps.api.deps import CurrentChannel, DbSession
 from core.follower_ai import KIND_BIO, KIND_REACTIVATION, KIND_SEGMENT, build_segments
 from core.follower_profiles import FollowerProfile, build_follower_profiles
 from core.follower_signals import (
+    base_age_concentration,
     follow_velocity,
     raid_attribution,
     suspicious_followers,
@@ -158,12 +159,32 @@ class TopicFollowsOut(BaseModel):
     follows: int
 
 
+class BaseAgeOut(BaseModel):
+    """Whether the follower base clusters by when the accounts were made.
+
+    Kept apart from `suspicious`, because they catch different things and mean
+    different things to a streamer. `suspicious` scores each follower and catches
+    fresh accounts that followed within days of being made. This catches a batch
+    of accounts made together and aged before use, which defeats that score
+    entirely: production has a channel with 97.5% of its base made inside one
+    six-month window that the per-follower score ranked as the cleanest of all.
+    """
+
+    followers_dated: int
+    months_spanned: int
+    window_followers: int
+    window_share: float
+    window_start: str | None
+    is_concentrated: bool
+
+
 class Signals(BaseModel):
     raids: list[RaidOut]
     suspicious: list[SuspiciousOut]
     suspicious_total: int
     velocity: list[VelocityDayOut]
     topic_follows: list[TopicFollowsOut]
+    base_age: BaseAgeOut
 
 
 class SegmentMemberOut(BaseModel):
@@ -481,6 +502,7 @@ def _signals(db: DbSession, channel_id: int, now: datetime) -> Signals:
     suspicious = suspicious_followers(db, channel_id, now)
     velocity = follow_velocity(db, channel_id)
     topics = topic_to_follows(db, channel_id)
+    base_age = base_age_concentration(db, channel_id)
     return Signals(
         raids=[
             RaidOut(
@@ -508,6 +530,14 @@ def _signals(db: DbSession, channel_id: int, now: datetime) -> Signals:
         topic_follows=[
             TopicFollowsOut(topic=t.topic, follows=t.follows) for t in topics
         ],
+        base_age=BaseAgeOut(
+            followers_dated=base_age.followers_dated,
+            months_spanned=base_age.months_spanned,
+            window_followers=base_age.window_followers,
+            window_share=base_age.window_share,
+            window_start=base_age.window_start,
+            is_concentrated=base_age.is_concentrated,
+        ),
     )
 
 

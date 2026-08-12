@@ -170,6 +170,87 @@ def suspicious_followers(
     ]
 
 
+@dataclass(frozen=True)
+class BaseAgeConcentration:
+    """How tightly a channel's followers cluster by when their accounts were made.
+
+    The per-follower score above cannot see this. It weights recency (a young
+    account, a follow that arrived days after the account was made), so a batch of
+    accounts aged for a couple of years defeats both halves of it. Measured across
+    production on 2026-08-12, the channel with 97.5% of its 41,605 followers made
+    inside one six-month window was the LEAST flagged of all fourteen, at 2.4%,
+    while ordinary channels sat between 3.6% and 35%. For that failure the old
+    signal is not merely quiet, it is inverted.
+    """
+
+    followers_dated: int
+    months_spanned: int
+    window_followers: int
+    window_share: float
+    window_start: str | None
+    is_concentrated: bool
+
+
+# All three from the same measurement across the 14 production channels:
+#   heaviest contiguous 6-month window, as a share of the base
+#     organic:        9.9% .. 37.5%
+#     bought:         97.5%
+#   months the base spans
+#     organic:        105 .. 196 distinct months
+#     bought:         48, for a base of 41,605
+BASE_AGE_WINDOW_MONTHS = 6
+BASE_AGE_CONCENTRATED_SHARE = 0.60
+# The one number here NOT taken from measurement: no channel is small enough to
+# false-positive at 60%, so there was nothing to measure against. The smallest
+# base (42 followers) reaches 42.9% on sample noise alone, and this floor is 12x
+# that. Deliberately conservative: a false positive here tells a streamer their
+# audience is fake.
+BASE_AGE_MIN_FOLLOWERS = 500
+
+
+def base_age_concentration(db: Session, channel_id: int) -> BaseAgeConcentration:
+    """Concentration of the follower base by account-creation month.
+
+    Aggregated in SQL to one row per month (a couple of hundred at most) and the
+    sliding window walked over that, rather than pulling every follower in to
+    count them here.
+    """
+    month = func.date_trunc("month", Follower.account_created_at)
+    rows = db.execute(
+        select(month.label("month"), func.count().label("n"))
+        .where(Follower.channel_id == channel_id)
+        .where(Follower.account_created_at.is_not(None))
+        .group_by(month)
+    ).all()
+
+    per_index = {row.month.year * 12 + row.month.month: row.n for row in rows}
+    total = sum(per_index.values())
+    if not total:
+        return BaseAgeConcentration(0, 0, 0, 0.0, None, is_concentrated=False)
+
+    best_total = 0
+    best_start = min(per_index)
+    for start in sorted(per_index):
+        window = sum(
+            per_index.get(index, 0)
+            for index in range(start, start + BASE_AGE_WINDOW_MONTHS)
+        )
+        if window > best_total:
+            best_total, best_start = window, start
+
+    share = best_total / total
+    return BaseAgeConcentration(
+        followers_dated=total,
+        months_spanned=len(per_index),
+        window_followers=best_total,
+        window_share=round(share, 3),
+        window_start=f"{(best_start - 1) // 12:04d}-{(best_start - 1) % 12 + 1:02d}",
+        is_concentrated=(
+            total >= BASE_AGE_MIN_FOLLOWERS and share >= BASE_AGE_CONCENTRATED_SHARE
+        ),
+    )
+
+
 def follow_velocity(db: Session, channel_id: int) -> list[VelocityDay]:
     """Daily follow counts (from followed_at) with spikes flagged where a day
     exceeds mean + K*stdev: viral moments or bot bursts stand out."""
