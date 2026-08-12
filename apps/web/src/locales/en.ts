@@ -419,6 +419,7 @@ export default {
     "Your base grouped into personas. Actions and messages are generated when a live is analyzed.",
   "ai.whoFollows": "Who follows you",
   "ai.reactivations": "Bring back (suggested messages)",
+  "members.sample": "Listing {listed} names out of {total}.",
   "members.range": "{from}–{to} of {total}",
   "collab.title": "Collab candidates",
   "collab.subtitle": "Streamers who follow you, with what they stream.",

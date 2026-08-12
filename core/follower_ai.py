@@ -34,6 +34,11 @@ RECENT_FOLLOW_DAYS = 30
 REACTIVATION_LIMIT = 8
 BIO_SAMPLE = 40
 SEGMENT_EXAMPLES = 5
+# Members listed per segment. `count` stays exact, so the number the streamer reads
+# is still the real one; this only bounds the names travelling with it. Uncapped,
+# the followers response for the largest real channel was 2.45 MB carrying 41,605
+# of them, and the screen pages through five at a time. Nobody pages 8,321 times.
+SEGMENT_MEMBERS_LISTED = 100
 OUTPUT_TOKENS = 1400
 MIN_SEGMENT_SIZE = 1
 
@@ -127,7 +132,7 @@ def build_segments(
                 examples=[p.display_name or p.login for p in group[:SEGMENT_EXAMPLES]],
                 members=[
                     SegmentMember(login=p.login, display_name=p.display_name)
-                    for p in group
+                    for p in group[:SEGMENT_MEMBERS_LISTED]
                 ],
             )
         )
