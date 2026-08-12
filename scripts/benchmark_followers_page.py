@@ -162,6 +162,33 @@ def main() -> int:
             page._collab(db, channel.id)
         with timed("_unfollows"):
             page._unfollows(db, channel.id)
+        with timed("_ai (build_segments)"):
+            ai = page._ai(db, channel.id, profiles)
+
+        # The benchmark used to stop before this, which is the part the streamer
+        # actually waits on: every segment carries its full member list, so the
+        # response grows with the base.
+        overview = page.FollowersOverview(
+            kpis=page._kpis(rows, now, channel.follower_total),
+            growth=page._growth(rows),
+            recent=[page._profile(f) for f in recent],
+            notable=[page._profile(f) for f in notable[:24]],
+            composition=page._composition(rows, chatter_logins, now),
+            funnel=page._funnel(profiles),
+            cohorts=page._cohorts(profiles),
+            top_value=page._top_value(profiles),
+            loyal_subscribers=page._loyal_subscribers(profiles),
+            signals=page._signals(db, channel.id, now),
+            ai=ai,
+            collab=page._collab(db, channel.id),
+            recommendations=page._recommendations(db, channel.id),
+            unfollows=page._unfollows(db, channel.id),
+        )
+        with timed("serializar a resposta (model_dump_json)"):
+            payload = overview.model_dump_json()
+        print(f"\ntamanho da resposta: {len(payload) / 1_000_000:.2f} MB")
+        print(f"membros de segmento na resposta: "
+              f"{sum(len(seg.members) for seg in overview.ai.segments)}")
 
     total = sum(ms for _, ms in _timings)
     print(f"\n{len(rows)} seguidores\n")
