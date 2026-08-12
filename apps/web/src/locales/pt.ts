@@ -375,6 +375,8 @@ const pt: Record<keyof typeof en, string> = {
   "followers.loyalSub": "Maior tempo de inscrição contínua.",
   "followers.recent": "Seguidores recentes",
   "followers.recentSub": "Quem chegou por último.",
+  "followers.kpi.totalHint": "temos detalhe de {stored}",
+  "followers.extraRows": "Guardamos {stored} seguidores, mas a Twitch informa {total}. Os números abaixo cobrem os {stored}; a diferença sai na próxima sincronização.",
   "followers.unfollows.title": "Quem deixou de seguir",
   "followers.unfollows.subtitle": "Detectado a partir da primeira sincronização: a Twitch não guarda histórico de unfollow. Contas banidas ou apagadas não entram aqui.",
   "followers.unfollows.stayed": "Ficou {n} dias",

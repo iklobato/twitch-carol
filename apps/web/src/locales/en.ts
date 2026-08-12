@@ -373,6 +373,8 @@ export default {
   "followers.loyalSub": "Longest unbroken subscription.",
   "followers.recent": "Recent followers",
   "followers.recentSub": "Who arrived last.",
+  "followers.kpi.totalHint": "detail for {stored}",
+  "followers.extraRows": "We hold {stored} followers but Twitch reports {total}. The numbers below cover those {stored}; the difference clears on the next sync.",
   "followers.unfollows.title": "Who unfollowed",
   "followers.unfollows.subtitle": "Detected from the first sync onwards: Twitch keeps no unfollow history. Banned and deleted accounts are not listed here.",
   "followers.unfollows.stayed": "Stayed {n} days",

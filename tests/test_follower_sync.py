@@ -414,3 +414,70 @@ def test_enrich_streamer_followers_fills_category(db) -> None:
     assert row.stream_language == "pt"
     assert row.streamer_enriched_at is not None
     assert enrich_streamer_followers(db, channel, _mock_client(handler), _no_sleep) == 0
+
+
+def test_a_candidate_list_bigger_than_the_channel_is_refused_not_deleted(db) -> None:
+    """Measured on dev on 2026-08-11: a database carrying another channel's
+    followers produced 20,570 candidates for a channel Twitch reports 42 followers
+    for, and the pass deleted 200 of them. Confirming each one does not help,
+    because the confirmation asks the same API that produced the number."""
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    for n in range(30):
+        add_follower(db, channel, f"nao_segue_{n}", followed_minutes_ago=600)
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        app = _app_token(request)
+        if app is not None:
+            return app
+        if "/users" in request.url.path:
+            raise AssertionError("must refuse before spending a single call")
+        return httpx.Response(200, json={"total": 42, "data": [], "pagination": {}})
+
+    result = sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert result.unfollowed == 0
+    assert result.accounts_gone == 0
+    assert result.unfollows_deferred == 30
+    assert _count_followers(db, channel) == 30
+    assert db.scalars(select(Unfollow)).all() == []
+    # The refusal has to be visible, not just absent from the counters.
+    assert channel.follower_sync_error is not None
+    assert "refusing to delete" in channel.follower_sync_error
+
+
+def test_a_believable_number_of_departures_still_goes_through(db) -> None:
+    """The guard must not block the thing the feature exists for. A base of 42 with
+    two people gone is under the floor and has to be processed normally."""
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    left = add_follower(db, channel, "saiu", followed_minutes_ago=600, enriched=True)
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        app = _app_token(request)
+        if app is not None:
+            return app
+        if "/users" in request.url.path:
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": str(left.twitch_user_id),
+                            "login": "saiu",
+                            "display_name": "Saiu",
+                            "created_at": "2020-01-01T00:00:00Z",
+                        }
+                    ]
+                },
+            )
+        if request.url.params.get("user_id") is not None:
+            return httpx.Response(200, json={"total": 42, "data": [], "pagination": {}})
+        return httpx.Response(200, json={"total": 42, "data": [], "pagination": {}})
+
+    result = sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert result.unfollowed == 1
+    assert channel.follower_sync_error is None
