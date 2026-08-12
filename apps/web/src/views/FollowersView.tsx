@@ -66,7 +66,15 @@ function Kpis({ overview }: { overview: FollowersOverview }) {
       : t('followers.years', { n: (kpis.avg_account_age_days / 365).toFixed(1) })
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
-      <StatCard label={t('followers.kpi.total')} value={fmtInt(kpis.total)} />
+      <StatCard
+        label={t('followers.kpi.total')}
+        value={fmtInt(kpis.total)}
+        hint={
+          kpis.stored === kpis.total
+            ? undefined
+            : t('followers.kpi.totalHint', { stored: fmtInt(kpis.stored) })
+        }
+      />
       <StatCard
         label={t('followers.kpi.streamers')}
         value={fmtInt(kpis.streamers)}
@@ -255,14 +263,17 @@ function UnfollowGrid({ unfollows }: { unfollows: Unfollow[] }) {
 // The charts below describe the followers we hold rows for, which trails Twitch's
 // own count until the sync worker finishes a channel. Saying so beats a chart that
 // looks complete and is not.
+// "Followers" is Twitch's own count; every other number on this page is computed
+// over the rows we hold. When the two disagree the row reads as broken ("42
+// followers, 2,500 of them streamers"), so the gap has to be stated in whichever
+// direction it goes: fewer rows than the count means a sync still in progress,
+// more means rows Twitch no longer lists.
 function SyncNotice({ kpis }: { kpis: FollowerKpis }) {
-  if (kpis.stored >= kpis.total) return null
+  if (kpis.stored === kpis.total) return null
+  const key = kpis.stored < kpis.total ? 'followers.syncing' : 'followers.extraRows'
   return (
     <p className="mb-4 rounded-lg border border-amber-900 bg-amber-950/40 p-3 text-xs text-amber-300">
-      {t('followers.syncing', {
-        stored: fmtInt(kpis.stored),
-        total: fmtInt(kpis.total),
-      })}
+      {t(key, { stored: fmtInt(kpis.stored), total: fmtInt(kpis.total) })}
     </p>
   )
 }

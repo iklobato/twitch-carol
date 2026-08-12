@@ -336,6 +336,26 @@ def _pending_batch(
     return list(db.scalars(query))
 
 
+# A pass may only delete a modest slice of a channel's base. Both numbers come
+# from what production actually looks like, measured across all 14 channels on
+# 2026-08-11: the largest real gap between our rows and Twitch's count was 4.8%
+# (iklobat, 2 rows) and the largest in absolute terms was 79 rows (hobbslima,
+# 1.4%). The failures this guards against are nowhere near that: a dev database
+# carrying another channel's followers produced 20,570 candidates against a
+# reported total of 42, and a Twitch response that wrongly came back empty would
+# make every single row a candidate. The floor keeps small channels working, where
+# a couple of real departures is a big slice of a base of 42.
+UNFOLLOW_MAX_FRACTION_OF_TOTAL = 0.25
+UNFOLLOW_ALWAYS_ALLOWED = 10
+
+
+def _too_many_to_believe(candidates: int, reported_total: int) -> bool:
+    """Is this more departures than a real channel could plausibly have had?"""
+    return candidates > max(
+        UNFOLLOW_ALWAYS_ALLOWED, reported_total * UNFOLLOW_MAX_FRACTION_OF_TOTAL
+    )
+
+
 @dataclass(frozen=True)
 class _GoneCount:
     unfollowed: int
@@ -376,6 +396,24 @@ def _reconcile_unfollows(
     )
     if not candidates:
         return _GoneCount(0, 0, 0)
+
+    total = channel.follower_total or 0
+    if _too_many_to_believe(len(candidates), total):
+        # Refuse rather than delete. Confirming each candidate does not help here:
+        # it asks the same API that produced the number in the first place, so a
+        # Twitch-side glitch would confirm its own mistake all the way down.
+        channel.follower_sync_error = (
+            f"{len(candidates)} of the stored followers are missing from a channel "
+            f"Twitch reports {total} followers for; refusing to delete them"
+        )
+        logger.error(
+            "unfollow reconciliation refused: %d candidates against a reported "
+            "total of %d",
+            len(candidates),
+            total,
+            extra={"channel_id": channel.id},
+        )
+        return _GoneCount(0, 0, len(candidates))
 
     deferred = max(0, len(candidates) - UNFOLLOW_CONFIRM_LIMIT)
     if deferred:
