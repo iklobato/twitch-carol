@@ -848,6 +848,20 @@ export default function FollowersView() {
         {t('nav.back')}
       </a>
       <h2 className="mb-4 mt-2 text-xl font-bold">{t('followers.title')}</h2>
+      {overview.needs_reconnect && (
+        <div className="mb-4 rounded-lg border border-red-800 bg-red-950/40 p-4">
+          <p className="mb-1 text-sm font-semibold text-red-300">
+            {t('followers.reconnect.title')}
+          </p>
+          <p className="mb-3 text-xs text-zinc-400">{t('followers.reconnect.body')}</p>
+          <a
+            href="/auth/login"
+            className="inline-block rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
+          >
+            {t('followers.reconnect.action')}
+          </a>
+        </div>
+      )}
       {overview.kpis.total === 0 ? (
         <p className="text-zinc-400">{t('followers.empty')}</p>
       ) : (

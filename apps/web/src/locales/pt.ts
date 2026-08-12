@@ -326,6 +326,9 @@ const pt: Record<keyof typeof en, string> = {
   "tldr.messagesDelta": " ({sign}{pct}% vs últimas 10)",
 
   // followers
+  "followers.reconnect.title": "Sua conexão com a Twitch expirou",
+  "followers.reconnect.body": "A Twitch parou de aceitar o acesso desta conta, então os números abaixo estão parados na última vez que deu certo. Conectar de novo resolve e volta a atualizar sozinho.",
+  "followers.reconnect.action": "Conectar com a Twitch de novo",
   "followers.title": "Meus seguidores",
   "followers.loading": "Carregando seus seguidores...",
   "followers.empty":
