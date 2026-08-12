@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { apiGet, formatTime, STATUS_LABELS } from '../api'
+import { apiGet, formatTime, statusLabel } from '../api'
+import { fmtInt, locale, t, type MessageKey } from '../i18n'
 import OverviewSection from '../components/OverviewSection'
 import type { QueueItem, StreamListItem } from '../types'
 
@@ -13,7 +14,7 @@ function statusColor(status: string): string {
 function dayHeading(day: string): string {
   // `day` is a plain YYYY-MM-DD (channel timezone); parse as local midnight so
   // the weekday/label lands on that calendar date in any browser.
-  return new Date(`${day}T00:00:00`).toLocaleDateString('pt-BR', {
+  return new Date(`${day}T00:00:00`).toLocaleDateString(locale(), {
     weekday: 'long',
     day: '2-digit',
     month: 'long',
@@ -54,16 +55,21 @@ export function dayTotals(streams: StreamListItem[], uniqueChatters: number): Da
   }
 }
 
+/** "3 lives" / "1 live", same shape in both catalogs. */
+export function liveCount(n: number): string {
+  return t(n === 1 ? 'streams.liveCount' : 'streams.liveCountPlural', { n })
+}
+
 function MetricsLine({ metrics }: { metrics: DayMetrics }) {
   return (
     <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-zinc-500">
-      <span>💬 {metrics.messages.toLocaleString('pt-BR')} mensagens</span>
-      <span>👤 {metrics.chatters.toLocaleString('pt-BR')} chatters</span>
-      <span>⚡ {metrics.events.toLocaleString('pt-BR')} eventos</span>
+      <span>💬 {t('metrics.messages', { n: fmtInt(metrics.messages) })}</span>
+      <span>👤 {t('metrics.chatters', { n: fmtInt(metrics.chatters) })}</span>
+      <span>⚡ {t('metrics.events', { n: fmtInt(metrics.events) })}</span>
       <span className={metrics.followers > 0 ? 'text-emerald-400' : ''}>
-        +{metrics.followers.toLocaleString('pt-BR')} seguidores
+        {t('metrics.followers', { n: fmtInt(metrics.followers) })}
       </span>
-      <span>👁 pico {metrics.peak_viewers.toLocaleString('pt-BR')} viewers</span>
+      <span>👁 {t('metrics.peak', { n: fmtInt(metrics.peak_viewers) })}</span>
     </p>
   )
 }
@@ -76,7 +82,7 @@ function StreamCard({ stream }: { stream: StreamListItem }) {
     >
       <div>
         <p className="font-semibold">
-          {stream.title ?? `Live #${stream.id}`}
+          {stream.title ?? t('live.number', { id: stream.id })}
           {stream.category && (
             <span className="ml-2 text-sm text-zinc-500">{stream.category}</span>
           )}
@@ -93,14 +99,14 @@ function StreamCard({ stream }: { stream: StreamListItem }) {
                 key={record}
                 className="rounded-full border border-amber-700 bg-amber-950/30 px-2 py-0.5 text-[11px] text-amber-300"
               >
-                🏆 recorde de {record}
+                {t('streams.record', { name: t(`record.${record}` as MessageKey) })}
               </span>
             ))}
           </p>
         )}
       </div>
       <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor(stream.status)}`}>
-        {STATUS_LABELS[stream.status] ?? stream.status}
+        {statusLabel(stream.status)}
       </span>
     </a>
   )
@@ -110,15 +116,16 @@ function QueueBanner({ items }: { items: QueueItem[] }) {
   if (items.length === 0) return null
   return (
     <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/40 p-4 text-sm">
-      <p className="font-semibold text-amber-300">Processamento em andamento</p>
+      <p className="font-semibold text-amber-300">{t('queue.title')}</p>
       {items.map((item) => (
         <p key={`${item.stream_id}-${item.job_type}`} className="text-amber-200/80">
-          Live #{item.stream_id}: {item.job_type === 'transcribe' ? 'transcrição' : 'análise'}{' '}
+          {t('live.number', { id: item.stream_id })}:{' '}
+          {item.job_type === 'transcribe' ? t('queue.transcription') : t('queue.analysis')}{' '}
           {item.status === 'running'
-            ? 'rodando agora'
-            : `na posição ${item.position} da fila` +
+            ? t('queue.runningNow')
+            : t('queue.positionInQueue', { n: item.position ?? '' }) +
               (item.eta_seconds != null
-                ? `, estimativa ~${Math.max(1, Math.round(item.eta_seconds / 60))} min`
+                ? t('queue.eta', { n: Math.max(1, Math.round(item.eta_seconds / 60)) })
                 : '')}
         </p>
       ))}
@@ -142,30 +149,24 @@ export default function StreamsList() {
     return () => clearInterval(timer)
   }, [])
 
-  if (streams === null) return <p className="text-zinc-400">Carregando lives...</p>
+  if (streams === null) return <p className="text-zinc-400">{t('streams.loading')}</p>
 
   return (
     <div>
       <OverviewSection streams={streams} />
-      <h2 className="mb-4 text-xl font-bold">Suas lives</h2>
+      <h2 className="mb-4 text-xl font-bold">{t('streams.title')}</h2>
       <QueueBanner items={queue} />
-      {streams.length === 0 && (
-        <p className="text-zinc-400">
-          Nenhuma live capturada ainda. Transmita na Twitch e ela aparece aqui sozinha.
-        </p>
-      )}
+      {streams.length === 0 && <p className="text-zinc-400">{t('streams.empty')}</p>}
       <div className="space-y-6">
         {groupByDay(streams).map((group) => (
           <div key={group.key}>
             <div className="mb-2 flex items-baseline gap-2">
               <h3 className="text-sm font-semibold capitalize text-zinc-300">{group.label}</h3>
-              <span className="text-xs text-zinc-600">
-                {group.streams.length} live{group.streams.length === 1 ? '' : 's'}
-              </span>
+              <span className="text-xs text-zinc-600">{liveCount(group.streams.length)}</span>
             </div>
             {group.streams.length > 1 && (
               <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2">
-                <p className="text-xs font-semibold text-zinc-400">Total do dia</p>
+                <p className="text-xs font-semibold text-zinc-400">{t('streams.dayTotal')}</p>
                 <MetricsLine metrics={dayTotals(group.streams, dayChatters[group.key] ?? 0)} />
               </div>
             )}

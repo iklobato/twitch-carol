@@ -1,8 +1,10 @@
 """Per-follower feature rows crossing followers with chat, money, and subs."""
 
 import pytest
+from sqlalchemy import select
 
 from core.follower_profiles import build_follower_profiles
+from core.models import Follower
 from tests.factories import (
     add_chat,
     add_event,
@@ -31,14 +33,14 @@ def test_profiles_cross_chat_money_and_subs(db) -> None:
     profiles = {p.login: p for p in build_follower_profiles(db, channel.id)}
 
     # payer reached the deepest stage and sorts first (most value)
-    assert profiles["payer"].stage == "pagante"
+    assert profiles["payer"].stage == "paying"
     assert profiles["payer"].estimated_usd > 0
     assert profiles["payer"].messages == 4
     assert profiles["payer"].is_subscriber is True
 
-    assert profiles["chatter"].stage == "engajado"
+    assert profiles["chatter"].stage == "engaged"
     assert profiles["chatter"].estimated_usd == 0.0
-    assert profiles["lurker"].stage == "seguidor"
+    assert profiles["lurker"].stage == "follower"
     assert profiles["lurker"].messages == 0
 
 
@@ -55,7 +57,7 @@ def test_badge_months_are_read_from_chat(db) -> None:
     )
     assert profile.sub_months == 18
     assert profile.is_subscriber is True
-    assert profile.stage == "inscrito"
+    assert profile.stage == "subscriber"
 
 
 def test_profiles_ordered_by_value_then_messages(db) -> None:
@@ -74,3 +76,20 @@ def test_profiles_ordered_by_value_then_messages(db) -> None:
 def test_no_followers_returns_empty(db) -> None:
     channel = make_channel(db)
     assert build_follower_profiles(db, channel.id) == []
+
+
+def test_profiles_can_reuse_followers_the_caller_already_loaded(db) -> None:
+    """The followers endpoint holds the rows before it asks for profiles.
+    Without this, the same 20k rows were queried and turned into ORM objects
+    twice in one request."""
+    channel = make_channel(db)
+    add_follower(db, channel, "veterano")
+    add_follower(db, channel, "novato")
+    db.flush()
+    followers = list(db.scalars(select(Follower).where(Follower.channel_id == channel.id)))
+
+    reused = build_follower_profiles(db, channel.id, followers)
+
+    assert [p.login for p in reused] == [
+        p.login for p in build_follower_profiles(db, channel.id)
+    ]

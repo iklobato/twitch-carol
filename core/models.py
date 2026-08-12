@@ -85,6 +85,19 @@ class Channel(Base):
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    # Screen language and the language the LLM writes insights in, fixed at
+    # sign-up. NOT the language spoken on the channel: Twitch's
+    # broadcaster_language says "en" for plenty of Brazilian channels.
+    language: Mapped[str] = mapped_column(String(8), default="pt")
+    # What the streamer actually speaks: declared by them on the onboarding
+    # screen, with Whisper's detection as a fallback and a cross-check. Drives
+    # the chat stopwords and sentiment lexicon, so a Portuguese live on an
+    # English product still reads correctly.
+    spoken_language: Mapped[str | None] = mapped_column(String(8))
+    # Null until the streamer has answered the onboarding screen. Kept apart
+    # from spoken_language because null there means "not detected yet", which
+    # is a different thing from "not asked yet".
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # StreamElements connector (external tips). Legacy manual path stores the
     # JWT; the OAuth "Connect" flow stores access/refresh tokens instead.
     streamelements_account_id: Mapped[str | None] = mapped_column(String(64))
@@ -94,8 +107,31 @@ class Channel(Base):
     streamelements_token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    streamelements_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    streamelements_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Follower sync state, owned by core.follower_sync. follower_total is the
+    # count Twitch reports, which is what every screen shows: our own row count
+    # drifts both ways and cannot be trusted as the headline number.
+    follower_total: Mapped[int | None]
+    # Null puts the channel at the front of the sync queue, which is how a fresh
+    # connect and a re-login ask for a refresh without doing the work inline.
+    followers_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Helix pagination cursor of an unfinished pass, so a channel with tens of
+    # thousands of followers resumes instead of starting over.
+    follower_sync_cursor: Mapped[str | None] = mapped_column(String(512))
+    # When the pass in progress began. Paired with Follower.last_seen_at this is
+    # what makes unfollow detection survive a worker restart: the "seen in this
+    # pass" mark lives in the database, not in the worker's memory.
+    follower_sync_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    follower_sync_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class Follower(Base):
@@ -123,7 +159,53 @@ class Follower(Base):
     # Streamer-only enrichment (affiliate/partner), from Get Channel Information.
     stream_category: Mapped[str | None] = mapped_column(String(128))
     stream_language: Mapped[str | None] = mapped_column(String(16))
-    streamer_enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    streamer_enriched_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # Stamped with Channel.follower_sync_started_at every time a sync pass finds
+    # this row still in Twitch's list. A row left behind by a finished pass is a
+    # candidate for having unfollowed, and this is the only part of that judgement
+    # that has to outlive the worker process.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class UnfollowReason(str, enum.Enum):
+    """Why someone left the follower list. Twitch reports both the same way (the
+    row is simply gone), but they are different things to show a streamer: one is
+    a person who chose to leave, the other is an account Twitch removed."""
+
+    UNFOLLOWED = "unfollowed"
+    ACCOUNT_GONE = "account_gone"
+
+
+class Unfollow(Base):
+    """Someone who was a follower and is no longer in Twitch's list.
+
+    A table of its own rather than a flag on `followers`, because six modules
+    query that table to mean "who follows right now". A flag would need the same
+    filter repeated in each of them, and the one place that got forgotten would
+    keep counting ex-followers with nothing failing to reveal it.
+
+    The display fields are copied here because the `followers` row is deleted
+    when this is written; without the copy there is no way to show the streamer
+    who left.
+    """
+
+    __tablename__ = "unfollows"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
+    twitch_user_id: Mapped[int] = mapped_column(BigInteger)
+    login: Mapped[str] = mapped_column(String(64))
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    profile_image_url: Mapped[str | None] = mapped_column(String(256))
+    # When they had followed, carried over from the deleted row, so the streamer
+    # can see how long the person stayed.
+    followed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[UnfollowReason] = mapped_column(
+        _enum(UnfollowReason, "unfollow_reason")
+    )
 
 
 class PastBroadcast(Base):
@@ -155,7 +237,9 @@ class Vip(Base):
     """Channel VIPs, seeded from Helix on connect."""
 
     __tablename__ = "vips"
-    __table_args__ = (Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),)
+    __table_args__ = (
+        Index("uq_vips_channel_user", "channel_id", "twitch_user_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
@@ -273,7 +357,9 @@ class TranscriptSegment(Base):
     __tablename__ = "transcript_segments"
     __table_args__ = (
         Index("ix_transcript_segments_stream_started", "stream_id", "started_at"),
-        Index("ix_transcript_segments_text_search", "text_search", postgresql_using="gin"),
+        Index(
+            "ix_transcript_segments_text_search", "text_search", postgresql_using="gin"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
@@ -290,7 +376,9 @@ class TranscriptSegment(Base):
 
 class ViewerSample(Base):
     __tablename__ = "viewer_samples"
-    __table_args__ = (Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),)
+    __table_args__ = (
+        Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id"))
@@ -323,7 +411,9 @@ class Insight(Base):
     model_used: Mapped[str] = mapped_column(String(128))
     tokens_in: Mapped[int]
     tokens_out: Mapped[int]
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class StreamRecord(Base):
@@ -332,7 +422,9 @@ class StreamRecord(Base):
     per (channel_id, metric)."""
 
     __tablename__ = "stream_records"
-    __table_args__ = (Index("ix_stream_records_channel_metric", "channel_id", "metric"),)
+    __table_args__ = (
+        Index("ix_stream_records_channel_metric", "channel_id", "metric"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"))
@@ -353,7 +445,9 @@ class ChannelRecommendation(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class FollowerRecommendation(Base):
@@ -368,7 +462,9 @@ class FollowerRecommendation(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class FollowerAiInsight(Base):
@@ -385,7 +481,9 @@ class FollowerAiInsight(Base):
     content: Mapped[str] = mapped_column(Text)
     evidence: Mapped[dict] = mapped_column(JSONB)
     model_used: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class ExternalTip(Base):
@@ -393,7 +491,9 @@ class ExternalTip(Base):
     finance view can show total revenue, not just the Twitch slice."""
 
     __tablename__ = "external_tips"
-    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_external_tips_source_id"),)
+    __table_args__ = (
+        UniqueConstraint("source", "external_id", name="uq_external_tips_source_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
@@ -439,7 +539,9 @@ class TwitchClip(Base):
     reason: Mapped[str | None] = mapped_column(String(128))
     title: Mapped[str | None] = mapped_column(String(140))
     kept: Mapped[bool] = mapped_column(default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class EventSubMessage(Base):
@@ -475,4 +577,6 @@ class Job(Base):
     last_heartbeat: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

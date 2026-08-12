@@ -9,7 +9,8 @@ import {
   Tooltip,
 } from 'chart.js'
 import { useEffect, useRef } from 'react'
-import { EVENT_LABELS, formatTime } from '../api'
+import { eventLabel, formatTime } from '../api'
+import { t } from '../i18n'
 import type { Timeline } from '../types'
 
 Chart.register(
@@ -69,7 +70,7 @@ export function buildTimelineSeries(timeline: Timeline): TimelineSeries {
         nearest = index
       }
     })
-    const name = EVENT_LABELS[event.type] ?? event.type
+    const name = eventLabel(event.type)
     const text = event.amount != null ? `${name} (${event.amount})` : name
     eventsByIndex.set(nearest, [...(eventsByIndex.get(nearest) ?? []), text])
   }
@@ -112,7 +113,7 @@ export default function TimelineChart({
         labels,
         datasets: [
           {
-            label: 'Mensagens/min',
+            label: t('chart.messagesPerMin'),
             data: chatData,
             borderColor: '#a855f7',
             backgroundColor: '#a855f7',
@@ -122,7 +123,7 @@ export default function TimelineChart({
             yAxisID: 'y',
           },
           {
-            label: 'Viewers',
+            label: t('chart.viewers'),
             data: viewersData,
             borderColor: '#38bdf8',
             backgroundColor: '#38bdf8',
@@ -132,7 +133,7 @@ export default function TimelineChart({
             yAxisID: 'y1',
           },
           {
-            label: 'Eventos',
+            label: t('chart.events'),
             data: eventsData,
             showLine: false,
             pointStyle: 'triangle',
@@ -174,13 +175,13 @@ export default function TimelineChart({
         scales: {
           x: { ticks: { color: '#71717a', maxTicksLimit: 12 }, grid: { color: '#27272a' } },
           y: {
-            title: { display: true, text: 'msgs/min', color: '#71717a' },
+            title: { display: true, text: t('chart.axis.msgsPerMin'), color: '#71717a' },
             ticks: { color: '#71717a' },
             grid: { color: '#27272a' },
           },
           y1: {
             position: 'right',
-            title: { display: true, text: 'viewers', color: '#71717a' },
+            title: { display: true, text: t('chart.axis.viewers'), color: '#71717a' },
             ticks: { color: '#71717a' },
             grid: { drawOnChartArea: false },
           },

@@ -9,10 +9,12 @@ messages through the local LLM at analyze time.
 
 import re
 
+from core.i18n import resolve
+
 MIN_WORD_LENGTH = 3
 LAUGH_SCORE = 0.6
 
-STOPWORDS = frozenset(
+STOPWORDS_PT = frozenset(
     """a o e é de da do das dos em no na nos nas um uma uns umas que com para pra pro
     por se não nao sim mais menos muito muita muitos muitas pouco ja já foi ser ter
     tem tinha vai vou como quando onde quem qual quais isso isto aquilo ele ela eles
@@ -27,8 +29,27 @@ STOPWORDS = frozenset(
     """.split()
 )
 
+# Ingles: lista curta de funcao, no mesmo espirito da de portugues. O que decide
+# "assunto da live" e a palavra de conteudo, entao tudo que e cola gramatical sai.
+STOPWORDS_EN = frozenset(
+    """a an the this that these those i you he she it we they me him her us them
+    my your his its our their mine yours is are was were be been being am do does
+    did doing have has had having will would shall should can could may might must
+    of in on at by for with about against between into through during before after
+    above below to from up down out off over under again further then once here
+    there when where why how all any both each few more most other some such no
+    nor not only own same so than too very just now got get gets like really
+    yeah yes ok okay lol lmao bro dude guys gonna wanna kinda sorta
+    what who whom which whose and but or if because as until while
+    """.split()
+)
+
+# Idioma -> palavras que nao viram assunto. Sem isso, canal em ingles lista
+# `the`, `you` e `and` como principais temas da live.
+STOPWORDS: dict[str, frozenset[str]] = {"pt": STOPWORDS_PT, "en": STOPWORDS_EN}
+
 # score in [-1, 1]; BR Twitch chat vocabulary
-LEXICON: dict[str, float] = {
+LEXICON_PT: dict[str, float] = {
     "bom": 0.5,
     "boa": 0.5,
     "ótimo": 1.0,
@@ -93,8 +114,17 @@ LEXICON: dict[str, float] = {
     "aff": -0.5,
     "credo": -0.6,
     "pior": -0.7,
+}
+
+# An emoji carries the same feeling in any language, so it is scored once and
+# merged into every lexicon. Kept apart from the word lists on purpose: two
+# copies would drift, and an English channel scored without these loses the
+# signal entirely (a chat that answers in 🔥 and 💀 reads as neutral).
+EMOJI_SCORES: dict[str, float] = {
     "😂": 0.6,
-    "❤️": 0.8,
+    # bare U+2764, without the U+FE0F variation selector the keyboard appends:
+    # the selector is not tokenized, so keying on the pair never matched
+    "❤": 0.8,
     "🔥": 0.7,
     "👏": 0.6,
     "😍": 0.9,
@@ -104,26 +134,105 @@ LEXICON: dict[str, float] = {
     "😢": -0.6,
     "💀": 0.3,
 }
+
+# Ingles: vocabulario de chat de Twitch, nao dicionario. Risada ja e neutra (o
+# LAUGH_PATTERN cobre kkk, haha, lol, lul, kekw) e emoji vem de EMOJI_SCORES,
+# entao aqui entra so o que o chat em ingles escreve com palavra.
+LEXICON_EN: dict[str, float] = {
+    "good": 0.5,
+    "nice": 0.6,
+    "great": 0.8,
+    "amazing": 1.0,
+    "awesome": 0.9,
+    "insane": 0.9,
+    "cracked": 0.8,
+    "clutch": 0.9,
+    "clean": 0.7,
+    "smooth": 0.6,
+    "goat": 1.0,
+    "based": 0.7,
+    "pog": 0.8,
+    "poggers": 0.8,
+    "pogchamp": 0.8,
+    "hype": 0.7,
+    "gg": 0.6,
+    "ez": 0.5,
+    "w": 0.6,
+    "dub": 0.6,
+    "banger": 0.8,
+    "sick": 0.7,
+    "love": 0.9,
+    "loved": 0.9,
+    "beautiful": 0.8,
+    "perfect": 1.0,
+    "legend": 0.9,
+    "king": 0.7,
+    "queen": 0.7,
+    "respect": 0.7,
+    "congrats": 0.8,
+    "thanks": 0.5,
+    "welcome": 0.4,
+    "funny": 0.7,
+    "hilarious": 0.9,
+    "cute": 0.6,
+    "wholesome": 0.8,
+    "bad": -0.5,
+    "awful": -0.9,
+    "terrible": -0.9,
+    "trash": -0.8,
+    "garbage": -0.8,
+    "cringe": -0.6,
+    "boring": -0.7,
+    "l": -0.6,
+    "rip": -0.4,
+    "sad": -0.6,
+    "unlucky": -0.4,
+    "scam": -0.8,
+    "toxic": -0.7,
+    "annoying": -0.6,
+    "broken": -0.5,
+    "lag": -0.5,
+    "laggy": -0.5,
+    "stop": -0.3,
+    "worst": -1.0,
+    "hate": -0.9,
+}
+
+# Idioma -> lexico de sentimento, cada um com os emojis por cima. Canal em
+# ingles com o lexico de portugues devolve reacao vazia, porque nenhuma palavra
+# casa.
+LEXICON: dict[str, dict[str, float]] = {
+    "pt": LEXICON_PT | EMOJI_SCORES,
+    "en": LEXICON_EN | EMOJI_SCORES,
+}
 LAUGH_PATTERN = re.compile(
     r"^(?:k{3,}|(?:ha){2,}h?|(?:rs){2,}|lol|lul|omegalul|kekw)$", re.IGNORECASE
 )
-TOKEN_PATTERN = re.compile(r"[0-9a-zà-öø-ÿ_]+|[\U0001F300-\U0001FAFF❤️]", re.IGNORECASE)
+# The heart lives outside the main emoji block, so it is listed on its own. The
+# U+FE0F variation selector that follows it in real messages is deliberately NOT
+# matchable: it would tokenize as its own meaningless token.
+TOKEN_PATTERN = re.compile(r"[0-9a-zà-öø-ÿ_]+|[\U0001F300-\U0001FAFF❤]", re.IGNORECASE)
 
 
 def tokenize(text: str) -> list[str]:
     return TOKEN_PATTERN.findall(text.lower())
 
 
-def message_sentiment(tokens: list[str]) -> float | None:
+def message_sentiment(tokens: list[str], language: str | None = None) -> float | None:
     """Mean of matched lexicon scores; None when nothing matched (neutral
-    messages don't dilute the averages)."""
+    messages don't dilute the averages).
+
+    The lexicon is per language: an English channel scored with the Portuguese
+    one matches nothing and the chat-reaction chart comes back empty, which is
+    exactly what the invite email promises to show."""
+    lexico = LEXICON[resolve(language)]
     scores = []
     for token in tokens:
         if LAUGH_PATTERN.match(token):
             scores.append(LAUGH_SCORE)
             continue
-        if token in LEXICON:
-            scores.append(LEXICON[token])
+        if token in lexico:
+            scores.append(lexico[token])
     if not scores:
         return None
     return sum(scores) / len(scores)
@@ -163,14 +272,18 @@ def emote_names(text: str, emotes: dict | None) -> list[str]:
     return [name for _, name in emote_occurrences(text, emotes)]
 
 
-def meaningful_words(text: str, emotes: dict | None) -> list[str]:
+def meaningful_words(
+    text: str, emotes: dict | None, language: str | None = None
+) -> list[str]:
     """Content words from a message: emotes stripped, stopwords/digits/laughter
-    and very short tokens removed."""
+    and very short tokens removed. Stopwords follow the channel language, or
+    `the`/`you`/`and` end up as the top topics of an English stream."""
+    palavras_vazias = STOPWORDS[resolve(language)]
     result = []
     for token in tokenize(strip_emotes(text, emotes)):
         if (
             len(token) >= MIN_WORD_LENGTH
-            and token not in STOPWORDS
+            and token not in palavras_vazias
             and not token.isdigit()
             and not LAUGH_PATTERN.match(token)
         ):

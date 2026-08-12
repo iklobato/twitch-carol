@@ -119,3 +119,24 @@ def test_ensure_fresh_token_without_refresh_token_raises() -> None:
     channel = Channel(twitch_user_id=123, login="henry", display_name="Henry")
     with pytest.raises(TwitchAuthError, match="no refresh token"):
         ensure_fresh_token(Mock(), channel)
+
+
+def test_sign_up_creates_the_channel_in_english(db) -> None:
+    """The product is served in English. What the streamer speaks is a separate
+    question, answered by Whisper from their audio, never by this column."""
+    channel = upsert_channel(db, USER, GRANT)
+
+    assert channel.language == "en"
+    assert channel.spoken_language is None
+
+
+def test_a_later_login_never_rewrites_the_language(db) -> None:
+    """Rewriting it on every login would move a channel between languages while
+    someone is using it."""
+    created = upsert_channel(db, USER, GRANT)
+    created.language = "pt"
+    db.flush()
+
+    channel = upsert_channel(db, USER, GRANT)
+
+    assert channel.language == "pt"

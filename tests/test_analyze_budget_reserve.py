@@ -51,11 +51,15 @@ def _budget_after_blocks(monkeypatch, max_input: int, hours: int):
         "workers.analyze.pipeline._window_context",
         # long enough that fit_input actually saturates BLOCK_PROMPT_INPUT_CAP,
         # which is what makes a real live exhaust the budget
-        lambda *a, **k: PromptContext(text="palavra " * 3000, message_ids=set(), segment_ids=set()),
+        lambda *a, **k: PromptContext(
+            text="palavra " * 3000, message_ids=set(), segment_ids=set()
+        ),
     )
     budget = TokenBudget(WordBackend(), max_input=max_input, max_output=max_input)
     stats = AnalysisStats()
-    summaries = _summarize_blocks(Mock(), _long_stream(hours), WordBackend(), budget, stats)
+    summaries = _summarize_blocks(
+        Mock(), _long_stream(hours), WordBackend(), budget, stats, "pt"
+    )
     return budget, stats, summaries
 
 

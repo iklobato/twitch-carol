@@ -124,7 +124,16 @@ class FakeTwitch:
             data = [self.channel_infos[i] for i in ids if i in self.channel_infos]
             return httpx.Response(200, json={"data": data})
         if path == "/helix/channels/followers":
-            return httpx.Response(200, json={"data": self.followers, "pagination": {}})
+            # `total` is what the real endpoint always sends and what the product
+            # shows as the follower count, so the fake has to carry it too.
+            return httpx.Response(
+                200,
+                json={
+                    "total": len(self.followers),
+                    "data": self.followers,
+                    "pagination": {},
+                },
+            )
         if path == "/helix/videos":
             return httpx.Response(200, json={"data": self.videos})
         if path == "/helix/channels/vips":

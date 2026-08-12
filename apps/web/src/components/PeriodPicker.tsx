@@ -1,17 +1,21 @@
-import type { FinancePeriod } from '../types'
+import { t } from "../i18n";
+import type { FinancePeriod } from "../types";
 
-const OPTIONS: { value: FinancePeriod; label: string }[] = [
-  { value: '30d', label: '30 dias' },
-  { value: '90d', label: '90 dias' },
-  { value: 'all', label: 'Tudo' },
-]
+const OPTIONS: {
+  value: FinancePeriod;
+  key: "period.30d" | "period.90d" | "period.all";
+}[] = [
+  { value: "30d", key: "period.30d" },
+  { value: "90d", key: "period.90d" },
+  { value: "all", key: "period.all" },
+];
 
 export default function PeriodPicker({
   value,
   onChange,
 }: {
-  value: FinancePeriod
-  onChange: (period: FinancePeriod) => void
+  value: FinancePeriod;
+  onChange: (period: FinancePeriod) => void;
 }) {
   return (
     <div className="inline-flex rounded-lg border border-zinc-700 bg-zinc-900 p-0.5 text-sm">
@@ -21,13 +25,13 @@ export default function PeriodPicker({
           onClick={() => onChange(option.value)}
           className={`rounded-md px-3 py-1 transition ${
             value === option.value
-              ? 'bg-purple-600 text-white'
-              : 'text-zinc-400 hover:text-zinc-200'
+              ? "bg-purple-600 text-white"
+              : "text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          {option.label}
+          {t(option.key)}
         </button>
       ))}
     </div>
-  )
+  );
 }

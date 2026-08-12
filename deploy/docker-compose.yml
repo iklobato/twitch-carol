@@ -75,6 +75,12 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
       VALKEY_URL: redis://valkey:6379/0
+      # ../.env holds the production Spaces credentials and wins over sim.env,
+      # so without this a local run uploads fake audio into the live bucket,
+      # under a channel id that means something else there. Emptied here forces
+      # the local disk store, which is what the /data mount is for.
+      SPACES_KEY: ""
+      SPACES_BUCKET: ""
     volumes:
       - ../data:/data
     depends_on:
@@ -102,6 +108,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://app:app@postgres:5432/app
       VALKEY_URL: redis://valkey:6379/0
+      # same as worker-capture: read the audio back off the local disk, never
+      # from the production bucket
+      SPACES_KEY: ""
+      SPACES_BUCKET: ""
     volumes:
       - ../data:/data
       - whisper_cache:/root/.cache

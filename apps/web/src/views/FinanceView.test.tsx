@@ -49,7 +49,7 @@ describe('FinanceView', () => {
     render(<FinanceView />)
 
     await screen.findByText((text) => text.includes('50%'))
-    expect(screen.getByText('1.000')).toBeTruthy()
+    expect(screen.getByText('1,000')).toBeTruthy()
   })
 
   it('trocar o período refaz o fetch com o novo recorte', async () => {
@@ -67,7 +67,7 @@ describe('FinanceView', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/finance?period=30d'),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '90 dias' }))
+    fireEvent.click(screen.getByRole('button', { name: '90 days' }))
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/finance?period=90d'),
     )
@@ -79,6 +79,6 @@ describe('FinanceView', () => {
       vi.fn(async () => new Response(JSON.stringify(makeFinance()), { status: 200 })),
     )
     render(<FinanceView />)
-    await screen.findByText((text) => text.includes('Nada monetizado'))
+    await screen.findByText((text) => text.includes('Nothing earned'))
   })
 })

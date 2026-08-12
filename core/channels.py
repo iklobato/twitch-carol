@@ -11,6 +11,10 @@ from core.models import Channel
 from core.twitch import TokenGrant, TwitchAuthError, TwitchUser, refresh_grant
 
 TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
+# The product is served in English. This is the screen and insight language only:
+# what the streamer SPEAKS is detected from their audio (channels.spoken_language),
+# so a Portuguese live still gets a real transcript.
+SIGNUP_LANGUAGE = "en"
 
 
 def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
@@ -20,6 +24,7 @@ def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
             twitch_user_id=int(user.id),
             login=user.login,
             display_name=user.display_name,
+            language=SIGNUP_LANGUAGE,
         )
         db.add(channel)
     channel.login = user.login

@@ -361,15 +361,15 @@ def test_chatters_stats_labels_and_isolation(api_client, db) -> None:
     top = chatters[0]
     assert top["messages"] == 12
     assert top["pct_of_total"] == 75.0
-    assert "nº 1 do chat" in top["labels"]
-    assert "presente a live toda" in top["labels"]
+    assert "top_chatter" in top["labels"]
+    assert "full_presence" in top["labels"]
     assert len(top["sample_messages"]) == 3
 
     light = chatters[1]
     assert light["peak_messages"] == 4
-    assert "ativou nos picos" in light["labels"]
+    assert "peak_active" in light["labels"]
     assert light["followed_during_stream"] is True
-    assert "seguiu durante a live" in light["labels"]
+    assert "followed" in light["labels"]
 
     other = make_channel(db)
     login_as(api_client, other)

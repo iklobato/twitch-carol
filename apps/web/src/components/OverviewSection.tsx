@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiGet, formatDate } from '../api'
+import { fmtInt, fmtMoney, t } from '../i18n'
 import PeriodPicker from './PeriodPicker'
 import type {
   ChannelOverview,
@@ -10,10 +11,6 @@ import type {
   StreamListItem,
   StreamReport,
 } from '../types'
-
-function usd(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'USD' })
-}
 
 // Which single "needs attention" item to surface, by priority. Pure so it can
 // be unit-tested. Queue is intentionally excluded (StreamsList already shows a
@@ -29,15 +26,12 @@ export function pickHighlight(
 ): Highlight {
   if (followers) {
     if (followers.signals.velocity.some((day) => day.is_spike)) {
-      return {
-        tone: 'risk',
-        text: 'Pico anômalo de follows recente. Veja "De onde vêm e o que é real".',
-      }
+      return { tone: 'risk', text: t('overview.highlight.spike') }
     }
     if (followers.signals.suspicious_total >= SUSPICIOUS_ALERT_MIN) {
       return {
         tone: 'risk',
-        text: `${followers.signals.suspicious_total} seguidores com sinais de fake. Revise em Meus seguidores.`,
+        text: t('overview.highlight.suspicious', { n: followers.signals.suspicious_total }),
       }
     }
   }
@@ -46,12 +40,13 @@ export function pickHighlight(
       (goal) => goal.pct >= GOAL_NEAR_PCT && goal.current_amount < goal.target_amount,
     )
     if (near) {
-      const remaining = near.target_amount - near.current_amount
       return {
         tone: 'goal',
-        text: `Faltam ${remaining.toLocaleString('pt-BR')} para a meta "${
-          near.description ?? near.goal_type
-        }" (${near.pct}%).`,
+        text: t('overview.highlight.goal', {
+          remaining: fmtInt(near.target_amount - near.current_amount),
+          goal: near.description ?? near.goal_type,
+          pct: near.pct,
+        }),
       }
     }
     if (channel.recommendations.length > 0) {
@@ -106,12 +101,12 @@ function KpiStrip({
   period: FinancePeriod
 }) {
   const avgPeak = channel ? Math.round(mean(channel.growth.map((g) => g.peak_viewers))) : 0
-  const periodLabel = period === 'all' ? 'tudo' : period
+  const periodLabel = period === 'all' ? t('overview.period.all') : period
   return (
     <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
       <Kpi
-        label="Seguidores"
-        value={followers ? followers.kpis.total.toLocaleString('pt-BR') : '–'}
+        label={t('followers.kpi.total')}
+        value={followers ? fmtInt(followers.kpis.total) : '–'}
         sub={
           followers && followers.kpis.new_30d > 0 ? (
             <span className="text-emerald-400">▲ +{followers.kpis.new_30d} · 30d</span>
@@ -121,19 +116,19 @@ function KpiStrip({
         }
       />
       <Kpi
-        label={`Arrecadado (${periodLabel})`}
-        value={finance ? usd(finance.estimated_usd) : '–'}
+        label={t('overview.kpi.earned', { period: periodLabel })}
+        value={finance ? fmtMoney(finance.estimated_usd) : '–'}
         sub={finance ? <Delta pct={finance.delta_pct} /> : undefined}
       />
       <Kpi
-        label="Assinantes"
-        value={channel ? channel.subscribers.total.toLocaleString('pt-BR') : '–'}
-        sub={channel ? `churn: ${channel.subscribers.subs_ended}` : undefined}
+        label={t('subs.active')}
+        value={channel ? fmtInt(channel.subscribers.total) : '–'}
+        sub={channel ? t('overview.kpi.churn', { n: channel.subscribers.subs_ended }) : undefined}
       />
-      <Kpi label="Pico médio" value={channel ? avgPeak.toLocaleString('pt-BR') : '–'} />
+      <Kpi label={t('overview.kpi.avgPeak')} value={channel ? fmtInt(avgPeak) : '–'} />
       <Kpi
-        label="Lives"
-        value={channel ? channel.total_streams.toLocaleString('pt-BR') : '–'}
+        label={t('channel.stat.streams')}
+        value={channel ? fmtInt(channel.total_streams) : '–'}
       />
     </div>
   )
@@ -143,7 +138,7 @@ function StatWithDelta({ label, comparison }: { label: string; comparison?: Numb
   if (!comparison) return null
   return (
     <span>
-      {comparison.value.toLocaleString('pt-BR')} {label} <Delta pct={comparison.delta_pct} />
+      {fmtInt(comparison.value)} {label} <Delta pct={comparison.delta_pct} />
     </span>
   )
 }
@@ -159,36 +154,36 @@ function LastLiveCard({
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Sua última live
+        {t('overview.lastLive')}
       </p>
       <p className="font-semibold">
-        {stream.title ?? `Live #${stream.id}`}
+        {stream.title ?? t('live.number', { id: stream.id })}
         {stream.category && <span className="ml-2 text-sm text-zinc-500">{stream.category}</span>}
       </p>
       <p className="text-xs text-zinc-500">{formatDate(stream.started_at)}</p>
       <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
         {report ? (
           <>
-            <StatWithDelta label="mensagens" comparison={report.numbers.messages} />
-            <StatWithDelta label="chatters" comparison={report.numbers.chatters} />
-            <StatWithDelta label="pico" comparison={report.numbers.peak_viewers} />
+            <StatWithDelta label={t('overview.stat.messages')} comparison={report.numbers.messages} />
+            <StatWithDelta label={t('overview.stat.chatters')} comparison={report.numbers.chatters} />
+            <StatWithDelta label={t('overview.stat.peak')} comparison={report.numbers.peak_viewers} />
           </>
         ) : (
           <>
-            <span>💬 {stream.messages.toLocaleString('pt-BR')}</span>
-            <span>👤 {stream.chatters.toLocaleString('pt-BR')}</span>
-            <span>👁 {stream.peak_viewers.toLocaleString('pt-BR')}</span>
+            <span>💬 {fmtInt(stream.messages)}</span>
+            <span>👤 {fmtInt(stream.chatters)}</span>
+            <span>👁 {fmtInt(stream.peak_viewers)}</span>
           </>
         )}
         <span className={stream.followers > 0 ? 'text-emerald-400' : ''}>
-          +{stream.followers.toLocaleString('pt-BR')} seguidores
+          {t('metrics.followers', { n: fmtInt(stream.followers) })}
         </span>
       </p>
       <a
         href={`#/stream/${stream.id}`}
         className="mt-2 inline-block text-xs text-purple-300 hover:text-purple-200"
       >
-        ver relatório →
+        {t('overview.seeReport')}
       </a>
     </div>
   )
@@ -211,7 +206,7 @@ function ActionableHighlight({ highlight }: { highlight: Highlight }) {
   return (
     <div className={`rounded-lg border p-4 ${HIGHLIGHT_TONE[highlight.tone]}`}>
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        Precisa de atenção
+        {t('overview.needsAttention')}
       </p>
       <p className="text-sm">
         {HIGHLIGHT_ICON[highlight.tone]} {highlight.text}
@@ -262,7 +257,7 @@ export default function OverviewSection({ streams }: { streams: StreamListItem[]
   return (
     <div className="mb-8">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold">Visão geral</h2>
+        <h2 className="text-xl font-bold">{t('overview.title')}</h2>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
       <KpiStrip channel={channel} followers={followers} finance={finance} period={period} />

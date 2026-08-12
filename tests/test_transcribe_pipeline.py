@@ -1,13 +1,16 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import numpy as np
 
-from core.models import SegmentKind, Stream
+from core.models import Channel, SegmentKind, Stream
 from workers.transcribe.pipeline import (
     SAMPLE_RATE,
     Region,
+    Transcription,
     _persist_region,
+    _remember_spoken_language,
     classify_regions,
     merge_speech_spans,
     rms_energy,
@@ -81,7 +84,7 @@ def test_music_region_is_stored_without_text_and_never_transcribed() -> None:
     db = Mock()
     transcriber = Mock()
 
-    added = _persist_region(
+    added, heard = _persist_region(
         db,
         _stream(),
         transcriber,
@@ -91,6 +94,7 @@ def test_music_region_is_stored_without_text_and_never_transcribed() -> None:
     )
 
     assert added == 1
+    assert heard is None
     transcriber.transcribe.assert_not_called()
     segment = db.add.call_args[0][0]
     assert segment.kind == SegmentKind.MUSIC
@@ -102,12 +106,12 @@ def test_music_region_is_stored_without_text_and_never_transcribed() -> None:
 def test_speech_region_uses_transcriber_with_absolute_times() -> None:
     db = Mock()
     transcriber = Mock()
-    transcriber.transcribe.return_value = [
-        (0.5, 2.5, "olá pessoal"),
-        (3.0, 5.0, "bem-vindos"),
-    ]
+    transcriber.transcribe.return_value = Transcription(
+        language="pt",
+        segments=[(0.5, 2.5, "olá pessoal"), (3.0, 5.0, "bem-vindos")],
+    )
 
-    added = _persist_region(
+    added, heard = _persist_region(
         db,
         _stream(),
         transcriber,
@@ -117,10 +121,59 @@ def test_speech_region_uses_transcriber_with_absolute_times() -> None:
     )
 
     assert added == 2
-    transcriber.transcribe.assert_called_once()
+    # nothing is told to the model, and what it heard comes back out: that is
+    # what the channel's chat lexicon is later chosen with
+    assert heard == "pt"
+    assert transcriber.transcribe.call_args[0][1:] == ()
     first = db.add.call_args_list[0][0][0]
     assert first.text == "olá pessoal"
     assert first.kind == SegmentKind.SPEECH
     base = datetime(2026, 7, 11, 20, 0, tzinfo=UTC)
     assert first.started_at == base + timedelta(seconds=10.5)
     assert first.ended_at == base + timedelta(seconds=12.5)
+
+
+def test_first_detection_names_the_spoken_language(db) -> None:
+    """Whisper reports per chunk and a noisy chunk can come back as another
+    language. Letting every chunk rewrite the channel would flip the chat
+    lexicon between lives, so only the first answer is kept."""
+    channel = Channel(twitch_user_id=1, login="sim", display_name="Sim", language="en")
+    db.add(channel)
+    db.flush()
+
+    _remember_spoken_language(db, channel.id, "pt")
+    assert channel.spoken_language == "pt"
+
+    _remember_spoken_language(db, channel.id, "en")
+    assert channel.spoken_language == "pt"
+
+
+def test_a_chunk_with_no_speech_leaves_the_language_alone(db) -> None:
+    channel = Channel(twitch_user_id=2, login="sim2", display_name="Sim", language="en")
+    db.add(channel)
+    db.flush()
+
+    _remember_spoken_language(db, channel.id, None)
+
+    assert channel.spoken_language is None
+
+
+def test_a_declared_language_is_never_overwritten(db, caplog) -> None:
+    """The streamer said what they speak on the way in. Whisper hearing
+    otherwise on one noisy chunk is not grounds to overrule them, but it is
+    worth saying out loud."""
+    channel = Channel(
+        twitch_user_id=3,
+        login="sim3",
+        display_name="Sim",
+        language="en",
+        spoken_language="pt",
+    )
+    db.add(channel)
+    db.flush()
+
+    with caplog.at_level(logging.WARNING):
+        _remember_spoken_language(db, channel.id, "en")
+
+    assert channel.spoken_language == "pt"
+    assert "disagrees" in caplog.text

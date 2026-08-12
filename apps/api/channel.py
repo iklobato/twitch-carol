@@ -2,9 +2,10 @@
 best time to go live, growth, and recurring topics. All numbers from SQL."""
 
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import available_timezones
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import Float, func, select
 
@@ -18,8 +19,10 @@ from core.finance import (
     event_contributor,
     event_usd,
 )
+from core.i18n import SUPPORTED_LANGUAGES
 from core.models import (
     BitsLeader,
+    Channel,
     ChannelRecommendation,
     ChatMessage,
     Event,
@@ -35,6 +38,7 @@ from core.models import (
     ViewerSample,
     Vip,
 )
+from core.topics import recurring_topics
 
 router = APIRouter(prefix="/api/channel")
 
@@ -54,7 +58,6 @@ BITS_LEADER_LIMIT = 10
 HYPE_TRAIN_END = "channel.hype_train.end"
 REDEMPTION_ADD = "channel.channel_points_custom_reward_redemption.add"
 AD_BREAK = "channel.ad_break.begin"
-WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
 
 class LoyalChatter(BaseModel):
@@ -66,8 +69,8 @@ class LoyalChatter(BaseModel):
 
 
 class WeekdaySlot(BaseModel):
+    # 0 = Monday. The web app names the day, in the reader's language.
     weekday: int
-    label: str
     streams: int
     avg_peak_viewers: float
 
@@ -554,9 +557,12 @@ def _ad_viewer_change(db: DbSession, ad_events: list[Event]) -> float | None:
     return round(sum(changes) / len(changes), 1)
 
 
-def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
+def _best_weekdays(db: DbSession, channel: Channel) -> list[WeekdaySlot]:
+    """Weekday in the channel's own timezone, not UTC. A Brazilian live that
+    starts at 22:30 on Sunday is already Monday in UTC, so grouping on the raw
+    timestamp told the streamer to go live on the wrong day."""
     # postgres dow: 0=Sunday..6=Saturday; shift to Monday=0
-    dow = func.extract("dow", Stream.started_at)
+    dow = func.extract("dow", func.timezone(channel.timezone, Stream.started_at))
     peak_per_stream = (
         select(
             Stream.id.label("stream_id"),
@@ -564,7 +570,7 @@ def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
             func.coalesce(func.max(ViewerSample.viewer_count), 0).label("peak"),
         )
         .join(ViewerSample, ViewerSample.stream_id == Stream.id, isouter=True)
-        .where(Stream.channel_id == channel_id)
+        .where(Stream.channel_id == channel.id)
         .where(Stream.status == StreamStatus.READY)
         .group_by(Stream.id, dow)
         .subquery()
@@ -584,7 +590,6 @@ def _best_weekdays(db: DbSession, channel_id: int) -> list[WeekdaySlot]:
         slots.append(
             WeekdaySlot(
                 weekday=weekday,
-                label=WEEKDAY_LABELS[weekday],
                 streams=streams,
                 avg_peak_viewers=round(float(avg_peak or 0), 1),
             )
@@ -765,20 +770,10 @@ def _channel_finance(
 
 
 def _recurring_topics(db: DbSession, stream_ids: list[int]) -> list[RecurringTopic]:
-    if not stream_ids:
-        return []
-    # topic insight content is "name\ndescription"; the name is the first line
-    topic_name = func.split_part(Insight.content, "\n", 1)
-    rows = db.execute(
-        select(topic_name, func.count(func.distinct(Insight.stream_id)))
-        .where(Insight.stream_id.in_(stream_ids))
-        .where(Insight.type == InsightType.TOPIC)
-        .group_by(topic_name)
-        .having(func.count(func.distinct(Insight.stream_id)) >= 1)
-        .order_by(func.count(func.distinct(Insight.stream_id)).desc())
-        .limit(TOPIC_LIMIT)
-    ).all()
-    return [RecurringTopic(name=name, streams=streams) for name, streams in rows]
+    return [
+        RecurringTopic(name=name, streams=streams)
+        for name, streams in recurring_topics(db, stream_ids, TOPIC_LIMIT)
+    ]
 
 
 def _recommendations(db: DbSession, channel_id: int) -> list[RecommendationOut]:
@@ -810,9 +805,16 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         total_streams=len(ready_ids),
         total_messages=int(total_messages),
         unique_chatters=int(unique_chatters),
-        total_followers_gained=len(follower_logins),
+        # The screen labels this "total followers", so it is Twitch's own count
+        # when we have it. The login union below stays as the set it always was:
+        # _loyal_chatters needs the names, not the size.
+        total_followers_gained=(
+            channel.follower_total
+            if channel.follower_total is not None
+            else len(follower_logins)
+        ),
         loyal_chatters=_loyal_chatters(db, channel.id, follower_logins),
-        best_weekdays=_best_weekdays(db, channel.id),
+        best_weekdays=_best_weekdays(db, channel),
         growth=_growth(db, channel.id),
         recurring_topics=_recurring_topics(db, ready_ids),
         finance=_channel_finance(db, channel.id, ready_ids),
@@ -823,3 +825,57 @@ def channel_overview(channel: CurrentChannel, db: DbSession) -> ChannelOverview:
         subscribers=_subscribers(db, channel.id, ready_ids),
         recommendations=_recommendations(db, channel.id),
     )
+
+
+class PreferencesIn(BaseModel):
+    """Everything the streamer decides about their own channel. Every field is
+    optional because the same endpoint serves two callers: the onboarding gate,
+    which sends what it knows on the way in, and the settings section, which
+    sends only what just changed."""
+
+    # The language spoken on stream. Picks the stopword list and the sentiment
+    # lexicon, and it is what the product cannot infer without being wrong
+    # sometimes: wrong here means a transcript rendered phonetically.
+    stream_language: str | None = None
+    # Screen and insight language.
+    screen_language: str | None = None
+    # IANA zone, read off the streamer's browser. Decides the best weekday and
+    # hour to go live, the per-day chatter counts and the monetization period,
+    # all of which were computed in UTC for everyone until now.
+    timezone: str | None = None
+
+
+def _validated_zone(zone: str) -> str:
+    """An unknown zone is refused rather than quietly kept as UTC: silently
+    falling back to UTC is the exact bug this field exists to fix."""
+    if zone not in available_timezones():
+        raise HTTPException(status_code=422, detail=f"unknown timezone {zone!r}")
+    return zone
+
+
+def _validated_language(language: str, field: str) -> str:
+    if language not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=422, detail=f"{field} must be one of {SUPPORTED_LANGUAGES}"
+        )
+    return language
+
+
+@router.patch("/preferences", status_code=204)
+def update_preferences(
+    body: PreferencesIn, channel: CurrentChannel, db: DbSession
+) -> Response:
+    """Also closes the onboarding gate: answering it once is what the gate is
+    waiting for, and a later edit from the settings section is harmless."""
+    if body.stream_language is not None:
+        channel.spoken_language = _validated_language(
+            body.stream_language, "stream_language"
+        )
+    if body.screen_language is not None:
+        channel.language = _validated_language(body.screen_language, "screen_language")
+    if body.timezone is not None:
+        channel.timezone = _validated_zone(body.timezone)
+    if channel.spoken_language and channel.onboarded_at is None:
+        channel.onboarded_at = datetime.now(UTC)
+    db.commit()
+    return Response(status_code=204)

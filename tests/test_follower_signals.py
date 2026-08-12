@@ -73,7 +73,7 @@ def test_suspicious_followers_scores_botlike_profiles(db) -> None:
     assert "legit" not in logins
     bot_row = next(f for f in flagged if f.login == "botlike")
     assert bot_row.score >= 4
-    assert "sem foto de perfil" in bot_row.reasons
+    assert "no_avatar" in bot_row.reasons
 
 
 def test_follow_velocity_flags_spike(db) -> None:

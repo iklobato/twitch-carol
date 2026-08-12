@@ -6,7 +6,7 @@ transport in tests; without one, a short-lived client is created per call.
 """
 
 import logging
-from collections.abc import Iterator
+import time
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
@@ -235,6 +235,45 @@ class UserProfile(BaseModel):
 USERS_BATCH_SIZE = 100
 CHANNELS_BATCH_SIZE = 100
 
+HELIX_RATE_LIMIT_ATTEMPTS = 3
+HELIX_RATE_LIMIT_MAX_WAIT_SECONDS = 60.0
+
+
+def _rate_limit_wait(response: httpx.Response) -> float:
+    """Seconds until the bucket refills, from Ratelimit-Reset (epoch seconds)."""
+    reset = response.headers.get("Ratelimit-Reset")
+    if reset is None:
+        return 1.0
+    try:
+        seconds = float(reset) - datetime.now(UTC).timestamp()
+    except ValueError:
+        return 1.0
+    return min(max(seconds, 0.0), HELIX_RATE_LIMIT_MAX_WAIT_SECONDS)
+
+
+def _helix_get(
+    http: httpx.Client,
+    path: str,
+    params: dict[str, str] | list[tuple[str, str]],
+    headers: dict[str, str],
+) -> dict:
+    """GET a Helix endpoint, waiting out a 429 instead of failing the caller.
+
+    The bulk endpoints below run hundreds of calls in a row for a single
+    channel, so treating a rate-limited response as fatal throws away every
+    call already spent. Twitch's own limit is per client id, shared with the
+    live-capture path, so 429 is expected under load rather than exceptional.
+    """
+    for attempt in range(HELIX_RATE_LIMIT_ATTEMPTS):
+        response = http.get(f"{HELIX_URL}{path}", params=params, headers=headers)
+        if response.status_code == 429 and attempt < HELIX_RATE_LIMIT_ATTEMPTS - 1:
+            time.sleep(_rate_limit_wait(response))
+            continue
+        if response.status_code != 200:
+            raise TwitchAuthError(f"Twitch {path} returned {response.status_code}")
+        return response.json()
+    raise TwitchAuthError(f"Twitch {path} stayed rate limited")
+
 
 class ChannelInfo(BaseModel):
     """What a follower who is themselves a streamer broadcasts, from Helix Get
@@ -255,18 +294,14 @@ def get_channels_by_ids(
     with _http(client) as http:
         for start in range(0, len(broadcaster_ids), CHANNELS_BATCH_SIZE):
             batch = broadcaster_ids[start : start + CHANNELS_BATCH_SIZE]
-            response = http.get(
-                f"{HELIX_URL}/channels",
-                params=[("broadcaster_id", str(bid)) for bid in batch],
-                headers=app_headers(http),
+            body = _helix_get(
+                http,
+                "/channels",
+                [("broadcaster_id", str(bid)) for bid in batch],
+                app_headers(http),
             )
-            if response.status_code != 200:
-                raise TwitchAuthError(
-                    f"Twitch /channels returned {response.status_code}"
-                )
             channels.extend(
-                ChannelInfo.model_validate(row)
-                for row in response.json().get("data", [])
+                ChannelInfo.model_validate(row) for row in body.get("data", [])
             )
     return channels
 
@@ -281,16 +316,14 @@ def get_users_by_ids(
     with _http(client) as http:
         for start in range(0, len(user_ids), USERS_BATCH_SIZE):
             batch = user_ids[start : start + USERS_BATCH_SIZE]
-            response = http.get(
-                f"{HELIX_URL}/users",
-                params=[("id", str(uid)) for uid in batch],
-                headers=app_headers(http),
+            body = _helix_get(
+                http,
+                "/users",
+                [("id", str(uid)) for uid in batch],
+                app_headers(http),
             )
-            if response.status_code != 200:
-                raise TwitchAuthError(f"Twitch /users returned {response.status_code}")
             profiles.extend(
-                UserProfile.model_validate(row)
-                for row in response.json().get("data", [])
+                UserProfile.model_validate(row) for row in body.get("data", [])
             )
     return profiles
 
@@ -312,10 +345,12 @@ def _user_headers(access_token: str) -> dict[str, str]:
 
 
 HELIX_PAGE_SIZE = 100
-# Backstop only: pagination stops at the true end via the cursor. This caps a
-# pathological inline backfill; move to a background job before onboarding
-# channels with hundreds of thousands of followers.
-FOLLOWER_PAGE_CAP = 200
+# Backstop for the endpoints still exhausted in one call (VIPs, subscriptions):
+# both are bounded by what a channel can plausibly have, and pagination stops at
+# the true end via the cursor well before this. Followers are NOT capped here;
+# they are paged one call at a time by core.follower_sync, which is what let a
+# 41k-follower channel silently stop at 20k when this cap covered them too.
+PAGE_CAP = 200
 _DURATION_UNITS = {"h": 3600, "m": 60, "s": 1}
 
 
@@ -332,38 +367,51 @@ def _duration_to_seconds(text: str) -> int:
     return total
 
 
-def iter_followers(
-    broadcaster_id: int, access_token: str, client: httpx.Client | None = None
-) -> Iterator[FollowerRecord]:
-    """Helix Get Channel Followers, most-recent-first, paginated to the end."""
-    cursor: str | None = None
+class FollowerPage(BaseModel):
+    """One page of Helix Get Channel Followers, plus the channel's real total.
+
+    `total` is the count Twitch itself reports. It is the only follower number
+    that stays right: counting our own rows drifts both ways, gaining a ghost
+    for every unfollow we never hear about and missing every follow that arrived
+    while nothing was watching.
+    """
+
+    followers: list[FollowerRecord]
+    cursor: str | None
+    total: int
+
+
+def get_followers_page(
+    broadcaster_id: int,
+    access_token: str,
+    cursor: str | None = None,
+    client: httpx.Client | None = None,
+    user_id: int | None = None,
+) -> FollowerPage:
+    """Helix Get Channel Followers, ONE page, ordered most-recent-first.
+
+    Deliberately one page per call rather than a generator that runs to the end:
+    the caller commits each page and stores the cursor, so a channel with tens of
+    thousands of followers resumes where it stopped instead of losing the whole
+    run to one slow response.
+
+    With `user_id` the endpoint answers about that one person instead, which is
+    an exact "does this account still follow" check.
+    """
+    params = {"broadcaster_id": str(broadcaster_id), "first": str(HELIX_PAGE_SIZE)}
+    if cursor:
+        params["after"] = cursor
+    if user_id is not None:
+        params["user_id"] = str(user_id)
     with _http(client) as http:
-        for _ in range(FOLLOWER_PAGE_CAP):
-            params = {
-                "broadcaster_id": str(broadcaster_id),
-                "first": str(HELIX_PAGE_SIZE),
-            }
-            if cursor:
-                params["after"] = cursor
-            response = http.get(
-                f"{HELIX_URL}/channels/followers",
-                params=params,
-                headers=_user_headers(access_token),
-            )
-            if response.status_code != 200:
-                raise TwitchAuthError(
-                    f"Twitch /channels/followers returned {response.status_code}"
-                )
-            body = response.json()
-            for row in body.get("data", []):
-                yield FollowerRecord.model_validate(row)
-            cursor = body.get("pagination", {}).get("cursor")
-            if not cursor:
-                return
-        logger.warning(
-            "follower backfill hit page cap; not all followers captured",
-            extra={"broadcaster_id": broadcaster_id},
+        body = _helix_get(
+            http, "/channels/followers", params, _user_headers(access_token)
         )
+    return FollowerPage(
+        followers=[FollowerRecord.model_validate(row) for row in body.get("data", [])],
+        cursor=body.get("pagination", {}).get("cursor") or None,
+        total=int(body.get("total", 0)),
+    )
 
 
 def get_videos(
@@ -417,7 +465,7 @@ def get_vips(
     vips: list[VipRecord] = []
     cursor: str | None = None
     with _http(client) as http:
-        for _ in range(FOLLOWER_PAGE_CAP):
+        for _ in range(PAGE_CAP):
             params = {
                 "broadcaster_id": str(broadcaster_id),
                 "first": str(HELIX_PAGE_SIZE),
@@ -478,7 +526,7 @@ def get_subscriptions(
     subs: list[SubscriptionRecord] = []
     cursor: str | None = None
     with _http(client) as http:
-        for _ in range(FOLLOWER_PAGE_CAP):
+        for _ in range(PAGE_CAP):
             params = {
                 "broadcaster_id": str(broadcaster_id),
                 "first": str(HELIX_PAGE_SIZE),

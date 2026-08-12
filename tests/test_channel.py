@@ -74,9 +74,33 @@ def test_channel_best_weekdays(api_client, db) -> None:
 
     login_as(api_client, channel)
     weekdays = api_client.get("/api/channel").json()["best_weekdays"]
-    # highest avg peak first
-    assert weekdays[0]["label"] == "Sábado"
+    # highest avg peak first; 5 = Saturday (0 = Monday), named by the web app
+    assert weekdays[0]["weekday"] == 5
     assert weekdays[0]["avg_peak_viewers"] == 200.0
+
+
+def test_best_weekday_follows_the_channel_timezone(api_client, db) -> None:
+    """A Brazilian live that starts at 22:30 on Sunday is already Monday in UTC.
+    Grouping on the raw timestamp told the streamer to go live on the wrong day,
+    and every night stream past midnight local time was misfiled."""
+    channel = make_channel(db)
+    channel.timezone = "America/Sao_Paulo"
+    # 01:30 UTC on Monday the 3rd = 22:30 on Sunday the 2nd in Sao Paulo
+    stream = make_stream(db, channel, started_minutes_ago=0, duration_minutes=30)
+    stream.started_at = datetime(2026, 8, 3, 1, 30, tzinfo=UTC)
+    add_viewer_samples(db, stream, [50, 90])
+    db.flush()
+
+    login_as(api_client, channel)
+    weekdays = api_client.get("/api/channel").json()["best_weekdays"]
+
+    assert weekdays[0]["weekday"] == 6  # Sunday, the day it actually happened
+
+    channel.timezone = "UTC"
+    db.flush()
+    weekdays = api_client.get("/api/channel").json()["best_weekdays"]
+
+    assert weekdays[0]["weekday"] == 0  # Monday, which is what UTC sees
 
 
 def test_channel_growth_and_recurring_topics(api_client, db) -> None:

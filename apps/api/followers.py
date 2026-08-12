@@ -25,40 +25,43 @@ from core.models import (
     FollowerRecommendation,
     Stream,
     StreamStatus,
+    Unfollow,
+    UnfollowReason,
 )
 
 router = APIRouter(prefix="/api/followers")
 
 RECENT_LIMIT = 24
 NOTABLE_LIMIT = 24
+UNFOLLOW_LIMIT = 24
 NEW_WINDOW_DAYS = (7, 30)
 DAYS_PER_MONTH = 30
 DAYS_PER_YEAR = 365
 AFFILIATE = "affiliate"
 PARTNER = "partner"
 
-# (label, upper bound in days); the last bucket catches everything older.
+# (key, upper bound in days); the last bucket catches everything older. Keys, not
+# display text: the web app words them in the reader's language.
 AGE_BUCKETS = (
-    ("menos de 1 mês", DAYS_PER_MONTH),
-    ("1 a 6 meses", 6 * DAYS_PER_MONTH),
-    ("6 a 12 meses", DAYS_PER_YEAR),
-    ("1 a 2 anos", 2 * DAYS_PER_YEAR),
+    ("under_1m", DAYS_PER_MONTH),
+    ("1m_to_6m", 6 * DAYS_PER_MONTH),
+    ("6m_to_12m", DAYS_PER_YEAR),
+    ("1y_to_2y", 2 * DAYS_PER_YEAR),
 )
-AGE_BUCKET_OLDEST = "mais de 2 anos"
+AGE_BUCKET_OLDEST = "over_2y"
 
 TOP_VALUE_LIMIT = 15
 LOYAL_LIMIT = 15
 # Funnel stages from widest to deepest; each implies the ones above it.
-FUNNEL_STAGES = (
-    ("seguidor", "Só seguem"),
-    ("engajado", "Já deram chat"),
-    ("inscrito", "Inscritos"),
-    ("pagante", "Já pagaram (bits/subs)"),
-)
+FUNNEL_STAGES = ("follower", "engaged", "subscriber", "paying")
 
 
 class FollowerKpis(BaseModel):
     total: int
+    # How many of `total` we hold rows for. Every distribution below is computed
+    # over these, so when it trails `total` the charts describe a subset and the
+    # screen has to say so rather than look complete.
+    stored: int
     enriched: int
     streamers: int
     affiliates: int
@@ -108,7 +111,6 @@ class RecommendationOut(BaseModel):
 
 class FunnelStage(BaseModel):
     stage: str
-    label: str
     count: int
 
 
@@ -170,9 +172,10 @@ class SegmentMemberOut(BaseModel):
 
 
 class SegmentOut(BaseModel):
+    # Only the key travels: the persona name and blurb are fixed per key, so the
+    # web app words them. `action` is model-written and already in the channel's
+    # language.
     key: str
-    label: str
-    description: str
     count: int
     members: list[SegmentMemberOut]
     action: str | None
@@ -200,6 +203,19 @@ class CollabCandidate(BaseModel):
     followed_at: datetime
 
 
+class UnfollowOut(BaseModel):
+    """Someone who left. Accounts Twitch removed (banned or deleted) are stored
+    with their own reason and never appear here: they did not choose to leave, and
+    naming them as unfollowers would tell the streamer something untrue."""
+
+    login: str
+    display_name: str | None
+    profile_image_url: str | None
+    followed_at: datetime
+    detected_at: datetime
+    days_followed: int
+
+
 class FollowersOverview(BaseModel):
     kpis: FollowerKpis
     growth: list[GrowthBucket]
@@ -214,6 +230,7 @@ class FollowersOverview(BaseModel):
     ai: FollowerAi
     collab: list[CollabCandidate]
     recommendations: list[RecommendationOut]
+    unfollows: list[UnfollowOut]
 
 
 def _profile(follower: Follower) -> ProfileOut:
@@ -228,7 +245,17 @@ def _profile(follower: Follower) -> ProfileOut:
     )
 
 
-def _kpis(followers: list[Follower], now: datetime) -> FollowerKpis:
+def _kpis(
+    followers: list[Follower], now: datetime, reported_total: int | None
+) -> FollowerKpis:
+    """`reported_total` is the count Twitch reports for the channel.
+
+    It is preferred over len(followers) because our rows drift both ways: they
+    keep anyone who unfollowed before the sync worker existed, and they miss
+    anyone who followed while nothing was watching. Measured across production on
+    2026-08-11, that gap ran from -51.9% to +4.8% per channel. It falls back to
+    the row count only until the first sync pass fills the column.
+    """
     enriched = [f for f in followers if f.enriched_at is not None]
     affiliates = sum(1 for f in followers if f.broadcaster_type == AFFILIATE)
     partners = sum(1 for f in followers if f.broadcaster_type == PARTNER)
@@ -245,7 +272,8 @@ def _kpis(followers: list[Follower], now: datetime) -> FollowerKpis:
     ]
     avg_age = round(sum(ages) / len(ages)) if ages else None
     return FollowerKpis(
-        total=len(followers),
+        total=reported_total if reported_total is not None else len(followers),
+        stored=len(followers),
         enriched=len(enriched),
         streamers=affiliates + partners,
         affiliates=affiliates,
@@ -286,8 +314,8 @@ def _composition(
     for follower in followers:
         if follower.broadcaster_type is None:
             continue
-        label = {AFFILIATE: "Afiliados", PARTNER: "Parceiros"}.get(
-            follower.broadcaster_type, "Comuns"
+        label = {AFFILIATE: "affiliates", PARTNER: "partners"}.get(
+            follower.broadcaster_type, "regular"
         )
         type_counts[label] += 1
 
@@ -317,13 +345,13 @@ def _ordered_age_slices(age_counts: Counter[str]) -> list[AgeSlice]:
 
 def _funnel(profiles: list[FollowerProfile]) -> list[FunnelStage]:
     """Cumulative funnel: each stage counts everyone who reached it OR deeper,
-    so 'engajado' includes subscribers and payers too."""
-    order = [stage for stage, _ in FUNNEL_STAGES]
+    so 'engaged' includes subscribers and payers too."""
+    order = list(FUNNEL_STAGES)
     reached: Counter[str] = Counter(profile.stage for profile in profiles)
     stages: list[FunnelStage] = []
-    for depth, (stage, label) in enumerate(FUNNEL_STAGES):
+    for depth, stage in enumerate(FUNNEL_STAGES):
         count = sum(reached[s] for s in order[depth:])
-        stages.append(FunnelStage(stage=stage, label=label, count=count))
+        stages.append(FunnelStage(stage=stage, count=count))
     return stages
 
 
@@ -422,7 +450,7 @@ def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> Foll
             select(FollowerAiInsight).where(FollowerAiInsight.channel_id == channel_id)
         )
     )
-    action_by_label = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
+    action_by_key = {r.title: r.content for r in rows if r.kind == KIND_SEGMENT}
     summary = next((r.content for r in rows if r.kind == KIND_BIO), None)
     reactivations = [
         ReactivationOut(who=r.title or "", message=r.content)
@@ -432,14 +460,12 @@ def _ai(db: DbSession, channel_id: int, profiles: list[FollowerProfile]) -> Foll
     segments = [
         SegmentOut(
             key=s.key,
-            label=s.label,
-            description=s.description,
             count=s.count,
             members=[
                 SegmentMemberOut(login=m.login, display_name=m.display_name)
                 for m in s.members
             ],
-            action=action_by_label.get(s.label),
+            action=action_by_key.get(s.key),
         )
         for s in build_segments(profiles)
     ]
@@ -507,6 +533,30 @@ def _recommendations(db: DbSession, channel_id: int) -> list[RecommendationOut]:
     ]
 
 
+def _unfollows(db: DbSession, channel_id: int) -> list[UnfollowOut]:
+    """Who left, most recent first. Only detectable from the first sync pass on:
+    Twitch has no unfollow event and no history endpoint, so anything before the
+    worker's first walk is simply not knowable."""
+    rows = db.scalars(
+        select(Unfollow)
+        .where(Unfollow.channel_id == channel_id)
+        .where(Unfollow.reason == UnfollowReason.UNFOLLOWED)
+        .order_by(Unfollow.detected_at.desc())
+        .limit(UNFOLLOW_LIMIT)
+    )
+    return [
+        UnfollowOut(
+            login=row.login,
+            display_name=row.display_name,
+            profile_image_url=row.profile_image_url,
+            followed_at=row.followed_at,
+            detected_at=row.detected_at,
+            days_followed=max(0, (row.detected_at - row.followed_at).days),
+        )
+        for row in rows
+    ]
+
+
 @router.get("")
 def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverview:
     now = datetime.now(UTC)
@@ -519,10 +569,10 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
     notable = [f for f in followers if f.broadcaster_type in (AFFILIATE, PARTNER)]
     notable.sort(key=lambda f: f.followed_at, reverse=True)
 
-    profiles = build_follower_profiles(db, channel.id)
+    profiles = build_follower_profiles(db, channel.id, followers)
 
     return FollowersOverview(
-        kpis=_kpis(followers, now),
+        kpis=_kpis(followers, now, channel.follower_total),
         growth=_growth(followers),
         recent=[_profile(f) for f in recent],
         notable=[_profile(f) for f in notable[:NOTABLE_LIMIT]],
@@ -535,4 +585,5 @@ def followers_overview(channel: CurrentChannel, db: DbSession) -> FollowersOverv
         ai=_ai(db, channel.id, profiles),
         collab=_collab(db, channel.id),
         recommendations=_recommendations(db, channel.id),
+        unfollows=_unfollows(db, channel.id),
     )
