@@ -201,3 +201,40 @@ def test_a_channel_with_no_dated_followers_says_nothing(db) -> None:
     assert result.followers_dated == 0
     assert result.window_start is None
     assert result.is_concentrated is False
+
+def test_each_suspicious_reason_is_named_for_the_right_check(db) -> None:
+    """The reasons now come back as boolean columns from the same SQL that scores
+    the follower, so a flag wired to the wrong name would be invisible unless every
+    one of them is pinned. This follower trips exactly two of the four."""
+    channel = make_channel(db)
+    now = datetime.now(UTC)
+    old = now - timedelta(days=900)
+    follower = add_follower(
+        db, channel, "meio_suspeito", enriched=True, account_created_at=old
+    )
+    # old account, followed long after creating it: neither young nor fresh_follow
+    follower.followed_at = now - timedelta(days=10)
+    follower.profile_image_url = ""
+    follower.description = "   "
+    db.flush()
+
+    # score 2 (no_avatar + no_bio) is under the threshold, so ask for the flags by
+    # dropping a follower that also trips the other two into the same channel
+    fresh = now - timedelta(days=2)
+    other = add_follower(
+        db,
+        channel,
+        "bem_suspeito",
+        enriched=True,
+        account_created_at=fresh,
+        followed_at=fresh + timedelta(hours=2),
+    )
+    other.profile_image_url = "https://cdn/real.png"
+    other.description = "bio de verdade"
+    db.flush()
+
+    flagged = {f.login: f for f in suspicious_followers(db, channel.id, now)}
+
+    assert "meio_suspeito" not in flagged  # 2 points, under the threshold of 4
+    assert set(flagged["bem_suspeito"].reasons) == {"young", "fresh_follow"}
+    assert flagged["bem_suspeito"].score == 4
