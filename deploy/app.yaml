@@ -136,10 +136,17 @@ services:
         preserve_path_prefix: true
       - path: /healthz
         preserve_path_prefix: true
-      # /howto (no .html): App Platform static sites can't do extensionless
-      # URLs, so the API serves this page. Screenshots live under /previews so
-      # they stay outside this prefix and keep being served by the static site.
+      # /howto: App Platform static sites can't do extensionless URLs, so the
+      # API serves this page. Screenshots live under /previews so they stay
+      # outside this prefix and keep being served by the static site.
+      #
+      # Both spellings are listed because a route matches by path segment, not
+      # by string prefix: with only /howto here, /howto.html fell through to the
+      # static site and answered its 404, in production, since the page existed
+      # (measured 2026-08-13). The API has always served both paths.
       - path: /howto
+        preserve_path_prefix: true
+      - path: /howto.html
         preserve_path_prefix: true
 
 # --- Front estático ---
