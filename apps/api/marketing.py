@@ -8,8 +8,10 @@ API lets the exact URL return the page. It also lets us pick the language:
 - else the howto_lang cookie;
 - else the signed-in channel's own language (channels.language), so the page
   matches the language the dashboard is already showing them;
-- else the browser's Accept-Language (en* -> en);
-- else Portuguese (the default audience).
+- else the browser's Accept-Language (pt* -> pt);
+- else English, the language the product is served in. Same rule as the web app,
+  so a reader whose browser is neither pt nor en sees one language on the sales
+  page and in the dashboard, not two.
 
 The page's screenshots-turned-HTML need no assets; everything is inline.
 """
@@ -27,7 +29,7 @@ from core.models import Channel
 router = APIRouter()
 
 SUPPORTED_LANGS = ("pt", "en")
-DEFAULT_LANG = "pt"
+DEFAULT_LANG = "en"
 LANG_COOKIE = "howto_lang"
 LANG_COOKIE_MAX_AGE = 180 * 24 * 3600
 
@@ -49,8 +51,8 @@ def resolve_lang(request: Request, channel: Channel | None = None) -> str:
         return cookie
     if channel is not None:
         return resolve_language(channel.language)
-    if request.headers.get("accept-language", "").strip().lower().startswith("en"):
-        return "en"
+    if request.headers.get("accept-language", "").strip().lower().startswith("pt"):
+        return "pt"
     return DEFAULT_LANG
 
 

@@ -63,7 +63,7 @@ def test_dip_carries_speech_context(api_client, db) -> None:
 
 
 def test_dip_context_cause_recovery_offset_and_chat(api_client, db) -> None:
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=5)
     # biggest drop is at minute 1 (100 -> 40); recovers to 60 at minute 4
     add_viewer_samples(db, stream, [60, 100, 40, 40, 60])
@@ -78,7 +78,9 @@ def test_dip_context_cause_recovery_offset_and_chat(api_client, db) -> None:
     login_as(api_client, channel)
     dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
 
-    assert dip["cause"] == "anúncio de 90s"
+    # Portuguese speech, English report: the label follows the channel's screen
+    # language, and only the chat and the transcript follow what is spoken.
+    assert dip["cause"] == "a 90s ad"
     assert dip["viewers_delta"] == -60
     assert dip["offset_label"] == "1m00s"
     assert dip["recovered_to"] == 60
@@ -87,7 +89,7 @@ def test_dip_context_cause_recovery_offset_and_chat(api_client, db) -> None:
 
 
 def test_dip_scene_when_music_plays_instead_of_speech(api_client, db) -> None:
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=4)
     add_viewer_samples(db, stream, [60, 100, 40, 40])
     add_segment(db, stream, 60, text=None, kind=SegmentKind.MUSIC, duration_seconds=59)
@@ -96,11 +98,11 @@ def test_dip_scene_when_music_plays_instead_of_speech(api_client, db) -> None:
     login_as(api_client, channel)
     dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
     assert dip["speech_context"] is None
-    assert dip["scene"] == "tocando música"
+    assert dip["scene"] == "playing music"
 
 
 def test_dip_category_change_is_a_cause(api_client, db) -> None:
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=4)
     add_viewer_samples(db, stream, [60, 100, 40, 40])
     add_event(
@@ -114,7 +116,7 @@ def test_dip_category_change_is_a_cause(api_client, db) -> None:
 
     login_as(api_client, channel)
     dip = api_client.get(f"/api/streams/{stream.id}/actionable").json()["dips"][0]
-    assert dip["cause"] == "troca para Just Chatting"
+    assert dip["cause"] == "a switch to Just Chatting"
 
 
 def test_clip_suggestions_from_peaks(api_client, db) -> None:

@@ -61,7 +61,7 @@ def test_emote_names_recovered_from_ranges() -> None:
 
 
 def test_community_endpoint_full_payload(api_client, db) -> None:
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=10)
     add_chat(
         db,
@@ -120,7 +120,7 @@ def test_community_empty_stream(api_client, db) -> None:
 
 def test_sentiment_timeline_buckets_are_30_seconds(api_client, db) -> None:
     assert SENTIMENT_BUCKET_SECONDS == 30
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=5)
     # two positive messages in the first 30s bucket, one negative in the third
     add_chat(
@@ -182,7 +182,7 @@ def test_chatter_and_topic_top_words(api_client, db) -> None:
 
 
 def test_chatter_sentiment_score(api_client, db) -> None:
-    channel = make_channel(db)
+    channel = make_channel(db, spoken_language="pt")
     stream = make_stream(db, channel, duration_minutes=10)
     add_chat(db, stream, 5, author="feliz", text="que live incrível, top demais")
     add_chat(
