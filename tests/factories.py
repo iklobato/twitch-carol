@@ -114,9 +114,7 @@ def add_subscription(
     return sub
 
 
-def add_bits_leader(
-    db: Session, channel: Channel, login: str, rank: int, score: int
-) -> BitsLeader:
+def add_bits_leader(db: Session, channel: Channel, login: str, rank: int, score: int) -> BitsLeader:
     leader = BitsLeader(channel_id=channel.id, login=login, rank=rank, score=score)
     db.add(leader)
     db.flush()
@@ -146,13 +144,19 @@ def add_past_broadcast(
     return broadcast
 
 
-def make_channel(db: Session, login: str | None = None) -> Channel:
+def make_channel(
+    db: Session, login: str | None = None, spoken_language: str | None = None
+) -> Channel:
+    """A channel as sign-up creates one: served in English, with the language
+    spoken on stream declared separately. A test whose chat is not English has
+    to say so, because that is what picks the stopwords and the lexicon."""
     unique = next(_sequence)
     channel = Channel(
         twitch_user_id=unique,
         login=login or f"tester_{unique}",
         display_name=f"Tester {unique}",
         scopes=["bits:read"],
+        spoken_language=spoken_language,
     )
     db.add(channel)
     db.flush()
@@ -172,9 +176,7 @@ def make_stream(
     stream = Stream(
         channel_id=channel.id,
         started_at=started,
-        ended_at=(
-            started + timedelta(minutes=duration_minutes) if duration_minutes else None
-        ),
+        ended_at=(started + timedelta(minutes=duration_minutes) if duration_minutes else None),
         status=status,
         title=title,
         category=category,
@@ -200,9 +202,7 @@ def add_chat(
             stream_id=stream.id,
             channel_id=stream.channel_id,
             sent_at=stream.started_at
-            + timedelta(
-                seconds=offset_seconds + (index * spread_seconds) / max(count, 1)
-            ),
+            + timedelta(seconds=offset_seconds + (index * spread_seconds) / max(count, 1)),
             message_id=str(uuid.uuid4()),
             author_id=author or f"author_{index % 7}",
             author_login=author or f"author_{index % 7}",
@@ -226,8 +226,7 @@ def add_segment(
     segment = TranscriptSegment(
         stream_id=stream.id,
         started_at=stream.started_at + timedelta(seconds=offset_seconds),
-        ended_at=stream.started_at
-        + timedelta(seconds=offset_seconds + duration_seconds),
+        ended_at=stream.started_at + timedelta(seconds=offset_seconds + duration_seconds),
         kind=kind,
         text=text,
     )
@@ -273,9 +272,7 @@ def add_viewer_samples(db: Session, stream: Stream, counts: list[int]) -> None:
     db.flush()
 
 
-def add_peak(
-    db: Session, stream: Stream, offset_seconds: int = 60, score: float = 3.0
-) -> Peak:
+def add_peak(db: Session, stream: Stream, offset_seconds: int = 60, score: float = 3.0) -> Peak:
     peak = Peak(
         stream_id=stream.id,
         window_start=stream.started_at + timedelta(seconds=offset_seconds),
@@ -323,15 +320,9 @@ def add_job(
         stream_id=stream.id,
         status=status,
         attempts=0 if status == JobStatus.QUEUED else 1,
-        started_at=(
-            now - timedelta(minutes=started_minutes_ago)
-            if started_minutes_ago
-            else None
-        ),
+        started_at=(now - timedelta(minutes=started_minutes_ago) if started_minutes_ago else None),
         finished_at=(
-            now - timedelta(minutes=finished_minutes_ago)
-            if finished_minutes_ago
-            else None
+            now - timedelta(minutes=finished_minutes_ago) if finished_minutes_ago else None
         ),
     )
     db.add(job)
