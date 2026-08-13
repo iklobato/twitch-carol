@@ -183,6 +183,18 @@ Deploy é git: **um push na branch dispara o deploy** de cada componente
 `alembic upgrade head`; se a migração falhar, o deploy vira ERROR e a versão
 atual continua no ar (funciona como canário). Não há passo manual de migração.
 
+Para promover `dev` para produção com as mãos, siga
+[`deploy/RUNBOOK.md`](deploy/RUNBOOK.md): a ordem dos comandos, o que conferir
+depois e como voltar atrás. Duas coisas de lá que valem saber antes:
+
+- **Todo deploy reinicia o `worker-capture`.** Ele retoma sozinho as lives em
+  `capturing`, então o custo não é a live inteira: até 10 minutos do segmento de
+  áudio em voo (`AUDIO_SEGMENT_SECONDS`) e 2 segundos de chat. Como os streamers
+  transmitem à noite, de manhã cedo é a janela. Confira com
+  `python scripts/check_no_live.py --session "<cookie>"`.
+- **`git push` não aplica `deploy/app.yaml`.** Componente, tamanho de instância e
+  variável de ambiente só mudam com `doctl apps update --spec`.
+
 ```bash
 doctl apps list                          # acha o app (streamintel)
 doctl apps get <APP_ID>                  # status + ingress
