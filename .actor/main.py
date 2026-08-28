@@ -316,7 +316,13 @@ def main() -> int:
     # O `APIFY_TOKEN` que o container ganha vale so para o proprio run: nao cria
     # loja nomeada (que e onde mora o estado entre execucoes) nem le o consumo do
     # mes (que e o freio de gasto). Por isso o actor recebe um token de conta.
-    apify = Apify(os.environ.get("APIFY_USER_TOKEN") or os.environ["APIFY_TOKEN"])
+    token_conta = os.environ.get("APIFY_USER_TOKEN") or os.environ["APIFY_TOKEN"]
+    # Sob LIMITED_PERMISSIONS o token do run nem /users/me consegue ler, e o
+    # _serp_proxy_url do prospect_leads monta o proxy a partir dele. Os scripts
+    # do repo leem APIFY_TOKEN do ambiente, entao o token de conta entra no
+    # lugar antes de eles serem importados (quebrou a colheita em 2026-08-28).
+    os.environ["APIFY_TOKEN"] = token_conta
+    apify = Apify(token_conta)
     entrada = apify.entrada()
     loja = apify.loja_nomeada(LOJA)
     prepara_pasta(apify, loja)
