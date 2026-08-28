@@ -324,6 +324,9 @@ export default {
   "tldr.messagesDelta": " ({sign}{pct}% vs last 10)",
 
   // followers
+  "followers.reconnect.title": "Your Twitch connection has expired",
+  "followers.reconnect.body": "Twitch stopped accepting this account's access, so the numbers below are frozen wherever the last successful sync left them. Connecting again fixes it and updating resumes on its own.",
+  "followers.reconnect.action": "Connect with Twitch again",
   "followers.title": "My followers",
   "followers.loading": "Loading your followers...",
   "followers.empty":
@@ -407,6 +410,9 @@ export default {
   "signals.raidViewers": "· {n} viewers",
   "signals.raidFollows": "+{n} follows",
   "signals.topicFollows": "Topics that drove follows",
+  "signals.baseAge": "When your followers' accounts were made",
+  "signals.baseAgeFact": "{pct}% of your base ({n} of {total}) are Twitch accounts made between {since} and the six months after it.",
+  "signals.baseAgeNote": "An audience that grew on its own spreads across several years. This kind of clustering shows up when many accounts were made at once. It happens to people who buy followers, and also to people who get follow-botted without asking for it, so it is worth a look before drawing a conclusion.",
   "signals.suspicious": "Suspicious follows ({n})",
   "suspicious.young": "new account",
   "suspicious.fresh_follow": "followed right after creating the account",
@@ -419,6 +425,7 @@ export default {
     "Your base grouped into personas. Actions and messages are generated when a live is analyzed.",
   "ai.whoFollows": "Who follows you",
   "ai.reactivations": "Bring back (suggested messages)",
+  "members.sample": "Listing {listed} names out of {total}.",
   "members.range": "{from}–{to} of {total}",
   "collab.title": "Collab candidates",
   "collab.subtitle": "Streamers who follow you, with what they stream.",

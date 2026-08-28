@@ -434,12 +434,22 @@ export type VelocityDay = { day: string; follows: number; is_spike: boolean };
 
 export type TopicFollows = { topic: string; follows: number };
 
+export type BaseAge = {
+  followers_dated: number;
+  months_spanned: number;
+  window_followers: number;
+  window_share: number;
+  window_start: string | null;
+  is_concentrated: boolean;
+};
+
 export type FollowerSignals = {
   raids: Raid[];
   suspicious: SuspiciousFollower[];
   suspicious_total: number;
   velocity: VelocityDay[];
   topic_follows: TopicFollows[];
+  base_age: BaseAge;
 };
 
 export type SegmentMember = { login: string; display_name: string | null };
@@ -496,6 +506,7 @@ export type FollowersOverview = {
   collab: CollabCandidate[];
   recommendations: Recommendation[];
   unfollows: Unfollow[];
+  needs_reconnect: boolean;
 };
 
 export type QueueItem = {

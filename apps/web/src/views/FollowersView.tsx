@@ -556,7 +556,8 @@ function VelocitySparkline({ velocity }: { velocity: VelocityDay[] }) {
 }
 
 function Signals({ signals }: { signals: FollowerSignals }) {
-  const { raids, suspicious, suspicious_total, velocity, topic_follows } = signals
+  const { raids, suspicious, suspicious_total, velocity, topic_follows, base_age } =
+    signals
   const hasAny =
     raids.length > 0 || suspicious.length > 0 || velocity.length > 0 || topic_follows.length > 0
   if (!hasAny) return null
@@ -605,6 +606,22 @@ function Signals({ signals }: { signals: FollowerSignals }) {
           </div>
         )}
       </div>
+      {base_age.is_concentrated && (
+        <div className="mt-4 rounded-lg border border-amber-900/50 bg-amber-950/20 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-400">
+            {t('signals.baseAge')}
+          </p>
+          <p className="text-xs text-zinc-400">
+            {t('signals.baseAgeFact', {
+              pct: Math.round(base_age.window_share * 100),
+              n: fmtInt(base_age.window_followers),
+              total: fmtInt(base_age.followers_dated),
+              since: base_age.window_start ?? '',
+            })}
+          </p>
+          <p className="mt-2 text-xs text-zinc-500">{t('signals.baseAgeNote')}</p>
+        </div>
+      )}
       {suspicious.length > 0 && (
         <div className="mt-4 rounded-lg border border-red-900/50 bg-red-950/20 p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-red-400">
@@ -642,13 +659,21 @@ const SEGMENT_COLOR: Record<string, string> = {
 
 const MEMBERS_PER_PAGE = 5
 
-function MemberList({ members }: { members: SegmentMember[] }) {
+// `total` is the segment's real size, which is larger than the list whenever the
+// segment has more members than the response carries.
+function MemberList({ members, total }: { members: SegmentMember[]; total: number }) {
   const [page, setPage] = useState(0)
   const pages = Math.ceil(members.length / MEMBERS_PER_PAGE)
   const start = page * MEMBERS_PER_PAGE
   const slice = members.slice(start, start + MEMBERS_PER_PAGE)
+  const listed = members.length
   return (
     <div className="mb-2">
+      {total > listed && (
+        <p className="mb-1 text-[11px] text-zinc-600">
+          {t('members.sample', { listed: fmtInt(listed), total: fmtInt(total) })}
+        </p>
+      )}
       <ul className="mb-1 space-y-0.5 text-xs">
         {slice.map((member) => (
           <li key={member.login}>
@@ -677,7 +702,7 @@ function MemberList({ members }: { members: SegmentMember[] }) {
             {t('members.range', {
               from: start + 1,
               to: start + slice.length,
-              total: members.length,
+              total: fmtInt(members.length),
             })}
           </span>
           <button
@@ -723,7 +748,9 @@ function AiSection({ ai }: { ai: FollowerAi }) {
                 <span className="tabular-nums text-zinc-400">{fmtInt(segment.count)}</span>
               </div>
               <p className="mb-2 text-xs text-zinc-500">{segment.description}</p>
-              {segment.members.length > 0 && <MemberList members={segment.members} />}
+              {segment.members.length > 0 && (
+                <MemberList members={segment.members} total={segment.count} />
+              )}
               {segment.action && (
                 <p className="rounded bg-black/30 p-2 text-sm text-zinc-200">→ {segment.action}</p>
               )}
@@ -821,6 +848,20 @@ export default function FollowersView() {
         {t('nav.back')}
       </a>
       <h2 className="mb-4 mt-2 text-xl font-bold">{t('followers.title')}</h2>
+      {overview.needs_reconnect && (
+        <div className="mb-4 rounded-lg border border-red-800 bg-red-950/40 p-4">
+          <p className="mb-1 text-sm font-semibold text-red-300">
+            {t('followers.reconnect.title')}
+          </p>
+          <p className="mb-3 text-xs text-zinc-400">{t('followers.reconnect.body')}</p>
+          <a
+            href="/auth/login"
+            className="inline-block rounded bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-500"
+          >
+            {t('followers.reconnect.action')}
+          </a>
+        </div>
+      )}
       {overview.kpis.total === 0 ? (
         <p className="text-zinc-400">{t('followers.empty')}</p>
       ) : (

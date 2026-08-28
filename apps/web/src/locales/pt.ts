@@ -326,6 +326,9 @@ const pt: Record<keyof typeof en, string> = {
   "tldr.messagesDelta": " ({sign}{pct}% vs últimas 10)",
 
   // followers
+  "followers.reconnect.title": "Sua conexão com a Twitch expirou",
+  "followers.reconnect.body": "A Twitch parou de aceitar o acesso desta conta, então os números abaixo estão parados na última vez que deu certo. Conectar de novo resolve e volta a atualizar sozinho.",
+  "followers.reconnect.action": "Conectar com a Twitch de novo",
   "followers.title": "Meus seguidores",
   "followers.loading": "Carregando seus seguidores...",
   "followers.empty":
@@ -409,6 +412,9 @@ const pt: Record<keyof typeof en, string> = {
   "signals.raidViewers": "· {n} viewers",
   "signals.raidFollows": "+{n} follows",
   "signals.topicFollows": "Assuntos que geraram follows",
+  "signals.baseAge": "Idade das contas que te seguem",
+  "signals.baseAgeFact": "{pct}% da sua base ({n} de {total}) são contas criadas na Twitch entre {since} e os 6 meses seguintes.",
+  "signals.baseAgeNote": "Numa audiência que cresceu sozinha as contas se espalham por vários anos. Uma concentração assim aparece quando muitas contas foram criadas de uma vez. Isso acontece com quem compra seguidores e também com quem recebe follow de robô sem ter pedido, então vale olhar antes de concluir.",
   "signals.suspicious": "Follows suspeitos ({n})",
   "suspicious.young": "conta recém-criada",
   "suspicious.fresh_follow": "seguiu logo após criar a conta",
@@ -421,6 +427,7 @@ const pt: Record<keyof typeof en, string> = {
     "A base agrupada em personas. Ações e mensagens são geradas quando uma live é analisada.",
   "ai.whoFollows": "Quem te segue",
   "ai.reactivations": "Trazer de volta (mensagens sugeridas)",
+  "members.sample": "Mostrando {listed} nomes de {total}.",
   "members.range": "{from}–{to} de {total}",
   "collab.title": "Candidatos a collab",
   "collab.subtitle": "Streamers que te seguem, com o que transmitem.",

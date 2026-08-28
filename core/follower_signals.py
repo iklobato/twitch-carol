@@ -14,8 +14,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import mean, pstdev
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from core.models import Event, Follower, Insight, InsightType, Stream, TranscriptSegment
 
@@ -99,22 +100,27 @@ def raid_attribution(db: Session, channel_id: int) -> list[RaidAttribution]:
     return results
 
 
-def _fake_follow_reasons(follower: Follower, now: datetime) -> list[str]:
-    reasons: list[str] = []
-    created = follower.account_created_at
-    if created is not None and (now - created).days < YOUNG_ACCOUNT_DAYS:
-        reasons.append("young")
-    if (
-        created is not None
-        and (follower.followed_at - created).days < FRESH_FOLLOW_DAYS
-    ):
-        reasons.append("fresh_follow")
-    image = follower.profile_image_url or ""
-    if not image or DEFAULT_AVATAR_MARKER in image:
-        reasons.append("no_avatar")
-    if not (follower.description or "").strip():
-        reasons.append("no_bio")
-    return reasons
+def _reason_flags(now: datetime) -> dict[str, ColumnElement[bool]]:
+    """The fake-follow rule, defined once, as SQL.
+
+    Written as expressions rather than as a Python loop over the base because it
+    only ever returns the worst 25: scoring in Python meant loading every row of
+    the channel, which for the largest real channel is 41,605 of them for 25
+    answers, measured at 526ms of a 3.2s page.
+
+    One definition on purpose. The reason names come from these same flags, so
+    there is no second copy of the rule that can drift out of step with this one.
+    """
+    created = Follower.account_created_at
+    return {
+        "young": created.is_not(None)
+        & (created > now - timedelta(days=YOUNG_ACCOUNT_DAYS)),
+        "fresh_follow": created.is_not(None)
+        & (Follower.followed_at - created < timedelta(days=FRESH_FOLLOW_DAYS)),
+        "no_avatar": func.coalesce(Follower.profile_image_url, "").in_(("",))
+        | Follower.profile_image_url.contains(DEFAULT_AVATAR_MARKER),
+        "no_bio": func.btrim(func.coalesce(Follower.description, "")).in_(("",)),
+    }
 
 
 _REASON_WEIGHT = {
@@ -129,37 +135,134 @@ def suspicious_followers(
     db: Session, channel_id: int, now: datetime | None = None
 ) -> list[SuspiciousFollower]:
     """Followers whose profile looks bot-like. Only enriched rows can be scored
-    (account age/avatar/bio come from Helix)."""
+    (account age/avatar/bio come from Helix).
+
+    Note what this cannot see: it judges each follower on their own, so a batch of
+    accounts created together and aged before use passes every check. That is what
+    `base_age_concentration` is for.
+    """
     reference = now if now is not None else datetime.now(UTC)
-    flagged: list[SuspiciousFollower] = []
-    for follower in db.scalars(
-        select(Follower)
+    flags = _reason_flags(reference)
+    score = sum(
+        case((flag, _REASON_WEIGHT[reason]), else_=0) for reason, flag in flags.items()
+    )
+    rows = db.execute(
+        select(
+            Follower.login,
+            Follower.display_name,
+            score.label("score"),
+            *[flag.label(reason) for reason, flag in flags.items()],
+        )
         .where(Follower.channel_id == channel_id)
         .where(Follower.enriched_at.is_not(None))
-    ):
-        reasons = _fake_follow_reasons(follower, reference)
-        score = sum(_REASON_WEIGHT[r] for r in reasons)
-        if score >= SUSPICIOUS_THRESHOLD:
-            flagged.append(
-                SuspiciousFollower(
-                    login=follower.login,
-                    display_name=follower.display_name,
-                    score=score,
-                    reasons=reasons,
-                )
-            )
-    flagged.sort(key=lambda f: f.score, reverse=True)
-    return flagged[:SUSPICIOUS_LIMIT]
+        .where(score >= SUSPICIOUS_THRESHOLD)
+        .order_by(score.desc())
+        .limit(SUSPICIOUS_LIMIT)
+    ).all()
+    return [
+        SuspiciousFollower(
+            login=row.login,
+            display_name=row.display_name,
+            score=row.score,
+            reasons=[reason for reason in flags if getattr(row, reason)],
+        )
+        for row in rows
+    ]
+
+
+@dataclass(frozen=True)
+class BaseAgeConcentration:
+    """How tightly a channel's followers cluster by when their accounts were made.
+
+    The per-follower score above cannot see this. It weights recency (a young
+    account, a follow that arrived days after the account was made), so a batch of
+    accounts aged for a couple of years defeats both halves of it. Measured across
+    production on 2026-08-12, the channel with 97.5% of its 41,605 followers made
+    inside one six-month window was the LEAST flagged of all fourteen, at 2.4%,
+    while ordinary channels sat between 3.6% and 35%. For that failure the old
+    signal is not merely quiet, it is inverted.
+    """
+
+    followers_dated: int
+    months_spanned: int
+    window_followers: int
+    window_share: float
+    window_start: str | None
+    is_concentrated: bool
+
+
+# All three from the same measurement across the 14 production channels:
+#   heaviest contiguous 6-month window, as a share of the base
+#     organic:        9.9% .. 37.5%
+#     bought:         97.5%
+#   months the base spans
+#     organic:        105 .. 196 distinct months
+#     bought:         48, for a base of 41,605
+BASE_AGE_WINDOW_MONTHS = 6
+BASE_AGE_CONCENTRATED_SHARE = 0.60
+# The one number here NOT taken from measurement: no channel is small enough to
+# false-positive at 60%, so there was nothing to measure against. The smallest
+# base (42 followers) reaches 42.9% on sample noise alone, and this floor is 12x
+# that. Deliberately conservative: a false positive here tells a streamer their
+# audience is fake.
+BASE_AGE_MIN_FOLLOWERS = 500
+
+
+def base_age_concentration(db: Session, channel_id: int) -> BaseAgeConcentration:
+    """Concentration of the follower base by account-creation month.
+
+    Aggregated in SQL to one row per month (a couple of hundred at most) and the
+    sliding window walked over that, rather than pulling every follower in to
+    count them here.
+    """
+    month = func.date_trunc("month", Follower.account_created_at)
+    rows = db.execute(
+        select(month.label("month"), func.count().label("n"))
+        .where(Follower.channel_id == channel_id)
+        .where(Follower.account_created_at.is_not(None))
+        .group_by(month)
+    ).all()
+
+    per_index = {row.month.year * 12 + row.month.month: row.n for row in rows}
+    total = sum(per_index.values())
+    if not total:
+        return BaseAgeConcentration(0, 0, 0, 0.0, None, is_concentrated=False)
+
+    best_total = 0
+    best_start = min(per_index)
+    for start in sorted(per_index):
+        window = sum(
+            per_index.get(index, 0)
+            for index in range(start, start + BASE_AGE_WINDOW_MONTHS)
+        )
+        if window > best_total:
+            best_total, best_start = window, start
+
+    share = best_total / total
+    return BaseAgeConcentration(
+        followers_dated=total,
+        months_spanned=len(per_index),
+        window_followers=best_total,
+        window_share=round(share, 3),
+        window_start=f"{(best_start - 1) // 12:04d}-{(best_start - 1) % 12 + 1:02d}",
+        is_concentrated=(
+            total >= BASE_AGE_MIN_FOLLOWERS and share >= BASE_AGE_CONCENTRATED_SHARE
+        ),
+    )
 
 
 def follow_velocity(db: Session, channel_id: int) -> list[VelocityDay]:
     """Daily follow counts (from followed_at) with spikes flagged where a day
     exceeds mean + K*stdev: viral moments or bot bursts stand out."""
-    per_day: dict[str, int] = defaultdict(int)
-    for followed_at in db.scalars(
-        select(Follower.followed_at).where(Follower.channel_id == channel_id)
-    ):
-        per_day[followed_at.strftime("%Y-%m-%d")] += 1
+    day = func.date(Follower.followed_at)
+    per_day = {
+        row.day.strftime("%Y-%m-%d"): row.follows
+        for row in db.execute(
+            select(day.label("day"), func.count().label("follows"))
+            .where(Follower.channel_id == channel_id)
+            .group_by(day)
+        )
+    }
     if not per_day:
         return []
     counts = list(per_day.values())
