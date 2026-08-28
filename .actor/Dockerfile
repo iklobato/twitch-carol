@@ -10,7 +10,8 @@ COPY core/config.py core/twitch.py ./core/
 RUN touch ./core/__init__.py
 COPY scripts/prospect_leads.py scripts/build_campaign_batches.py \
      scripts/send_campaign_batch.py scripts/campaign_stats.py ./scripts/
-COPY ai-generated-messages/broadcast-body.html ./ai-generated-messages/
+# Copiar todos os corpos de campanha (PT, EN, etc)
+COPY ai-generated-messages/broadcast-body*.html ./ai-generated-messages/
 COPY .actor/main.py ./
 
 CMD ["python3", "main.py"]

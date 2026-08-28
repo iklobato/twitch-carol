@@ -193,11 +193,14 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     )
 
     fila = apify.le(loja, "fila", [])
-    ja_na_fila = set(fila)
+    # Fila agora guarda (email, language) pares, não bare addresses.
+    fila_emails = {
+        item[0] if isinstance(item, (tuple, list)) else item for item in fila
+    }
     novos = [
-        lead["email"].lower()
+        (lead["email"].lower(), lead.get("language", "pt"))
         for lead in leads
-        if lead["email"].lower() not in ja_na_fila
+        if lead["email"].lower() not in fila_emails
     ]
     print(
         f"{len(candidatos)} candidatos ({len(candidatos) - len(antigos)} novos), "
@@ -226,22 +229,22 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     import campaign_stats as cs
     import send_campaign_batch as envio
 
-    # A fila guarda so o endereco, sem idioma, e a imagem carrega so o corpo em
-    # portugues. Ligar `idiomas` no ingles sem trazer o corpo junto mandaria o
-    # convite em portugues para quem nao le portugues, e isso volta como spam.
-    idiomas = str(entrada.get("idiomas", envio.DEFAULT_LANGUAGE)).split(",")
-    if idiomas != [envio.DEFAULT_LANGUAGE]:
-        print(
-            f"idiomas={','.join(idiomas)}, mas aqui so existe corpo em "
-            f"{envio.DEFAULT_LANGUAGE}. Nao envio."
-        )
-        return 1
+    # A fila agora guarda (email, language) pares. Carregar corpos para cada idioma.
 
     maximo = int(entrada.get("maximo_por_dia", 150))
     minimo = int(entrada.get("minimo_por_dia", 30))
-    fila = [e.lower() for e in apify.le(loja, "fila", [])]
+    # Fila guarda (email, language) pares. Compatibilidade: bare strings são tratadas como PT.
+    fila_raw = apify.le(loja, "fila", [])
+    fila = [
+        (
+            (item[0].lower(), item[1])
+            if isinstance(item, (tuple, list))
+            else (item.lower(), "pt")
+        )
+        for item in fila_raw
+    ]
     contatados = set(apify.le(loja, "contatados", []))
-    fila = [e for e in fila if e not in contatados]
+    fila = [(e, lang) for e, lang in fila if e not in contatados]
     if len(fila) < minimo:
         print(f"fila com {len(fila)}, abaixo do minimo de {minimo}. Espero acumular.")
         return 0
@@ -253,35 +256,55 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     escolhidos = fila[:maximo]
 
     # O portao e o mesmo do repo, com os lotes vindos do historico em vez de CSV.
+    # escolhidos agora é lista de (email, language) pares; o gate trabalha com bare emails.
     lotes = {
         registro["nome"]: {e.lower() for e in registro["emails"]}
         for registro in historico
     }
-    lotes[nome] = set(escolhidos)
+    lotes[nome] = {e.lower() for e, _ in escolhidos}
     if cs.gate(nome, cs.tally(os.environ["RESEND_API_KEY"], lotes), lotes):
         return 1
 
-    idioma = envio.DEFAULT_LANGUAGE
-    corpos = {idioma: envio.body_for_api(Path(CORPO_HTML).read_text())}
-    enviados: list[str] = []
+    # Carregar corpos para cada idioma disponível.
+    # Procura por broadcast-body-*.html; fallback para broadcast-body.html.
+    corpos_dir = Path(CORPO_HTML).parent
+    corpos = {}
+    for arquivo in sorted(corpos_dir.glob("broadcast-body*.html")):
+        if arquivo.name == "broadcast-body.html":
+            idioma = envio.DEFAULT_LANGUAGE
+        else:
+            # broadcast-body-en.html → "en"
+            idioma = arquivo.stem.split("-")[-1]
+        corpos[idioma] = envio.body_for_api(arquivo.read_text())
+    enviados: list[tuple[str, str]] = []
     with httpx.Client(
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, timeout=60
     ) as cliente:
         for inicio in range(0, len(escolhidos), POR_CHAMADA):
             bloco = escolhidos[inicio : inicio + POR_CHAMADA]
+            # bloco já é lista de (email, language) pares
             resposta = cliente.post(
                 envio.RESEND_BATCH_URL,
-                json=envio.build_payloads([(e, idioma) for e in bloco], corpos),
+                json=envio.build_payloads(bloco, corpos),
             )
             resposta.raise_for_status()
             enviados += bloco
             # Grava a cada bloco: container que morre no meio nao pode reenviar
             # para quem ja recebeu quando o Apify tentar de novo.
-            apify.grava(loja, "contatados", sorted(contatados | set(enviados)))
-            apify.grava(loja, "fila", [e for e in fila if e not in set(enviados)])
+            enviados_emails = {e for e, _ in enviados}
+            apify.grava(loja, "contatados", sorted(contatados | enviados_emails))
+            apify.grava(
+                loja,
+                "fila",
+                [(e, lang) for e, lang in fila if e not in enviados_emails],
+            )
             print(f"  enviados {len(enviados)}/{len(escolhidos)}", flush=True)
 
-    apify.grava(loja, "historico", historico + [{"nome": nome, "emails": enviados}])
+    # Histórico guarda apenas bare emails (compatibilidade com gate)
+    enviados_emails = [e for e, _ in enviados]
+    apify.grava(
+        loja, "historico", historico + [{"nome": nome, "emails": enviados_emails}]
+    )
     apify.grava(loja, "estado", {**estado, "proximo_lote": numero + 1})
     print(
         f"{nome}: {len(enviados)} enviados, fila fica com {len(fila) - len(enviados)}"
