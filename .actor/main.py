@@ -177,18 +177,16 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     # deles canal em portugues. A busca por palavra fica de reserva para quando
     # esse bolso secar (dois meses, no ritmo atual).
     if orcamento:
-        logins = pl.logins_sem_email(orcamento)
+        # Teto de 500 por run: o proxy SERP pendurou as conexoes perto do
+        # request ~850 em DOIS runs seguidos de 2026-08-28 (o timeout do httpx
+        # nao dispara), enquanto blocos de 500 fecharam limpos. O orcamento nao
+        # gasto volta amanha, ja que buscas_permitidas divide pelo que resta do
+        # mes.
+        logins = pl.logins_sem_email(min(orcamento, 500))
         if logins:
-            # ponytail: blocos de 500 (~5 min aos 105 logins/min medidos em
-            # 2026-08-28), para um travamento perder no maximo um bloco pago.
-            for inicio in range(0, len(logins), 500):
-                bloco = logins[inicio : inicio + 500]
-                print(
-                    f"harvest por login: {inicio + len(bloco)}/{len(logins)}",
-                    flush=True,
-                )
-                colhido += pl.harvest_logins(bloco, pl.DOMAINS[:1])
-                candidatos = checkpoint(f"bloco ate {inicio + len(bloco)}")
+            print(f"harvest por login: {len(logins)} logins", flush=True)
+            colhido += pl.harvest_logins(logins, pl.DOMAINS[:1])
+            candidatos = checkpoint("harvest salvo")
         else:
             cabem = orcamento // (paginas * len(pl.DOMAINS))
             fatia = (pl.KEYWORDS + pl.KEYWORDS)[cursor : cursor + cabem]
