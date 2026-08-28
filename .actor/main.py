@@ -157,6 +157,21 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     orcamento = buscas_permitidas(
         apify.gasto_do_mes(), float(entrada.get("teto_usd", 25)), date.today()
     )
+
+    def checkpoint(rotulo: str) -> list[dict]:
+        """Sobe candidatos + logins tentados para o KV. O dinheiro do Google so
+        esta salvo depois disto: o run de 2026-08-28 travou no meio do harvest,
+        morreu no timeout e perdeu tudo, porque so havia checkpoint no fim."""
+        antigos = pl.read_rows(pl.CANDIDATES_PATH)
+        candidatos = pl.merge_candidates(antigos, pl.recolhe_diario() + colhido)
+        pl.write_rows(pl.CANDIDATES_PATH, candidatos, pl.CANDIDATE_FIELDS)
+        apify.grava(loja, "candidatos", candidatos)
+        if pl.LOGINS_TRIED_PATH.exists():
+            apify.grava(loja, "logins_tentados", pl.read_rows(pl.LOGINS_TRIED_PATH))
+        print(f"checkpoint ({rotulo}): {len(candidatos)} candidatos", flush=True)
+        return candidatos
+
+    total_inicial = len(pl.read_rows(pl.CANDIDATES_PATH))
     # O orcamento vai primeiro para a busca por login, que rende mais por dolar e
     # so traz brasileiro: sao 30 mil logins que o sweep ja achou sem email, 99%
     # deles canal em portugues. A busca por palavra fica de reserva para quando
@@ -164,8 +179,16 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     if orcamento:
         logins = pl.logins_sem_email(orcamento)
         if logins:
-            print(f"harvest por login: {len(logins)} logins", flush=True)
-            colhido += pl.harvest_logins(logins, pl.DOMAINS[:1])
+            # ponytail: blocos de 500 (~5 min aos 105 logins/min medidos em
+            # 2026-08-28), para um travamento perder no maximo um bloco pago.
+            for inicio in range(0, len(logins), 500):
+                bloco = logins[inicio : inicio + 500]
+                print(
+                    f"harvest por login: {inicio + len(bloco)}/{len(logins)}",
+                    flush=True,
+                )
+                colhido += pl.harvest_logins(bloco, pl.DOMAINS[:1])
+                candidatos = checkpoint(f"bloco ate {inicio + len(bloco)}")
         else:
             cabem = orcamento // (paginas * len(pl.DOMAINS))
             fatia = (pl.KEYWORDS + pl.KEYWORDS)[cursor : cursor + cabem]
@@ -175,17 +198,7 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     else:
         print("sem orcamento para o harvest pago; so o sweep rodou", flush=True)
 
-    antigos = pl.read_rows(pl.CANDIDATES_PATH)
-    candidatos = pl.merge_candidates(antigos, pl.recolhe_diario() + colhido)
-    pl.write_rows(pl.CANDIDATES_PATH, candidatos, pl.CANDIDATE_FIELDS)
-    # Sobe antes de qualificar: a busca foi paga, a qualificacao e so tempo. Se o
-    # container morrer na qualificacao (a Twitch derrubou duas rodadas em
-    # 2026-07-29), o dinheiro do Google ja esta salvo.
-    apify.grava(loja, "candidatos", candidatos)
-    print(
-        f"checkpoint: {len(candidatos)} candidatos salvos antes de qualificar",
-        flush=True,
-    )
+    candidatos = checkpoint("antes de qualificar")
 
     idiomas = tuple(str(entrada.get("idiomas", "pt")).split(","))
     leads = pl.qualify(
@@ -203,7 +216,7 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
         if lead["email"].lower() not in fila_emails
     ]
     print(
-        f"{len(candidatos)} candidatos ({len(candidatos) - len(antigos)} novos), "
+        f"{len(candidatos)} candidatos ({len(candidatos) - total_inicial} novos), "
         f"{len(leads)} qualificados, {len(novos)} entram na fila "
         f"(fila fica com {len(fila) + len(novos)})",
         flush=True,
