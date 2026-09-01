@@ -72,6 +72,36 @@ def test_limite_de_bounce_e_3_porcento(bounces, esperado):
     assert gate("lote-8", events(**{"lote-7": counts}), BATCHES) == esperado
 
 
+CAUDA_PT = {f"lote-{n}": set() for n in (18, 19, 20, 21, 22)}
+
+
+def test_lote_pequeno_com_ruido_nao_trava_se_a_janela_combinada_esta_limpa():
+    """3 bounces num lote de 41 dao 7,3% e barravam o proximo, com o bounce duro
+    geral em 1,3%. A janela junta os lotes recentes da trilha ate MIN_SAMPLE e
+    mede a % no combinado, entao o azar de um lote pequeno para de travar."""
+    enviados = events(
+        **{
+            "lote-18": {"delivered": 159, "bounced": 1},
+            "lote-19": {"delivered": 87, "bounced": 2},
+            "lote-20": {"delivered": 34},
+            "lote-21": {"delivered": 38, "bounced": 3},  # 7,3% sozinho
+        }
+    )
+    # janela: 41+34+89+160 = 324 enviados, 6 duros = 1,9%
+    assert gate("lote-22", enviados, CAUDA_PT) == 0
+
+
+def test_janela_combinada_acima_de_3_porcento_ainda_trava():
+    """O piso nao anistia lista ruim: se a janela inteira passa dos 3%, barra."""
+    enviados = events(
+        **{
+            "lote-20": {"delivered": 90, "bounced": 10},
+            "lote-21": {"delivered": 90, "bounced": 10},  # 20/200 = 10%
+        }
+    )
+    assert gate("lote-22", enviados, {f"lote-{n}": set() for n in (20, 21, 22)}) == 1
+
+
 BOUNCES = {
     "id-cheia": {"bounce": {"type": "Transient", "subType": "MailboxFull"}},
     "id-inexistente": {"bounce": {"type": "Permanent", "subType": "General"}},

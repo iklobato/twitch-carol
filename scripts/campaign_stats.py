@@ -36,6 +36,13 @@ from send_campaign_batch import BATCH_DIR, read_batch  # noqa: E402
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 PAGE_SIZE = 100
 BOUNCE_LIMIT = 0.03
+# Piso de amostra antes de aplicar a %. Abaixo disso um lote pequeno estoura o
+# portao com azar, nao com lista ruim: 3 caixas mortas num lote de 41 dao 7,3% e
+# barram tudo, com o bounce duro geral em 1,3%. A 200 enviados, uma caixa morta
+# vale 0,5%, entao 3% pede ~6 mortas de verdade. ponytail: 200 e o menor teto
+# redondo onde a cauda pt saudavel (lotes 18-21, 450 enviados, 1,3%) abre; suba
+# para 300-500 se quiser a media mais estavel, a custo de reagir mais devagar.
+MIN_SAMPLE = 200
 HARD_BOUNCE = "bounced"
 SOFT_BOUNCE = "bounced_temporario"
 BAD_EVENTS = (HARD_BOUNCE, "complained")
@@ -155,6 +162,36 @@ def previous_batch(name: str, batches: dict[str, set[str]]) -> str | None:
     return max(earlier, key=batch_number, default=None)
 
 
+def janela_recente(
+    name: str, events: dict[str, collections.Counter], batches: dict[str, set[str]]
+) -> collections.Counter:
+    """Soma os lotes JA ENVIADOS da mesma trilha, do mais novo para o mais velho,
+    ate juntar MIN_SAMPLE enviados (ou acabarem os lotes). Um lote grande fecha a
+    janela sozinho (mede so ele, sensivel a um lote ruim recente); um lote pequeno
+    puxa os anteriores ate a amostra ficar de tamanho que a % signifique lista, e
+    nao sorte."""
+    trilha, numero = trilha_e_numero(name)
+    anteriores = sorted(
+        (
+            outro
+            for outro in batches
+            if trilha_e_numero(outro)[0] == trilha
+            and batch_number(outro) < numero
+            and sum(events[outro].values())
+        ),
+        key=batch_number,
+        reverse=True,
+    )
+    janela: collections.Counter = collections.Counter()
+    enviados = 0
+    for lote in anteriores:
+        janela.update(events[lote])
+        enviados += sum(events[lote].values())
+        if enviados >= MIN_SAMPLE:
+            break
+    return janela
+
+
 def gate(
     name: str, events: dict[str, collections.Counter], batches: dict[str, set[str]]
 ) -> int:
@@ -180,17 +217,20 @@ def gate(
         print(f"PORTAO BLOQUEADO: {anterior} nao foi enviado, nao pulo a fila")
         return 1
 
-    counts = events[anterior]
+    counts = janela_recente(name, events, batches)
     total = sum(counts.values())
     bounced = counts["bounced"] / total
     if bounced >= BOUNCE_LIMIT or counts["complained"]:
         print(
-            f"PORTAO BLOQUEADO: {anterior} com bounce {bounced:.1%} "
-            f"e {counts['complained']} spam ({total} enviados)"
+            f"PORTAO BLOQUEADO: janela de {total} enviados com bounce {bounced:.1%} "
+            f"e {counts['complained']} spam"
         )
         return 1
 
-    print(f"portao OK: {anterior} com bounce {bounced:.1%}, 0 spam. {name} liberado")
+    print(
+        f"portao OK: janela de {total} enviados com bounce {bounced:.1%}, 0 spam. "
+        f"{name} liberado"
+    )
     return 0
 
 
