@@ -38,6 +38,7 @@ LOJA = "streamintel-campanha"
 CODIGO_DO_REPO = "/usr/src/app"
 CORPO_HTML = "ai-generated-messages/broadcast-body.html"
 POR_CHAMADA = 100
+IDIOMA_PADRAO = "pt"
 
 
 class Apify:
@@ -231,6 +232,69 @@ def colher(apify: Apify, loja: str, entrada: dict) -> int:
     return 0
 
 
+def _proximo_nome(nomes: list[str], idioma: str) -> tuple[str, int]:
+    """Nome do proximo lote da trilha e quantos ela ja mandou. pt e `lote-N`, os
+    outros `lote-<idioma>-N`, batendo com o que campaign_stats.trilha_e_numero le.
+    Deriva o numero do historico em vez de um contador unico: com trilha por
+    idioma, um contador so nao sabe de qual trilha e o proximo numero."""
+    import campaign_stats as cs
+
+    numeros = [
+        cs.batch_number(nome) for nome in nomes if cs.trilha_e_numero(nome)[0] == idioma
+    ]
+    prefixo = "lote-" if idioma == IDIOMA_PADRAO else f"lote-{idioma}-"
+    return f"{prefixo}{max(numeros, default=0) + 1}", len(numeros)
+
+
+def _tamanho_do_lote(ja_enviados: int, maximo: int) -> int:
+    """Trilha nova nunca foi testada: rampa a reputacao 50 -> 100 -> teto, em vez
+    de estrear com um disparo grande para um publico de bounce desconhecido."""
+    degraus = [50, 100]
+    return degraus[ja_enviados] if ja_enviados < len(degraus) else maximo
+
+
+def _carrega_corpos(envio) -> dict[str, str]:
+    """broadcast-body.html e o idioma padrao; broadcast-body-<idioma>.html traz os
+    outros. So o que tem corpo pode sair (idioma sem corpo fica na fila)."""
+    corpos: dict[str, str] = {}
+    for arquivo in sorted(Path(CORPO_HTML).parent.glob("broadcast-body*.html")):
+        idioma = (
+            envio.DEFAULT_LANGUAGE
+            if arquivo.name == "broadcast-body.html"
+            else arquivo.stem.split("-")[-1]
+        )
+        corpos[idioma] = envio.body_for_api(arquivo.read_text())
+    return corpos
+
+
+def _envia_lote(
+    apify, loja, nome, escolhidos, corpos, envio, contatados, fila, historico
+):
+    """Manda um lote e grava o estado a cada bloco: container que morre no meio
+    nao pode reenviar para quem ja recebeu quando o Apify tentar de novo. Muta
+    `contatados`, `fila` e `historico`, que sao compartilhados entre as trilhas."""
+    enviados: list[tuple[str, str]] = []
+    with httpx.Client(
+        headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, timeout=60
+    ) as cliente:
+        for inicio in range(0, len(escolhidos), POR_CHAMADA):
+            bloco = escolhidos[inicio : inicio + POR_CHAMADA]
+            resposta = cliente.post(
+                envio.RESEND_BATCH_URL, json=envio.build_payloads(bloco, corpos)
+            )
+            resposta.raise_for_status()
+            enviados += bloco
+            enviados_emails = {e for e, _ in enviados}
+            contatados |= enviados_emails
+            apify.grava(loja, "contatados", sorted(contatados))
+            fila[:] = [(e, lang) for e, lang in fila if e not in enviados_emails]
+            apify.grava(loja, "fila", fila)
+            print(f"  {nome}: enviados {len(enviados)}/{len(escolhidos)}", flush=True)
+    historico.append({"nome": nome, "emails": [e for e, _ in enviados]})
+    apify.grava(loja, "historico", list(historico))
+    print(f"{nome}: {len(enviados)} enviados, fila fica com {len(fila)}")
+
+
 def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     comecar_em = entrada.get("comecar_em")
     if comecar_em and date.today().isoformat() < comecar_em:
@@ -240,17 +304,15 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     import campaign_stats as cs
     import send_campaign_batch as envio
 
-    # A fila agora guarda (email, language) pares. Carregar corpos para cada idioma.
-
     maximo = int(entrada.get("maximo_por_dia", 150))
     minimo = int(entrada.get("minimo_por_dia", 30))
-    # Fila guarda (email, language) pares. Compatibilidade: bare strings são tratadas como PT.
+    # A fila guarda (email, idioma). Compatibilidade: string pura conta como pt.
     fila_raw = apify.le(loja, "fila", [])
     fila = [
         (
             (item[0].lower(), item[1])
             if isinstance(item, (tuple, list))
-            else (item.lower(), "pt")
+            else (item.lower(), IDIOMA_PADRAO)
         )
         for item in fila_raw
     ]
@@ -260,67 +322,55 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
         print(f"fila com {len(fila)}, abaixo do minimo de {minimo}. Espero acumular.")
         return 0
 
-    estado = apify.le(loja, "estado", {})
     historico = apify.le(loja, "historico", [])
-    numero = int(estado.get("proximo_lote", 15))
-    nome = f"lote-{numero}"
-    escolhidos = fila[:maximo]
-
-    # O portao e o mesmo do repo, com os lotes vindos do historico em vez de CSV.
-    # escolhidos agora é lista de (email, language) pares; o gate trabalha com bare emails.
+    nomes = [registro["nome"] for registro in historico]
     lotes = {
         registro["nome"]: {e.lower() for e in registro["emails"]}
         for registro in historico
     }
-    lotes[nome] = {e.lower() for e, _ in escolhidos}
-    if cs.gate(nome, cs.tally(os.environ["RESEND_API_KEY"], lotes), lotes):
-        return 1
+    corpos = _carrega_corpos(envio)
 
-    # Carregar corpos para cada idioma disponível.
-    # Procura por broadcast-body-*.html; fallback para broadcast-body.html.
-    corpos_dir = Path(CORPO_HTML).parent
-    corpos = {}
-    for arquivo in sorted(corpos_dir.glob("broadcast-body*.html")):
-        if arquivo.name == "broadcast-body.html":
-            idioma = envio.DEFAULT_LANGUAGE
-        else:
-            # broadcast-body-en.html → "en"
-            idioma = arquivo.stem.split("-")[-1]
-        corpos[idioma] = envio.body_for_api(arquivo.read_text())
-    enviados: list[tuple[str, str]] = []
-    with httpx.Client(
-        headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}"}, timeout=60
-    ) as cliente:
-        for inicio in range(0, len(escolhidos), POR_CHAMADA):
-            bloco = escolhidos[inicio : inicio + POR_CHAMADA]
-            # bloco já é lista de (email, language) pares
-            resposta = cliente.post(
-                envio.RESEND_BATCH_URL,
-                json=envio.build_payloads(bloco, corpos),
-            )
-            resposta.raise_for_status()
-            enviados += bloco
-            # Grava a cada bloco: container que morre no meio nao pode reenviar
-            # para quem ja recebeu quando o Apify tentar de novo.
-            enviados_emails = {e for e, _ in enviados}
-            apify.grava(loja, "contatados", sorted(contatados | enviados_emails))
-            apify.grava(
-                loja,
-                "fila",
-                [(e, lang) for e, lang in fila if e not in enviados_emails],
-            )
-            print(f"  enviados {len(enviados)}/{len(escolhidos)}", flush=True)
+    # Uma leva por idioma, portugues primeiro. Trilha separada porque publico novo
+    # tem bounce e reclamacao desconhecidos: junto no mesmo lote, o portao mede a
+    # media e so descobre qual publico machucou o dominio depois de machucado.
+    por_idioma: dict[str, list[tuple[str, str]]] = {}
+    for e, lang in fila:
+        por_idioma.setdefault(lang, []).append((e, lang))
+    ordem = ([IDIOMA_PADRAO] if IDIOMA_PADRAO in por_idioma else []) + sorted(
+        lang for lang in por_idioma if lang != IDIOMA_PADRAO
+    )
 
-    # Histórico guarda apenas bare emails (compatibilidade com gate)
-    enviados_emails = [e for e, _ in enviados]
-    apify.grava(
-        loja, "historico", historico + [{"nome": nome, "emails": enviados_emails}]
-    )
-    apify.grava(loja, "estado", {**estado, "proximo_lote": numero + 1})
-    print(
-        f"{nome}: {len(enviados)} enviados, fila fica com {len(fila) - len(enviados)}"
-    )
-    return 0
+    candidatos = []
+    for lang in ordem:
+        if lang not in corpos:
+            print(
+                f"sem corpo de email para '{lang}': {len(por_idioma[lang])} na fila "
+                f"ficam para quando existir convite nesse idioma"
+            )
+            continue
+        nome, ja = _proximo_nome(nomes, lang)
+        escolhidos = por_idioma[lang][: _tamanho_do_lote(ja, maximo)]
+        lotes[nome] = {e.lower() for e, _ in escolhidos}
+        candidatos.append((nome, escolhidos))
+
+    if not candidatos:
+        print("nada com corpo para enviar")
+        return 0
+
+    # Uma leitura so do Resend serve para todos os portoes: o lote candidato ainda
+    # nao tem evento, cada portao mede os anteriores da sua propria trilha.
+    eventos = cs.tally(os.environ["RESEND_API_KEY"], lotes)
+
+    algum = False
+    for nome, escolhidos in candidatos:
+        if cs.gate(nome, eventos, lotes):
+            continue  # trilha barrada nao segura a outra
+        _envia_lote(
+            apify, loja, nome, escolhidos, corpos, envio, contatados, fila, historico
+        )
+        algum = True
+    # Sem nenhum envio o run falha, para a trava aparecer em vez de sumir calada.
+    return 0 if algum else 1
 
 
 def main() -> int:
