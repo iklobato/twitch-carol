@@ -318,6 +318,12 @@ def enviar(apify: Apify, loja: str, entrada: dict) -> int:
     ]
     contatados = set(apify.le(loja, "contatados", []))
     fila = [(e, lang) for e, lang in fila if e not in contatados]
+    antes = len(fila)
+    fila = [(e, lang) for e, lang in fila if envio.email_valido(e)]
+    if len(fila) < antes:
+        print(
+            f"descartei {antes - len(fila)} endereco(s) invalido(s) antes de montar os lotes"
+        )
     if len(fila) < minimo:
         print(f"fila com {len(fila)}, abaixo do minimo de {minimo}. Espero acumular.")
         return 0

@@ -80,6 +80,22 @@ def body_for_api(html: str) -> str:
     return stripped
 
 
+# Ponto so vale entre caracteres: `nome..x`, `.nome` ou `nome.` sao invalidos.
+# O colhedor extrai email assim de bio ("aninha....@") e o /emails/batch do
+# Resend recusa a chamada INTEIRA com 422 se um endereco for invalido, derrubando
+# os 100 do bloco. O padrao do colhedor (`[a-z0-9._%+-]+`) aceita ponto duplo; a
+# guarda mora aqui, no unico ponto por onde todo envio passa.
+_EMAIL_VALIDO = re.compile(
+    r"[a-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
+    r"@[a-z0-9-]+(\.[a-z0-9-]+)+",
+    re.IGNORECASE,
+)
+
+
+def email_valido(email: str) -> bool:
+    return bool(_EMAIL_VALIDO.fullmatch((email or "").strip()))
+
+
 def build_payloads(
     destinatarios: list[tuple[str, str]], corpos: dict[str, str]
 ) -> list[dict]:

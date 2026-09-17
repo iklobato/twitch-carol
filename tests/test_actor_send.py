@@ -187,3 +187,21 @@ def test_skips_a_language_it_has_no_body_for(open_gate, sent_payloads):
     enviados = [p["to"][0] for chamada in sent_payloads for p in chamada]
     assert enviados == ["br@exemplo.com"]
     assert apify.written["fila"] == [("mistero@exemplo.com", "xx")]
+
+
+def test_drops_an_invalid_address_so_one_bad_email_cant_422_the_batch(
+    open_gate, sent_payloads
+):
+    """O Resend recusa o lote INTEIRO (422) se um endereco for invalido. O
+    colhedor extrai email com ponto duplo de bio ('aninha....@'); ele nao pode
+    chegar ao batch e derrubar os bons junto."""
+    apify = FakeApify(
+        fila=["boa@exemplo.com", "aninha....@hotmail.com", "outra@exemplo.com"],
+        contatados=[],
+        historico=[],
+    )
+
+    actor.enviar(apify, "loja", {"minimo_por_dia": 1})
+
+    enviados = [p["to"][0] for chamada in sent_payloads for p in chamada]
+    assert enviados == ["boa@exemplo.com", "outra@exemplo.com"]
