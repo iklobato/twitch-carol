@@ -241,16 +241,32 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "\U0001f4b0 <strong>Assuntos que mais monetizaram</strong>",
     },
     "weekly.topicRevenueLine": {
-        "en": "{name}: {usd} · {streams} \U0001f534",
-        "pt": "{name}: {usd} · {streams} \U0001f534",
+        "en": "{name}: {usd} · {streams} \U0001f534 · {messages} \U0001f4ac",
+        "pt": "{name}: {usd} · {streams} \U0001f534 · {messages} \U0001f4ac",
     },
-    "weekly.topLive": {
-        "en": "\U0001f3c6 <strong>Your top live</strong>",
-        "pt": "\U0001f3c6 <strong>Sua live destaque</strong>",
+    "weekly.topLives": {
+        "en": "\U0001f3c6 <strong>Top lives</strong>",
+        "pt": "\U0001f3c6 <strong>Melhores lives</strong>",
     },
-    "weekly.topLiveLine": {
-        "en": "{title}: {usd} · {messages} \U0001f4ac",
-        "pt": "{title}: {usd} · {messages} \U0001f4ac",
+    "weekly.byRevenue": {"en": "By revenue", "pt": "Por dinheiro"},
+    "weekly.byMessages": {"en": "By messages", "pt": "Por mensagens"},
+    "weekly.topPayers": {"en": "Top payers", "pt": "Quem mais pagou"},
+    "weekly.moneyMoments": {
+        "en": "\U0001f4b0 <strong>Biggest single payments</strong>",
+        "pt": "\U0001f4b0 <strong>Maiores pagamentos</strong>",
+    },
+    "weekly.moneyMomentLine": {
+        "en": "{usd} \U0001f4b0 from {login}",
+        "pt": "{usd} \U0001f4b0 de {login}",
+    },
+    "weekly.anonymousContributor": {"en": "someone", "pt": "alguém"},
+    "weekly.dailyRevenue": {
+        "en": "\U0001f4c5 <strong>Revenue by day</strong>",
+        "pt": "\U0001f4c5 <strong>Dinheiro por dia</strong>",
+    },
+    "weekly.dailyRevenueCaption": {
+        "en": "Darker = more revenue that day.",
+        "pt": "Mais escuro = mais dinheiro naquele dia.",
     },
     "weekly.sentiment": {
         "en": "\U0001f321️ <strong>Chat mood</strong>",

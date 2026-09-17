@@ -219,6 +219,8 @@ def test_topic_revenue_attributes_money_events_to_their_topic_window(
         content="Deploy\nx",
         evidence={"segment_ids": [segment.id]},
     )
+    add_chat(db, live, count=3, offset_seconds=320, spread_seconds=1)
+    add_chat(db, live, count=2, offset_seconds=1000, spread_seconds=1)
 
     digest = _build_week(db, channel)
 
@@ -226,6 +228,7 @@ def test_topic_revenue_attributes_money_events_to_their_topic_window(
     assert digest.topic_revenue[0].estimated_usd == 5.0
     assert digest.topic_revenue[0].offset_label == "5m10s"
     assert digest.topic_revenue[0].stream_title == live.title
+    assert digest.topic_revenue[0].chat_messages == 3
     html = render_html(digest, DASHBOARD, UNSUBSCRIBE)
     assert "Deploy" in html
     assert "US$ 5,00" in html
@@ -244,7 +247,9 @@ def test_content_revenue_groups_by_stream_category(db: Session) -> None:
     assert digest.content_revenue[0].estimated_usd == 10.0
 
 
-def test_top_live_is_the_highest_revenue_stream_with_its_moment(db: Session) -> None:
+def test_top_lives_by_revenue_ranks_the_highest_stream_first_with_its_moment(
+    db: Session,
+) -> None:
     channel = make_channel(db)
     quiet = _live(db, channel, days_ago=9)
     add_event(db, quiet, "channel.cheer", offset_seconds=60, amount=100)
@@ -264,22 +269,56 @@ def test_top_live_is_the_highest_revenue_stream_with_its_moment(db: Session) -> 
 
     digest = _build_week(db, channel)
 
-    assert digest.top_live is not None
-    assert digest.top_live.stream_id == top.id
-    assert digest.top_live.revenue_usd == 20.0
-    assert digest.top_live.messages == 5
-    assert digest.top_live.moment is not None
-    assert digest.top_live.moment.explanation == "Doou tudo."
+    assert digest.top_lives_by_revenue[0].stream_id == top.id
+    assert digest.top_lives_by_revenue[0].revenue_usd == 20.0
+    assert digest.top_lives_by_revenue[0].messages == 5
+    assert digest.top_lives_by_revenue[0].moment is not None
+    assert digest.top_lives_by_revenue[0].moment.explanation == "Doou tudo."
 
 
-def test_top_live_is_none_without_any_revenue(db: Session) -> None:
+def test_top_lives_by_revenue_is_empty_without_any_revenue(db: Session) -> None:
     channel = make_channel(db)
     live = _live(db, channel, days_ago=9)
     add_chat(db, live, count=5)
 
     digest = _build_week(db, channel)
 
-    assert digest.top_live is None
+    assert digest.top_lives_by_revenue == ()
+
+
+def test_top_lives_by_messages_ranks_by_chat_volume_not_revenue(db: Session) -> None:
+    channel = make_channel(db)
+    loud = _live(db, channel, days_ago=9)
+    add_chat(db, loud, count=20)
+
+    rich = _live(db, channel, days_ago=8)
+    add_chat(db, rich, count=2)
+    cheer = add_event(db, rich, "channel.cheer", offset_seconds=60, amount=2000)
+    cheer.payload = {"user_login": "baleia"}
+
+    digest = _build_week(db, channel)
+
+    assert digest.top_lives_by_messages[0].stream_id == loud.id
+    assert digest.top_lives_by_messages[0].messages == 20
+    assert digest.top_lives_by_revenue[0].stream_id == rich.id
+
+
+def test_money_moments_lists_the_biggest_single_payments_first(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    small = add_event(db, live, "channel.cheer", offset_seconds=60, amount=100)
+    small.payload = {"user_login": "shrimp"}
+    big = add_event(db, live, "channel.cheer", offset_seconds=310, amount=2000)
+    big.payload = {"user_login": "baleia"}
+
+    digest = _build_week(db, channel)
+
+    assert digest.money_moments[0].usd == 20.0
+    assert digest.money_moments[0].contributor_login == "baleia"
+    assert digest.money_moments[0].offset_label == "5m10s"
+    assert digest.money_moments[1].usd == 1.0
+    html = render_html(digest, DASHBOARD, UNSUBSCRIBE)
+    assert "baleia" in html
 
 
 def test_period_sentiment_is_none_below_the_minimum_sample(db: Session) -> None:
@@ -328,6 +367,21 @@ def test_engaged_users_rank_by_streams_then_messages_and_carry_their_usd(
     only_one_live = next(u for u in engaged if u.login == "so_uma_live")
     assert only_one_live.streams_attended == 1
     assert only_one_live.estimated_usd == 0.0
+
+
+def test_top_payers_rank_by_money_not_by_how_often_they_showed_up(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_chat(db, live, count=50, author="chatty_but_broke")
+    cheer = add_event(db, live, "channel.cheer", offset_seconds=60, amount=2000)
+    cheer.payload = {"user_login": "quiet_whale"}
+    add_chat(db, live, count=1, author="quiet_whale")
+
+    payers = _build_week(db, channel).top_payers
+
+    assert payers[0].login == "quiet_whale"
+    assert payers[0].estimated_usd == 20.0
+    assert "chatty_but_broke" not in [p.login for p in payers]
 
 
 def test_insights_are_absent_until_attached_then_render(db: Session) -> None:
@@ -429,6 +483,34 @@ def test_monthly_digest_uses_month_wording_for_the_delta(db: Session) -> None:
     assert "vs mês passado" in html
     assert "vs semana passada" not in html
     assert digest_subject(digest) == "Seu resumo mensal do StreamIntel"
+
+
+def test_daily_revenue_buckets_by_local_calendar_day_and_only_renders_monthly(
+    db: Session,
+) -> None:
+    channel = make_channel(db)
+    zone = ZoneInfo("UTC")
+    now = datetime.now(UTC)
+    start, end = last_month_bounds(now, zone)
+    live = make_stream(
+        db,
+        channel,
+        started_minutes_ago=int(
+            (now - (start + timedelta(days=2))).total_seconds() / 60
+        ),
+    )
+    cheer = add_event(db, live, "channel.cheer", offset_seconds=60, amount=1000)
+    cheer.payload = {"user_login": "baleia"}
+
+    monthly = build_period(db, channel, DigestPeriod.MONTHLY, start, end)
+    day = live.started_at.astimezone(zone).date()
+    assert monthly.daily_revenue[day] == 10.0
+    monthly_html = render_html(monthly, DASHBOARD, UNSUBSCRIBE)
+    assert "display:table;width:100%" in monthly_html
+
+    _live(db, channel, days_ago=9)
+    weekly_html = render_html(_build_week(db, channel), DASHBOARD, UNSUBSCRIBE)
+    assert "display:table;width:100%" not in weekly_html
 
 
 def test_digest_subject_uses_weekly_wording_by_default(db: Session) -> None:
