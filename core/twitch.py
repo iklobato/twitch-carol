@@ -41,6 +41,8 @@ OAUTH_SCOPES = [
     "channel:read:vips",
     "moderator:read:followers",
     "clips:edit",
+    # Only use: the weekly/monthly email digest (core.digest).
+    "user:read:email",
 ]
 
 
@@ -59,6 +61,9 @@ class TwitchUser(BaseModel):
     id: str
     login: str
     display_name: str
+    # Present only when the grant carries user:read:email; Helix omits the key
+    # entirely rather than sending it null.
+    email: str | None = None
 
 
 class StreamInfo(BaseModel):
