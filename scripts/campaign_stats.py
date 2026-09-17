@@ -219,12 +219,21 @@ def gate(
 
     counts = janela_recente(name, events, batches)
     total = sum(counts.values())
+    if counts["complained"]:
+        # Spam e fatal em qualquer amostra: uma reclamacao ja queima dominio.
+        print(f"PORTAO BLOQUEADO: {counts['complained']} spam na janela de {total}")
+        return 1
+    if total < MIN_SAMPLE:
+        # A janela recente do Resend encolhe conforme os lotes antigos somem da
+        # listagem (so guarda email recente): quando cai abaixo do minimo, os 3%
+        # medem azar, nao a lista (foi o que travou lote-22 numa janela de 41 a
+        # 7,3% com o dominio inteiro em 1,3%). Sem amostra, libera; o freio do
+        # risco aqui e o degrau do lote (<=150), nao a %.
+        print(f"portao OK: amostra de {total} < {MIN_SAMPLE}, 0 spam. {name} liberado")
+        return 0
     bounced = counts["bounced"] / total
-    if bounced >= BOUNCE_LIMIT or counts["complained"]:
-        print(
-            f"PORTAO BLOQUEADO: janela de {total} enviados com bounce {bounced:.1%} "
-            f"e {counts['complained']} spam"
-        )
+    if bounced >= BOUNCE_LIMIT:
+        print(f"PORTAO BLOQUEADO: janela de {total} enviados com bounce {bounced:.1%}")
         return 1
 
     print(

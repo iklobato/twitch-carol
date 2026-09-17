@@ -43,7 +43,7 @@ def test_barra_lote_ja_enviado():
 
 
 def test_barra_quando_o_anterior_passou_do_limite_de_bounce():
-    ruim = {"delivered": 76, "bounced": 4}  # 5%, acima dos 3%
+    ruim = {"delivered": 190, "bounced": 10}  # 5%, acima dos 3%, amostra >= 200
     assert gate("lote-8", events(**{"lote-7": ruim}), BATCHES) == 1
 
 
@@ -66,10 +66,28 @@ def test_barra_lote_que_nao_existe():
     assert gate("lote-99", events(**{"lote-7": {"delivered": 80}}), BATCHES) == 1
 
 
-@pytest.mark.parametrize("bounces,esperado", [(2, 0), (3, 1)])
+@pytest.mark.parametrize("bounces,esperado", [(5, 0), (6, 1)])
 def test_limite_de_bounce_e_3_porcento(bounces, esperado):
-    counts = {"delivered": 100 - bounces, "bounced": bounces}
+    # Amostra de 200 para a % valer: 5/200 = 2,5% libera, 6/200 = 3% barra.
+    counts = {"delivered": 200 - bounces, "bounced": bounces}
     assert gate("lote-8", events(**{"lote-7": counts}), BATCHES) == esperado
+
+
+def test_janela_pequena_nao_trava_por_bounce_mas_trava_por_spam():
+    """Regressao de prod: a janela do Resend encolheu para 41 (lote-21 sozinho, 3
+    bounces = 7,3%) porque os lotes de agosto sumiram da listagem, e os 3% sobre
+    41 travaram a campanha por 15 dias com o dominio inteiro em 1,3%. Amostra
+    abaixo de MIN_SAMPLE nao decide por bounce. Spam ainda barra em qualquer
+    tamanho: uma reclamacao ja queima o dominio."""
+    pouco = {f"lote-{n}": set() for n in (7, 8)}
+    assert (
+        gate("lote-8", events(**{"lote-7": {"delivered": 38, "bounced": 3}}), pouco)
+        == 0
+    )
+    assert (
+        gate("lote-8", events(**{"lote-7": {"delivered": 40, "complained": 1}}), pouco)
+        == 1
+    )
 
 
 CAUDA_PT = {f"lote-{n}": set() for n in (18, 19, 20, 21, 22)}
