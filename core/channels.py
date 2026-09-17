@@ -29,6 +29,10 @@ def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
         db.add(channel)
     channel.login = user.login
     channel.display_name = user.display_name
+    # Only present once the channel has granted user:read:email; never clobber
+    # an email already on file with a login response that lacks the scope.
+    if user.email is not None:
+        channel.email = user.email
     _store_grant(channel, grant)
     db.flush()
     return channel

@@ -232,6 +232,38 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": " ({sign}{pct}% vs last week)",
         "pt": " ({sign}{pct}% vs semana passada)",
     },
+    "monthly.delta": {
+        "en": " ({sign}{pct}% vs last month)",
+        "pt": " ({sign}{pct}% vs mês passado)",
+    },
+    "weekly.topicRevenue": {
+        "en": "<strong>Most-monetized topics</strong>",
+        "pt": "<strong>Assuntos que mais monetizaram</strong>",
+    },
+    "weekly.topicRevenueLine": {
+        "en": "{name}: {usd} ({streams} live(s))",
+        "pt": "{name}: {usd} ({streams} live(s))",
+    },
+    "weekly.contentRevenue": {
+        "en": "<strong>Top-earning categories</strong>",
+        "pt": "<strong>Categorias que mais renderam</strong>",
+    },
+    "weekly.contentRevenueLine": {
+        "en": "{category}: {usd} ({rate}/h)",
+        "pt": "{category}: {usd} ({rate}/h)",
+    },
+    "weekly.insights": {
+        "en": "<strong>Key takeaways</strong>",
+        "pt": "<strong>Principais conclusões</strong>",
+    },
+    "weekly.unsubscribe": {
+        "en": "Unsubscribe from this email",
+        "pt": "Cancelar inscrição neste email",
+    },
+    "digest.unsubscribed": {
+        "en": "Done: you won't receive this email anymore.",
+        "pt": "Feito: você não vai mais receber esse email.",
+    },
     "weekly.records": {
         "en": "<strong>Records you broke:</strong> {broken}.",
         "pt": "<strong>Recordes que você bateu:</strong> {broken}.",
@@ -258,6 +290,14 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
     "weekly.cta": {
         "en": "See everything in the dashboard",
         "pt": "Ver tudo no painel",
+    },
+    "weekly.subject": {
+        "en": "Your weekly StreamIntel recap",
+        "pt": "Seu resumo semanal do StreamIntel",
+    },
+    "monthly.subject": {
+        "en": "Your monthly StreamIntel recap",
+        "pt": "Seu resumo mensal do StreamIntel",
     },
 }
 

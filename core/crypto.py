@@ -62,3 +62,19 @@ def read_session_token(token: str) -> Session | None:
     except json.JSONDecodeError:
         return None
     return Session(channel_id=payload["cid"], admin_id=payload.get("adm"))
+
+
+def create_unsubscribe_token(channel_id: int) -> str:
+    """A link mailed today has to keep working whenever the reader clicks it,
+    so unlike the session token this one carries no TTL."""
+    return _fernet().encrypt(json.dumps({"cid": channel_id}).encode()).decode()
+
+
+def read_unsubscribe_token(token: str) -> int | None:
+    """The channel id the token was minted for, or None if it is invalid or
+    tampered with."""
+    try:
+        raw = _fernet().decrypt(token.encode()).decode()
+        return int(json.loads(raw)["cid"])
+    except (InvalidToken, json.JSONDecodeError, KeyError, ValueError):
+        return None
