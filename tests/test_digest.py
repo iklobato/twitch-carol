@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from core.digest import (
+    DigestInsight,
     build_period,
     digest_subject,
     last_month_bounds,
@@ -346,6 +347,19 @@ def test_period_sentiment_labels_the_average_once_theres_enough_signal(
     assert digest.sentiment.messages == 25
 
 
+def test_previous_sentiment_scores_the_prior_periods_chat(db: Session) -> None:
+    channel = make_channel(db)
+    add_chat(db, _live(db, channel, days_ago=9), count=25, text="great")
+    add_chat(db, _live(db, channel, days_ago=16), count=25, text="worst")
+
+    digest = _build_week(db, channel)
+
+    assert digest.sentiment is not None
+    assert digest.sentiment.label == "positive"
+    assert digest.previous_sentiment is not None
+    assert digest.previous_sentiment.label == "negative"
+
+
 def test_engaged_users_rank_by_streams_then_messages_and_carry_their_usd(
     db: Session,
 ) -> None:
@@ -384,6 +398,66 @@ def test_top_payers_rank_by_money_not_by_how_often_they_showed_up(db: Session) -
     assert "chatty_but_broke" not in [p.login for p in payers]
 
 
+def test_subscriber_churn_counts_gained_and_lost_this_period(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_event(db, live, "channel.subscribe", offset_seconds=60)
+    add_event(db, live, "channel.subscribe", offset_seconds=90)
+    add_event(db, live, "channel.subscription.end", offset_seconds=120)
+
+    churn = _build_week(db, channel).subscriber_churn
+
+    assert churn == (2, 1)
+
+
+def test_subscriber_churn_is_none_when_nothing_moved(db: Session) -> None:
+    channel = make_channel(db)
+    _live(db, channel, days_ago=9)
+
+    assert _build_week(db, channel).subscriber_churn is None
+
+
+_REDEMPTION_ADD = "channel.channel_points_custom_reward_redemption.add"
+
+
+def test_top_reward_is_the_most_redeemed_with_a_rival_to_beat(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    for i in range(3):
+        add_event(
+            db,
+            live,
+            _REDEMPTION_ADD,
+            offset_seconds=60 + i,
+            payload={"reward": {"title": "Hydrate"}},
+        )
+    add_event(
+        db,
+        live,
+        _REDEMPTION_ADD,
+        offset_seconds=200,
+        payload={"reward": {"title": "Highlight"}},
+    )
+
+    reward = _build_week(db, channel).top_reward
+
+    assert reward == ("Hydrate", 3)
+
+
+def test_top_reward_is_none_without_a_second_reward_to_beat(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_event(
+        db,
+        live,
+        _REDEMPTION_ADD,
+        offset_seconds=60,
+        payload={"reward": {"title": "Hydrate"}},
+    )
+
+    assert _build_week(db, channel).top_reward is None
+
+
 def test_insights_are_absent_until_attached_then_render(db: Session) -> None:
     channel = make_channel(db)
     _live(db, channel, days_ago=9)
@@ -392,11 +466,14 @@ def test_insights_are_absent_until_attached_then_render(db: Session) -> None:
     assert digest.insights == ()
     assert "weekly.insights" not in render_html(digest, DASHBOARD, UNSUBSCRIBE)
 
-    with_ai = with_insights(digest, ["Receita cresceu 20% na categoria X."])
-    assert with_ai.insights == ("Receita cresceu 20% na categoria X.",)
-    assert "Receita cresceu 20% na categoria X." in render_html(
-        with_ai, DASHBOARD, UNSUBSCRIBE
+    insight = DigestInsight(
+        content="Receita cresceu 20% na categoria X.", category="keep"
     )
+    with_ai = with_insights(digest, [insight])
+    assert with_ai.insights == (insight,)
+    html = render_html(with_ai, DASHBOARD, UNSUBSCRIBE)
+    assert "Receita cresceu 20% na categoria X." in html
+    assert "Continue fazendo isso" not in html  # channel.language defaults to "en"
 
 
 def test_records_hidden_until_the_channel_has_enough_history(db: Session) -> None:

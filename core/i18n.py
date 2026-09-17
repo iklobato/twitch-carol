@@ -292,9 +292,17 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": "\U0001f5e3️ <strong>Most engaged chatters</strong>",
         "pt": "\U0001f5e3️ <strong>Chatters mais engajados</strong>",
     },
-    "weekly.insights": {
-        "en": "\U0001f4a1 <strong>Key takeaways</strong>",
-        "pt": "\U0001f4a1 <strong>Principais conclusões</strong>",
+    "weekly.insightsKeep": {
+        "en": "✅ <strong>Keep doing this</strong>",
+        "pt": "✅ <strong>Continue fazendo isso</strong>",
+    },
+    "weekly.insightsStop": {
+        "en": "\U0001f6d1 <strong>Stop doing this</strong>",
+        "pt": "\U0001f6d1 <strong>Pare de fazer isso</strong>",
+    },
+    "weekly.insightsImprove": {
+        "en": "\U0001f4c8 <strong>Room to improve</strong>",
+        "pt": "\U0001f4c8 <strong>Dá pra melhorar</strong>",
     },
     "weekly.unsubscribe": {
         "en": "Unsubscribe from this email",
