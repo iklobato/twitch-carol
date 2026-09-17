@@ -15,6 +15,7 @@ a live on a calendar day.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, time, timedelta
@@ -27,14 +28,13 @@ from sqlalchemy.orm import Session
 
 from apps.api.channel import (
     ContentBucket,
-    MonetizingTopic,
     _content_revenue,
     _topic_revenue,
     _topic_windows_by_stream,
 )
 from core.db import month_bounds
-from core.finance import MONEY_EVENT_TYPES
-from core.i18n import format_number, t
+from core.finance import MONEY_EVENT_TYPES, event_contributor, event_usd
+from core.i18n import chat_language, format_number, t
 from core.models import (
     Channel,
     ChatMessage,
@@ -55,11 +55,19 @@ from core.records import (
     format_value,
     metric_label,
 )
+from core.text import message_sentiment, strip_emotes, tokenize
 from core.topics import recurring_topics
 
 MOMENTS_LIMIT = 5
 TOPICS_LIMIT = 5
 CLIPS_LIMIT = 5
+ENGAGED_USERS_LIMIT = 5
+# Fewer scored messages than this and a period's sentiment label is noise, not
+# a signal: hide the section instead of stating a confident mood off 3 emotes.
+MIN_SENTIMENT_MESSAGES = 20
+# Same cutoff apps.api.community uses for its per-bucket positivity coloring,
+# applied here to one average across the whole period instead of 30s buckets.
+SENTIMENT_POSITIVE_THRESHOLD = 0.15
 
 # Chat lives in monthly partitions on sent_at, so every chat query needs a
 # sent_at range or postgres scans them all. The bound follows the lives instead
@@ -111,7 +119,6 @@ class DigestLive:
     title: str | None
     category: str | None
     started_at: datetime
-    summary: str | None
     metrics: Mapping[RecordMetric, float]
 
 
@@ -139,6 +146,45 @@ class DigestTotals:
 
 
 @dataclass(frozen=True)
+class DigestTopicRevenue:
+    """A monetizing topic plus, when one money event stands out inside its
+    window, the moment that event happened."""
+
+    name: str
+    estimated_usd: float
+    streams: int
+    stream_title: str | None
+    offset_label: str | None
+
+
+@dataclass(frozen=True)
+class DigestTopLive:
+    """The period's single most valuable live: its own chat activity, its
+    revenue, and its loudest moment if it had one."""
+
+    stream_id: int
+    title: str | None
+    revenue_usd: float
+    messages: int
+    moment: DigestMoment | None
+
+
+@dataclass(frozen=True)
+class DigestSentiment:
+    label: str  # "positive" | "neutral" | "negative"
+    score: float
+    messages: int
+
+
+@dataclass(frozen=True)
+class DigestEngagedUser:
+    login: str
+    messages: int
+    streams_attended: int
+    estimated_usd: float
+
+
+@dataclass(frozen=True)
 class Digest:
     period: DigestPeriod
     login: str
@@ -152,8 +198,11 @@ class Digest:
     topics: tuple[tuple[str, int], ...]
     records: tuple[tuple[RecordMetric, float], ...]
     clips: tuple[DigestClip, ...]
-    topic_revenue: tuple[MonetizingTopic, ...]
+    topic_revenue: tuple[DigestTopicRevenue, ...]
     content_revenue: tuple[ContentBucket, ...]
+    top_live: DigestTopLive | None
+    sentiment: DigestSentiment | None
+    engaged_users: tuple[DigestEngagedUser, ...]
     # channels.language: the whole email is written in it.
     language: str
     # Attached after build_period() by core.digest_insights, which is the only
@@ -236,19 +285,28 @@ def _period_streams(
     )
 
 
+def _chat_window(streams: list[Stream]) -> tuple[datetime, datetime]:
+    """The [start, end) bound every ChatMessage query over a period needs:
+    the table is partitioned by month on sent_at, so a query without this
+    range makes postgres scan every partition instead of pruning to the
+    relevant ones."""
+    first = min(s.started_at for s in streams)
+    last = max(s.ended_at or s.started_at for s in streams)
+    return first, last + CHAT_TAIL_MARGIN
+
+
 def _unique_chatters(db: Session, streams: list[Stream]) -> int:
     """Distinct chatters across the period. Cannot be summed from the per-live
     counts, which double-count anyone active on more than one live."""
     if not streams:
         return 0
-    first = min(s.started_at for s in streams)
-    last = max(s.ended_at or s.started_at for s in streams)
+    first, last = _chat_window(streams)
     return (
         db.scalar(
             select(func.count(func.distinct(ChatMessage.author_id)))
             .where(ChatMessage.stream_id.in_([s.id for s in streams]))
             .where(ChatMessage.sent_at >= first)
-            .where(ChatMessage.sent_at < last + CHAT_TAIL_MARGIN)
+            .where(ChatMessage.sent_at < last)
         )
         or 0
     )
@@ -278,28 +336,27 @@ def _totals(db: Session, streams: list[Stream]) -> DigestTotals:
     )
 
 
-def _summaries(db: Session, stream_ids: list[int]) -> dict[int, str]:
-    rows = db.execute(
-        select(Insight.stream_id, Insight.content)
-        .where(Insight.stream_id.in_(stream_ids))
-        .where(Insight.type == InsightType.SUMMARY)
-    ).all()
-    return {row[0]: row[1] for row in rows}
-
-
-def _moments(db: Session, streams: list[Stream]) -> list[DigestMoment]:
-    """The period's loudest chat peaks. Peak.score is already normalized
-    against each live's own median, so it ranks fairly across lives of
-    different sizes."""
+def _best_moment_per_live(
+    db: Session, streams: list[Stream]
+) -> dict[int, DigestMoment]:
+    """Each live's single loudest chat peak, keyed by stream_id. Peak.score is
+    already normalized against each live's own median, so it ranks fairly
+    across lives of different sizes. Callers cap or pick from this map; it
+    is not capped here so a live can be the top_live highlight even when its
+    peak doesn't make the "best moments" list's own limit."""
     by_id = {stream.id: stream for stream in streams}
+    if not by_id:
+        return {}
     peaks = db.scalars(
         select(Peak)
         .where(Peak.stream_id.in_(by_id))
-        .order_by(Peak.score.desc())
-        .limit(MOMENTS_LIMIT)
+        .order_by(Peak.stream_id, Peak.score.desc())
     ).all()
-    if not peaks:
-        return []
+    best_peak: dict[int, Peak] = {}
+    for peak in peaks:
+        best_peak.setdefault(peak.stream_id, peak)
+    if not best_peak:
+        return {}
     explanations = db.scalars(
         select(Insight)
         .where(Insight.stream_id.in_(by_id))
@@ -311,20 +368,147 @@ def _moments(db: Session, streams: list[Stream]) -> list[DigestMoment]:
         for insight in explanations
         if insight.evidence.get("peak_id")
     }
-    moments = []
-    for peak in peaks:
-        stream = by_id[peak.stream_id]
+    moments: dict[int, DigestMoment] = {}
+    for stream_id, peak in best_peak.items():
+        stream = by_id[stream_id]
         offset = int((peak.window_start - stream.started_at).total_seconds())
-        moments.append(
-            DigestMoment(
-                stream_id=stream.id,
-                stream_title=stream.title,
-                offset_label=_offset_label(max(offset, 0)),
-                score=round(peak.score, 1),
-                explanation=text_by_peak.get(peak.id),
-            )
+        moments[stream_id] = DigestMoment(
+            stream_id=stream.id,
+            stream_title=stream.title,
+            offset_label=_offset_label(max(offset, 0)),
+            score=round(peak.score, 1),
+            explanation=text_by_peak.get(peak.id),
         )
     return moments
+
+
+def _topic_moments(
+    events: Sequence[Event],
+    windows: dict[int, list[tuple[str, datetime, datetime]]],
+    streams_by_id: dict[int, Stream],
+) -> dict[str, tuple[str | None, str]]:
+    """For each topic name, the stream title and offset label of its single
+    highest-value money event, using the same window attribution _topic_revenue
+    (apps.api.channel) uses to sum that topic's revenue."""
+    best_event: dict[str, Event] = {}
+    best_stream_id: dict[str, int] = {}
+    for event in events:
+        for name, start, end in windows.get(event.stream_id, []):
+            if not (start <= event.occurred_at < end):
+                continue
+            current = best_event.get(name)
+            if current is None or event_usd(event) > event_usd(current):
+                best_event[name] = event
+                best_stream_id[name] = event.stream_id
+    moments: dict[str, tuple[str | None, str]] = {}
+    for name, event in best_event.items():
+        stream = streams_by_id.get(best_stream_id[name])
+        if stream is None:
+            continue
+        offset = int((event.occurred_at - stream.started_at).total_seconds())
+        moments[name] = (stream.title, _offset_label(max(offset, 0)))
+    return moments
+
+
+def _top_live(
+    streams: list[Stream],
+    per_live: Sequence[Mapping[RecordMetric, float]],
+    moments_by_stream: dict[int, DigestMoment],
+) -> DigestTopLive | None:
+    """The period's single most valuable live. None when nobody monetized
+    this period, since there is nothing to highlight."""
+    stream, metrics = max(
+        zip(streams, per_live, strict=True),
+        key=lambda pair: pair[1][RecordMetric.REVENUE_USD],
+    )
+    if metrics[RecordMetric.REVENUE_USD] <= 0:
+        return None
+    return DigestTopLive(
+        stream_id=stream.id,
+        title=stream.title,
+        revenue_usd=metrics[RecordMetric.REVENUE_USD],
+        messages=int(metrics[RecordMetric.MESSAGES]),
+        moment=moments_by_stream.get(stream.id),
+    )
+
+
+def _sentiment_label(score: float) -> str:
+    if score >= SENTIMENT_POSITIVE_THRESHOLD:
+        return "positive"
+    if score <= -SENTIMENT_POSITIVE_THRESHOLD:
+        return "negative"
+    return "neutral"
+
+
+def _period_sentiment(
+    db: Session, streams: list[Stream], language: str
+) -> DigestSentiment | None:
+    """Average chat sentiment across the whole period, same lexicon heuristic
+    core.text.message_sentiment applies per-stream in the live community view.
+    Hidden under MIN_SENTIMENT_MESSAGES scored messages, so a quiet period
+    doesn't get a confident-looking label off a handful of reactions."""
+    if not streams:
+        return None
+    first, last = _chat_window(streams)
+    rows = db.execute(
+        select(ChatMessage.text, ChatMessage.emotes)
+        .where(ChatMessage.stream_id.in_([s.id for s in streams]))
+        .where(ChatMessage.sent_at >= first)
+        .where(ChatMessage.sent_at < last)
+    ).yield_per(2000)
+    scores = [
+        score
+        for text, emotes in rows
+        if (score := message_sentiment(tokenize(strip_emotes(text, emotes)), language))
+        is not None
+    ]
+    if len(scores) < MIN_SENTIMENT_MESSAGES:
+        return None
+    average = round(sum(scores) / len(scores), 2)
+    return DigestSentiment(
+        label=_sentiment_label(average), score=average, messages=len(scores)
+    )
+
+
+def _engaged_users(
+    db: Session, streams: list[Stream], money_events: Sequence[Event]
+) -> list[DigestEngagedUser]:
+    """The period's most engaged chatters, ordered the way _loyal_chatters
+    (apps.api.channel) ranks loyalty all-time (streams attended, then message
+    volume), alongside how much each one monetized in the same window."""
+    if not streams:
+        return []
+    first, last = _chat_window(streams)
+    rows = db.execute(
+        select(
+            ChatMessage.author_login,
+            func.count(func.distinct(ChatMessage.stream_id)),
+            func.count(),
+        )
+        .where(ChatMessage.stream_id.in_([s.id for s in streams]))
+        .where(ChatMessage.sent_at >= first)
+        .where(ChatMessage.sent_at < last)
+        .group_by(ChatMessage.author_login)
+        .order_by(
+            func.count(func.distinct(ChatMessage.stream_id)).desc(),
+            func.count().desc(),
+        )
+        .limit(ENGAGED_USERS_LIMIT)
+    ).all()
+    usd_by_login: dict[str, float] = defaultdict(float)
+    for event in money_events:
+        login = event_contributor(event)
+        if login:
+            usd_by_login[login] += event_usd(event)
+    return [
+        DigestEngagedUser(
+            login=login,
+            streams_attended=streams_attended,
+            messages=messages,
+            estimated_usd=round(usd_by_login.get(login, 0.0), 2),
+        )
+        for login, streams_attended, messages in rows
+    ]
 
 
 def _records(
@@ -404,18 +588,26 @@ def build_period(
             clips=(),
             topic_revenue=(),
             content_revenue=(),
+            top_live=None,
+            sentiment=None,
+            engaged_users=(),
             language=channel.language,
         )
 
     stream_ids = [stream.id for stream in streams]
-    summaries = _summaries(db, stream_ids)
     per_live = [compute_stream_metrics(db, stream) for stream in streams]
     zone = channel_zone(channel)
     previous_start, previous_end = _previous_period_bounds(period, start, zone)
     previous_streams = _period_streams(db, channel.id, previous_start, previous_end)
 
+    streams_by_id = {stream.id: stream for stream in streams}
     windows = _topic_windows_by_stream(db, stream_ids)
     money_events = _money_events(db, stream_ids)
+    moments_by_stream = _best_moment_per_live(db, streams)
+    top_moments = sorted(
+        moments_by_stream.values(), key=lambda moment: moment.score, reverse=True
+    )[:MOMENTS_LIMIT]
+    topic_moments = _topic_moments(money_events, windows, streams_by_id)
 
     return Digest(
         period=period,
@@ -429,7 +621,6 @@ def build_period(
                 title=stream.title,
                 category=stream.category,
                 started_at=stream.started_at,
-                summary=summaries.get(stream.id),
                 metrics=metrics,
             )
             for stream, metrics in zip(streams, per_live, strict=True)
@@ -439,12 +630,26 @@ def build_period(
             unique_chatters=_unique_chatters(db, streams),
         ),
         previous=_totals(db, previous_streams) if previous_streams else None,
-        moments=tuple(_moments(db, streams)),
+        moments=tuple(top_moments),
         topics=tuple(recurring_topics(db, stream_ids, TOPICS_LIMIT)),
         records=tuple(_records(db, channel.id, start, end)),
         clips=tuple(_clips(db, channel.id, start, end)),
-        topic_revenue=tuple(_topic_revenue(money_events, windows)),
+        topic_revenue=tuple(
+            DigestTopicRevenue(
+                name=topic.name,
+                estimated_usd=topic.estimated_usd,
+                streams=topic.streams,
+                stream_title=topic_moments.get(topic.name, (None, None))[0],
+                offset_label=topic_moments.get(topic.name, (None, None))[1],
+            )
+            for topic in _topic_revenue(money_events, windows)
+        ),
         content_revenue=tuple(_content_revenue(db, channel.id, stream_ids)),
+        top_live=_top_live(streams, per_live, moments_by_stream),
+        sentiment=_period_sentiment(
+            db, streams, chat_language(channel.spoken_language, channel.language)
+        ),
+        engaged_users=tuple(_engaged_users(db, streams, money_events)),
         language=channel.language,
     )
 
@@ -520,7 +725,20 @@ def _section_title(text: str) -> str:
     )
 
 
-def _topic_revenue_line(digest: Digest, topic: MonetizingTopic) -> str:
+def _moment_suffix(
+    digest: Digest, stream_title: str | None, offset_label: str | None
+) -> str:
+    """The "<strong>12m03s</strong> in "Title"" fragment shared by every
+    section that points at one specific moment."""
+    if not offset_label:
+        return ""
+    suffix = f" (<strong>{offset_label}</strong>"
+    if stream_title:
+        suffix += t(digest.language, "weekly.momentIn", title=escape(stream_title))
+    return suffix + ")"
+
+
+def _topic_revenue_line(digest: Digest, topic: DigestTopicRevenue) -> str:
     usd = format_value(RecordMetric.REVENUE_USD, topic.estimated_usd, digest.language)
     line = t(
         digest.language,
@@ -529,18 +747,55 @@ def _topic_revenue_line(digest: Digest, topic: MonetizingTopic) -> str:
         usd=usd,
         streams=topic.streams,
     )
+    return f"<li>{line}{_moment_suffix(digest, topic.stream_title, topic.offset_label)}</li>"
+
+
+def _top_live_line(digest: Digest, top_live: DigestTopLive) -> str:
+    title = escape(top_live.title or t(digest.language, "weekly.untitledLive"))
+    line = t(
+        digest.language,
+        "weekly.topLiveLine",
+        title=title,
+        usd=format_value(
+            RecordMetric.REVENUE_USD, top_live.revenue_usd, digest.language
+        ),
+        messages=top_live.messages,
+    )
+    moment = top_live.moment
+    suffix = (
+        _moment_suffix(digest, moment.stream_title, moment.offset_label)
+        if moment
+        else ""
+    )
+    return f"<li>{line}{suffix}</li>"
+
+
+_SENTIMENT_LABEL_KEY = {
+    "positive": "weekly.sentimentPositive",
+    "neutral": "weekly.sentimentNeutral",
+    "negative": "weekly.sentimentNegative",
+}
+
+
+def _sentiment_line(digest: Digest, sentiment: DigestSentiment) -> str:
+    label = t(digest.language, _SENTIMENT_LABEL_KEY[sentiment.label])
+    line = t(
+        digest.language,
+        "weekly.sentimentLine",
+        label=label,
+        messages=sentiment.messages,
+    )
     return f"<li>{line}</li>"
 
 
-def _content_revenue_line(digest: Digest, bucket: ContentBucket) -> str:
-    usd = format_value(RecordMetric.REVENUE_USD, bucket.estimated_usd, digest.language)
-    rate = format_value(RecordMetric.REVENUE_USD, bucket.usd_per_hour, digest.language)
+def _engaged_user_line(digest: Digest, user: DigestEngagedUser) -> str:
     line = t(
         digest.language,
-        "weekly.contentRevenueLine",
-        category=escape(bucket.category),
-        usd=usd,
-        rate=rate,
+        "weekly.engagedUserLine",
+        login=escape(user.login),
+        messages=user.messages,
+        streams=user.streams_attended,
+        usd=format_value(RecordMetric.REVENUE_USD, user.estimated_usd, digest.language),
     )
     return f"<li>{line}</li>"
 
@@ -618,22 +873,11 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
             f'<ul style="padding-left:20px;margin:0 0 14px">{topic_items}</ul>'
         )
 
-    if digest.content_revenue:
-        parts.append(_section_title(t(digest.language, "weekly.contentRevenue")))
-        content_items = "".join(
-            _content_revenue_line(digest, bucket) for bucket in digest.content_revenue
-        )
+    if digest.top_live:
+        parts.append(_section_title(t(digest.language, "weekly.topLive")))
         parts.append(
-            f'<ul style="padding-left:20px;margin:0 0 14px">{content_items}</ul>'
-        )
-
-    if digest.insights:
-        parts.append(_section_title(t(digest.language, "weekly.insights")))
-        insight_items = "".join(
-            f"<li>{escape(insight)}</li>" for insight in digest.insights
-        )
-        parts.append(
-            f'<ul style="padding-left:20px;margin:0 0 14px">{insight_items}</ul>'
+            f'<ul style="padding-left:20px;margin:0 0 14px">'
+            f"{_top_live_line(digest, digest.top_live)}</ul>"
         )
 
     if digest.moments:
@@ -652,6 +896,29 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
             items.append(f'<li style="margin-bottom:8px">{line}</li>')
         parts.append(
             f'<ul style="padding-left:20px;margin:0 0 14px">{"".join(items)}</ul>'
+        )
+
+    if digest.sentiment:
+        parts.append(_section_title(t(digest.language, "weekly.sentiment")))
+        parts.append(
+            f'<ul style="padding-left:20px;margin:0 0 14px">'
+            f"{_sentiment_line(digest, digest.sentiment)}</ul>"
+        )
+
+    if digest.engaged_users:
+        parts.append(_section_title(t(digest.language, "weekly.engagedUsers")))
+        user_items = "".join(
+            _engaged_user_line(digest, user) for user in digest.engaged_users
+        )
+        parts.append(f'<ul style="padding-left:20px;margin:0 0 14px">{user_items}</ul>')
+
+    if digest.insights:
+        parts.append(_section_title(t(digest.language, "weekly.insights")))
+        insight_items = "".join(
+            f"<li>{escape(insight)}</li>" for insight in digest.insights
+        )
+        parts.append(
+            f'<ul style="padding-left:20px;margin:0 0 14px">{insight_items}</ul>'
         )
 
     if digest.topics:
@@ -680,16 +947,6 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
         parts.append(_section_title(t(digest.language, "weekly.clips")))
         parts.append(f'<ul style="padding-left:20px;margin:0 0 14px">{clip_items}</ul>')
-
-    for live in digest.lives:
-        if not live.summary:
-            continue
-        title = escape(live.title or t(digest.language, "weekly.untitledLive"))
-        parts.append(
-            _p(
-                f"<strong>{live.started_at:{fmt}} - {title}</strong><br>{escape(live.summary)}"
-            )
-        )
 
     parts.append(
         f'<p style="margin:26px 0 18px;text-align:center">'

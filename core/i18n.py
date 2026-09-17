@@ -244,13 +244,41 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": "{name}: {usd} ({streams} live(s))",
         "pt": "{name}: {usd} ({streams} live(s))",
     },
-    "weekly.contentRevenue": {
-        "en": "<strong>Top-earning categories</strong>",
-        "pt": "<strong>Categorias que mais renderam</strong>",
+    "weekly.topLive": {
+        "en": "<strong>Your top live</strong>",
+        "pt": "<strong>Sua live destaque</strong>",
     },
-    "weekly.contentRevenueLine": {
-        "en": "{category}: {usd} ({rate}/h)",
-        "pt": "{category}: {usd} ({rate}/h)",
+    "weekly.topLiveLine": {
+        "en": "{title}: {usd}, {messages} chat messages",
+        "pt": "{title}: {usd}, {messages} mensagens no chat",
+    },
+    "weekly.sentiment": {
+        "en": "<strong>Chat mood</strong>",
+        "pt": "<strong>Clima do chat</strong>",
+    },
+    "weekly.sentimentPositive": {
+        "en": "mostly positive",
+        "pt": "majoritariamente positivo",
+    },
+    "weekly.sentimentNeutral": {
+        "en": "mostly neutral",
+        "pt": "majoritariamente neutro",
+    },
+    "weekly.sentimentNegative": {
+        "en": "mostly negative",
+        "pt": "majoritariamente negativo",
+    },
+    "weekly.sentimentLine": {
+        "en": "{label} this period ({messages} messages read)",
+        "pt": "{label} nesse período ({messages} mensagens lidas)",
+    },
+    "weekly.engagedUsers": {
+        "en": "<strong>Most engaged chatters</strong>",
+        "pt": "<strong>Chatters mais engajados</strong>",
+    },
+    "weekly.engagedUserLine": {
+        "en": "{login}: {messages} messages in {streams} live(s), {usd} contributed",
+        "pt": "{login}: {messages} mensagens em {streams} live(s), {usd} contribuído",
     },
     "weekly.insights": {
         "en": "<strong>Key takeaways</strong>",
