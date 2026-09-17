@@ -276,10 +276,6 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": "\U0001f5e3️ <strong>Most engaged chatters</strong>",
         "pt": "\U0001f5e3️ <strong>Chatters mais engajados</strong>",
     },
-    "weekly.engagedUserLine": {
-        "en": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
-        "pt": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
-    },
     "weekly.insights": {
         "en": "\U0001f4a1 <strong>Key takeaways</strong>",
         "pt": "\U0001f4a1 <strong>Principais conclusões</strong>",
@@ -293,8 +289,8 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "Feito: você não vai mais receber esse email.",
     },
     "weekly.records": {
-        "en": "<strong>Records you broke:</strong> {broken}.",
-        "pt": "<strong>Recordes que você bateu:</strong> {broken}.",
+        "en": "<strong>Records you broke</strong>",
+        "pt": "<strong>Recordes que você bateu</strong>",
     },
     "weekly.moments": {
         "en": "✨ <strong>Best moments</strong>",

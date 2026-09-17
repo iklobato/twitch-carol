@@ -16,7 +16,7 @@ a live on a calendar day.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, time, timedelta
 from html import escape
@@ -687,6 +687,8 @@ def _delta_label(digest: Digest, metric: RecordMetric) -> str:
 
 # Emoji, not an image: every mail client renders these inline for free, no
 # attachment and no extra spam signal.
+_LIVE_ICON = "\U0001f534"
+
 _METRIC_ICON: dict[RecordMetric, str] = {
     RecordMetric.MESSAGES: "\U0001f4ac",
     RecordMetric.CHATTERS: "\U0001f464",
@@ -732,6 +734,32 @@ def _section_title(text: str) -> str:
         '<p style="margin:22px 0 10px;padding-top:16px;border-top:1px solid #eee;'
         f'font-size:13px;letter-spacing:.02em;color:#7b3fe4">{text}</p>'
     )
+
+
+def _value_grid(rows: Iterable[Sequence[str]]) -> str:
+    """Lines up a column of numbers under each other without a <table> tag
+    (see render_html's docstring on why): a CSS table on plain divs, so every
+    row's Nth cell shares that column's width instead of trailing wherever
+    its own first cell (a login, a metric label) happens to end. Every
+    column but the first is right-aligned; clients that ignore
+    display:table just render each row as unaligned but still readable
+    text, so this never breaks, only stops lining up."""
+    row_html = []
+    for cells in rows:
+        first, *middle, last = cells
+        aligned = [
+            f'<div style="display:table-cell;padding:2px 14px 2px 0">{first}</div>'
+        ]
+        aligned += [
+            '<div style="display:table-cell;padding:2px 14px 2px 0;'
+            f'text-align:right">{cell}</div>'
+            for cell in middle
+        ]
+        aligned.append(
+            f'<div style="display:table-cell;padding:2px 0;text-align:right">{last}</div>'
+        )
+        row_html.append(f'<div style="display:table-row">{"".join(aligned)}</div>')
+    return f'<div style="display:table;margin:0 0 14px">{"".join(row_html)}</div>'
 
 
 def _moment_suffix(
@@ -797,16 +825,16 @@ def _sentiment_line(digest: Digest, sentiment: DigestSentiment) -> str:
     return f"<li>{line}</li>"
 
 
-def _engaged_user_line(digest: Digest, user: DigestEngagedUser) -> str:
-    line = t(
-        digest.language,
-        "weekly.engagedUserLine",
-        login=escape(user.login),
-        messages=user.messages,
-        streams=user.streams_attended,
-        usd=format_value(RecordMetric.REVENUE_USD, user.estimated_usd, digest.language),
+def _engaged_user_cells(
+    digest: Digest, user: DigestEngagedUser
+) -> tuple[str, str, str, str]:
+    usd = format_value(RecordMetric.REVENUE_USD, user.estimated_usd, digest.language)
+    return (
+        escape(user.login),
+        f"{user.messages} {_METRIC_ICON[RecordMetric.MESSAGES]}",
+        f"{user.streams_attended} {_LIVE_ICON}",
+        f"{usd} {_METRIC_ICON[RecordMetric.REVENUE_USD]}",
     )
-    return f"<li>{line}</li>"
 
 
 def digest_subject(digest: Digest) -> str:
@@ -842,7 +870,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
     )
     # "<label>: <value>" is the one phrasing that reads right for every metric
     # label ("peak viewers: 320", not "320 of peak viewers").
-    headline = [f"\U0001f534 <strong>{live_count}</strong>"]
+    headline = [f"{_LIVE_ICON} <strong>{live_count}</strong>"]
     for metric in HEADLINE_METRICS:
         current = digest.totals.metrics[metric]
         previous = digest.previous.metrics.get(metric, 0.0) if digest.previous else 0.0
@@ -867,12 +895,16 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
     )
 
     if digest.records:
-        broken = ", ".join(
-            f"{_METRIC_ICON.get(metric, '')} {metric_label(metric, digest.language)} "
-            f"({format_value(metric, value, digest.language)})"
-            for metric, value in digest.records
+        parts.append(_section_title(t(digest.language, "weekly.records")))
+        parts.append(
+            _value_grid(
+                (
+                    f"{_METRIC_ICON.get(metric, '')} {metric_label(metric, digest.language)}",
+                    format_value(metric, value, digest.language),
+                )
+                for metric, value in digest.records
+            )
         )
-        parts.append(_p(t(digest.language, "weekly.records", broken=broken)))
 
     if digest.topic_revenue:
         parts.append(_section_title(t(digest.language, "weekly.topicRevenue")))
@@ -917,10 +949,11 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
 
     if digest.engaged_users:
         parts.append(_section_title(t(digest.language, "weekly.engagedUsers")))
-        user_items = "".join(
-            _engaged_user_line(digest, user) for user in digest.engaged_users
+        parts.append(
+            _value_grid(
+                _engaged_user_cells(digest, user) for user in digest.engaged_users
+            )
         )
-        parts.append(f'<ul style="padding-left:20px;margin:0 0 14px">{user_items}</ul>')
 
     if digest.insights:
         parts.append(_section_title(t(digest.language, "weekly.insights")))
