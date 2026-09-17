@@ -689,10 +689,19 @@ def _delta_label(digest: Digest, metric: RecordMetric) -> str:
 # attachment and no extra spam signal.
 _METRIC_ICON: dict[RecordMetric, str] = {
     RecordMetric.MESSAGES: "\U0001f4ac",
+    RecordMetric.CHATTERS: "\U0001f464",
+    RecordMetric.EVENTS: "⚡",
     RecordMetric.PEAK_VIEWERS: "\U0001f465",
+    RecordMetric.AVG_VIEWERS: "\U0001f465",
     RecordMetric.FOLLOWS: "❤️",
+    RecordMetric.SUBS: "⭐",
+    RecordMetric.GIFTS: "\U0001f381",
+    RecordMetric.BITS: "\U0001f48e",
+    RecordMetric.RAIDS: "\U0001f680",
     RecordMetric.REVENUE_USD: "\U0001f4b0",
+    RecordMetric.MESSAGES_PER_MIN: "\U0001f4c8",
     RecordMetric.DURATION_MINUTES: "⏱️",
+    RecordMetric.RESUBS: "\U0001f501",
 }
 
 
@@ -833,7 +842,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
     )
     # "<label>: <value>" is the one phrasing that reads right for every metric
     # label ("peak viewers: 320", not "320 of peak viewers").
-    headline = [f"<strong>{live_count}</strong>"]
+    headline = [f"\U0001f534 <strong>{live_count}</strong>"]
     for metric in HEADLINE_METRICS:
         current = digest.totals.metrics[metric]
         previous = digest.previous.metrics.get(metric, 0.0) if digest.previous else 0.0
@@ -846,7 +855,8 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
         headline.append(line + _comparison_bar(current, previous))
     headline.append(
-        t(digest.language, "weekly.uniqueChatters")
+        f"{_METRIC_ICON[RecordMetric.CHATTERS]} "
+        + t(digest.language, "weekly.uniqueChatters")
         + f": <strong>{digest.totals.unique_chatters}</strong>"
     )
     parts.append(
@@ -858,7 +868,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
 
     if digest.records:
         broken = ", ".join(
-            f"{metric_label(metric, digest.language)} "
+            f"{_METRIC_ICON.get(metric, '')} {metric_label(metric, digest.language)} "
             f"({format_value(metric, value, digest.language)})"
             for metric, value in digest.records
         )

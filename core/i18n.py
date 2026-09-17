@@ -237,24 +237,24 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": " ({sign}{pct}% vs mês passado)",
     },
     "weekly.topicRevenue": {
-        "en": "<strong>Most-monetized topics</strong>",
-        "pt": "<strong>Assuntos que mais monetizaram</strong>",
+        "en": "\U0001f4b0 <strong>Most-monetized topics</strong>",
+        "pt": "\U0001f4b0 <strong>Assuntos que mais monetizaram</strong>",
     },
     "weekly.topicRevenueLine": {
         "en": "{name}: {usd} · {streams} \U0001f534",
         "pt": "{name}: {usd} · {streams} \U0001f534",
     },
     "weekly.topLive": {
-        "en": "<strong>Your top live</strong>",
-        "pt": "<strong>Sua live destaque</strong>",
+        "en": "\U0001f3c6 <strong>Your top live</strong>",
+        "pt": "\U0001f3c6 <strong>Sua live destaque</strong>",
     },
     "weekly.topLiveLine": {
         "en": "{title}: {usd} · {messages} \U0001f4ac",
         "pt": "{title}: {usd} · {messages} \U0001f4ac",
     },
     "weekly.sentiment": {
-        "en": "<strong>Chat mood</strong>",
-        "pt": "<strong>Clima do chat</strong>",
+        "en": "\U0001f321️ <strong>Chat mood</strong>",
+        "pt": "\U0001f321️ <strong>Clima do chat</strong>",
     },
     "weekly.sentimentPositive": {
         "en": "mostly positive",
@@ -273,16 +273,16 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "{label} · {messages} \U0001f4ac",
     },
     "weekly.engagedUsers": {
-        "en": "<strong>Most engaged chatters</strong>",
-        "pt": "<strong>Chatters mais engajados</strong>",
+        "en": "\U0001f5e3️ <strong>Most engaged chatters</strong>",
+        "pt": "\U0001f5e3️ <strong>Chatters mais engajados</strong>",
     },
     "weekly.engagedUserLine": {
         "en": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
         "pt": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
     },
     "weekly.insights": {
-        "en": "<strong>Key takeaways</strong>",
-        "pt": "<strong>Principais conclusões</strong>",
+        "en": "\U0001f4a1 <strong>Key takeaways</strong>",
+        "pt": "\U0001f4a1 <strong>Principais conclusões</strong>",
     },
     "weekly.unsubscribe": {
         "en": "Unsubscribe from this email",
@@ -297,8 +297,8 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "<strong>Recordes que você bateu:</strong> {broken}.",
     },
     "weekly.moments": {
-        "en": "<strong>Best moments</strong>",
-        "pt": "<strong>Melhores momentos</strong>",
+        "en": "✨ <strong>Best moments</strong>",
+        "pt": "✨ <strong>Melhores momentos</strong>",
     },
     "weekly.momentIn": {"en": ' in "{title}"', "pt": ' em "{title}"'},
     "weekly.topTopic": {
@@ -310,8 +310,8 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "Também falou de: {rest}.",
     },
     "weekly.clips": {
-        "en": "<strong>Clips you saved</strong>",
-        "pt": "<strong>Clips que você guardou</strong>",
+        "en": "\U0001f3ac <strong>Clips you saved</strong>",
+        "pt": "\U0001f3ac <strong>Clips que você guardou</strong>",
     },
     "weekly.untitledClip": {"en": "untitled clip", "pt": "clip sem título"},
     "weekly.untitledLive": {"en": "No title", "pt": "Sem título"},
