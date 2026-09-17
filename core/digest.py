@@ -34,7 +34,7 @@ from apps.api.channel import (
     _topic_windows_by_stream,
 )
 from core.db import month_bounds
-from core.finance import MONEY_EVENT_TYPES, event_contributor, event_usd
+from core.finance import MONEY_EVENT_TYPES, SUBSCRIBE, event_contributor, event_usd
 from core.i18n import chat_language, format_number, t
 from core.models import (
     Channel,
@@ -49,6 +49,7 @@ from core.models import (
     StreamStatus,
     TwitchClip,
 )
+from core.monetization import REDEMPTION_ADD, SUB_END, period_key
 from core.records import (
     MIN_LIVES_FOR_RECORDS,
     RecordMetric,
@@ -130,6 +131,10 @@ class DigestLive:
     category: str | None
     started_at: datetime
     metrics: Mapping[RecordMetric, float]
+    # "period.morning"/"afternoon"/"evening" (core.monetization.period_key),
+    # precomputed here so core.digest_insights never needs the channel's
+    # timezone to bucket lives by time of day.
+    time_of_day: str
 
 
 @dataclass(frozen=True)
@@ -189,6 +194,15 @@ class DigestSentiment:
 
 
 @dataclass(frozen=True)
+class DigestInsight:
+    """One LLM takeaway, grounded in a fact from core.digest_insights and
+    bucketed by the action it implies, so the email can group them."""
+
+    content: str
+    category: str  # "keep" | "stop" | "improve"
+
+
+@dataclass(frozen=True)
 class DigestEngagedUser:
     login: str
     messages: int
@@ -242,11 +256,20 @@ class Digest:
     # Local calendar day -> that day's revenue. Only ever rendered for a
     # monthly digest (a week has too few days for a calendar to read as one).
     daily_revenue: Mapping[date, float]
+    # (gained, lost) subscribers during the period; None when neither moved.
+    subscriber_churn: tuple[int, int] | None
+    # (reward title, redemption count) of the period's most-redeemed
+    # channel-points reward; None without a second reward to beat.
+    top_reward: tuple[str, int] | None
+    # Same average-chat-sentiment computation as `sentiment`, over the
+    # previous period's streams, so core.digest_insights can ground a mood
+    # trend instead of a bare score.
+    previous_sentiment: DigestSentiment | None
     # channels.language: the whole email is written in it.
     language: str
     # Attached after build_period() by core.digest_insights, which is the only
     # part of this feature that calls an LLM. Empty until then.
-    insights: tuple[str, ...] = ()
+    insights: tuple[DigestInsight, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -697,6 +720,43 @@ def _money_events(db: Session, stream_ids: list[int]) -> list[Event]:
     )
 
 
+def _subscriber_churn(db: Session, stream_ids: list[int]) -> tuple[int, int] | None:
+    """(gained, lost) subscribers during the period. None when neither moved,
+    so the fact only exists when there's something to say."""
+    if not stream_ids:
+        return None
+    rows = db.execute(
+        select(Event.type, func.count())
+        .where(Event.stream_id.in_(stream_ids))
+        .where(Event.type.in_((SUBSCRIBE, SUB_END)))
+        .group_by(Event.type)
+    ).all()
+    counts: dict[str, int] = {row[0]: row[1] for row in rows}
+    gained, lost = counts.get(SUBSCRIBE, 0), counts.get(SUB_END, 0)
+    return (gained, lost) if gained + lost else None
+
+
+def _top_reward(db: Session, stream_ids: list[int]) -> tuple[str, int] | None:
+    """(reward title, redemption count) of the period's most-redeemed
+    channel-points reward. None without a second reward to beat, same gate
+    core.monetization uses all-time: "most redeemed" needs a rival."""
+    if not stream_ids:
+        return None
+    events = db.scalars(
+        select(Event)
+        .where(Event.stream_id.in_(stream_ids))
+        .where(Event.type == REDEMPTION_ADD)
+    ).all()
+    counts: dict[str, int] = defaultdict(int)
+    for event in events:
+        title = ((event.payload or {}).get("reward") or {}).get("title")
+        if title:
+            counts[title] += 1
+    if len(counts) < 2:
+        return None
+    return max(counts.items(), key=lambda item: item[1])
+
+
 def build_period(
     db: Session, channel: Channel, period: DigestPeriod, start: datetime, end: datetime
 ) -> Digest:
@@ -726,6 +786,9 @@ def build_period(
             top_payers=(),
             money_moments=(),
             daily_revenue={},
+            subscriber_churn=None,
+            top_reward=None,
+            previous_sentiment=None,
             language=channel.language,
         )
 
@@ -734,6 +797,7 @@ def build_period(
     zone = channel_zone(channel)
     previous_start, previous_end = _previous_period_bounds(period, start, zone)
     previous_streams = _period_streams(db, channel.id, previous_start, previous_end)
+    language = chat_language(channel.spoken_language, channel.language)
 
     streams_by_id = {stream.id: stream for stream in streams}
     windows = _topic_windows_by_stream(db, stream_ids)
@@ -758,6 +822,7 @@ def build_period(
                 category=stream.category,
                 started_at=stream.started_at,
                 metrics=metrics,
+                time_of_day=period_key(stream.started_at.astimezone(zone).hour),
             )
             for stream, metrics in zip(streams, per_live, strict=True)
         ),
@@ -792,18 +857,19 @@ def build_period(
         top_lives_by_messages=_top_lives(
             streams, per_live, moments_by_stream, RecordMetric.MESSAGES, TOP_LIVES_LIMIT
         ),
-        sentiment=_period_sentiment(
-            db, streams, chat_language(channel.spoken_language, channel.language)
-        ),
+        sentiment=_period_sentiment(db, streams, language),
         engaged_users=tuple(_engaged_users(db, streams, money_events)),
         top_payers=_top_payers(money_events, TOP_PAYERS_LIMIT),
         money_moments=_money_moments(money_events, streams_by_id, MONEY_MOMENTS_LIMIT),
         daily_revenue=_daily_revenue(streams, per_live, zone),
+        subscriber_churn=_subscriber_churn(db, stream_ids),
+        top_reward=_top_reward(db, stream_ids),
+        previous_sentiment=_period_sentiment(db, previous_streams, language),
         language=channel.language,
     )
 
 
-def with_insights(digest: Digest, insights: Sequence[str]) -> Digest:
+def with_insights(digest: Digest, insights: Sequence[DigestInsight]) -> Digest:
     """Attach the LLM insights generated separately (core.digest_insights)."""
     return replace(digest, insights=tuple(insights))
 
@@ -1054,7 +1120,9 @@ def _top_payer_row(
     return (escape(payer.login), usd, _heat_cell(rank, total))
 
 
-_SENTIMENT_LABEL_KEY = {
+# Public: core.digest_insights reuses this to phrase the sentiment-trend
+# fact with the same wording the email itself uses for a mood label.
+SENTIMENT_LABEL_KEY = {
     "positive": "weekly.sentimentPositive",
     "neutral": "weekly.sentimentNeutral",
     "negative": "weekly.sentimentNegative",
@@ -1062,7 +1130,7 @@ _SENTIMENT_LABEL_KEY = {
 
 
 def _sentiment_line(digest: Digest, sentiment: DigestSentiment) -> str:
-    label = t(digest.language, _SENTIMENT_LABEL_KEY[sentiment.label])
+    label = t(digest.language, SENTIMENT_LABEL_KEY[sentiment.label])
     line = t(
         digest.language,
         "weekly.sentimentLine",
@@ -1240,10 +1308,19 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
                 )
             )
 
-    if digest.insights:
-        parts.append(_section_title(t(digest.language, "weekly.insights")))
+    for category, header_key in (
+        ("keep", "weekly.insightsKeep"),
+        ("stop", "weekly.insightsStop"),
+        ("improve", "weekly.insightsImprove"),
+    ):
+        bucket = [
+            insight for insight in digest.insights if insight.category == category
+        ]
+        if not bucket:
+            continue
+        parts.append(_section_title(t(digest.language, header_key)))
         insight_items = "".join(
-            f"<li>{escape(insight)}</li>" for insight in digest.insights
+            f"<li>{escape(insight.content)}</li>" for insight in bucket
         )
         parts.append(
             f'<ul style="padding-left:20px;margin:0 0 14px">{insight_items}</ul>'
