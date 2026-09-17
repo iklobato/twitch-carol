@@ -482,6 +482,13 @@ def _p(text: str) -> str:
     return f'<p style="margin:0 0 14px">{text}</p>'
 
 
+def _section_title(text: str) -> str:
+    return (
+        '<p style="margin:22px 0 10px;padding-top:16px;border-top:1px solid #eee;'
+        f'font-size:13px;letter-spacing:.02em;color:#7b3fe4">{text}</p>'
+    )
+
+
 def _topic_revenue_line(digest: Digest, topic: MonetizingTopic) -> str:
     usd = format_value(RecordMetric.REVENUE_USD, topic.estimated_usd, digest.language)
     line = t(
@@ -515,9 +522,9 @@ def digest_subject(digest: Digest) -> str:
 
 
 def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str:
-    """The recap as an email body. Deliberately plain (no tables, no images, no
-    columns): a hand-typed look lands in the inbox, a newsletter look lands in
-    spam.
+    """The recap as an email body. Lightly branded, but still no images, no
+    tables, no tracking pixel and no external fonts/CSS: those are what
+    actually land a newsletter in spam, not a splash of color on a <div>.
 
     Every number here is interpolated from SQL through format_value; no text
     that a model wrote is ever used to state a figure. The insights section is
@@ -527,7 +534,8 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
     fmt = t(digest.language, "weekly.dateFormat")
     window = f"{digest.start:{fmt}} - {digest.end - timedelta(days=1):{fmt}}"
     parts = [
-        _p(t(digest.language, "weekly.greeting", name=escape(digest.display_name))),
+        f'<p style="margin:0 0 6px;font-size:19px;font-weight:700">'
+        f'{t(digest.language, "weekly.greeting", name=escape(digest.display_name))}</p>',
         _p(t(digest.language, "weekly.intro", week=window)),
     ]
 
@@ -557,9 +565,10 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         + f": <strong>{digest.totals.unique_chatters}</strong>"
     )
     parts.append(
-        '<ul style="padding-left:20px;margin:0 0 14px">'
-        + "".join(f"<li>{item}</li>" for item in headline)
-        + "</ul>"
+        '<div style="background:#f7f5fc;border-radius:10px;padding:14px 18px;margin:6px 0 16px">'
+        '<ul style="padding-left:18px;margin:0;list-style:none">'
+        + "".join(f'<li style="margin-bottom:6px">{item}</li>' for item in headline)
+        + "</ul></div>"
     )
 
     if digest.records:
@@ -571,7 +580,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         parts.append(_p(t(digest.language, "weekly.records", broken=broken)))
 
     if digest.topic_revenue:
-        parts.append(_p(t(digest.language, "weekly.topicRevenue")))
+        parts.append(_section_title(t(digest.language, "weekly.topicRevenue")))
         topic_items = "".join(
             _topic_revenue_line(digest, topic) for topic in digest.topic_revenue
         )
@@ -580,7 +589,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
 
     if digest.content_revenue:
-        parts.append(_p(t(digest.language, "weekly.contentRevenue")))
+        parts.append(_section_title(t(digest.language, "weekly.contentRevenue")))
         content_items = "".join(
             _content_revenue_line(digest, bucket) for bucket in digest.content_revenue
         )
@@ -589,7 +598,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
 
     if digest.insights:
-        parts.append(_p(t(digest.language, "weekly.insights")))
+        parts.append(_section_title(t(digest.language, "weekly.insights")))
         insight_items = "".join(
             f"<li>{escape(insight)}</li>" for insight in digest.insights
         )
@@ -598,7 +607,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
 
     if digest.moments:
-        parts.append(_p(t(digest.language, "weekly.moments")))
+        parts.append(_section_title(t(digest.language, "weekly.moments")))
         items = []
         for moment in digest.moments:
             line = f"<strong>{moment.offset_label}</strong>"
@@ -639,7 +648,7 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
             f"{escape(clip.title or untitled)}</a></li>"
             for clip in digest.clips
         )
-        parts.append(_p(t(digest.language, "weekly.clips")))
+        parts.append(_section_title(t(digest.language, "weekly.clips")))
         parts.append(f'<ul style="padding-left:20px;margin:0 0 14px">{clip_items}</ul>')
 
     for live in digest.lives:
@@ -653,23 +662,33 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         )
 
     parts.append(
-        _p(
-            f'<a href="{escape(dashboard_url)}" style="color:#7b3fe4">'
-            + t(digest.language, "weekly.cta")
-            + "</a>"
-        )
+        f'<p style="margin:26px 0 18px;text-align:center">'
+        f'<a href="{escape(dashboard_url)}" style="display:inline-block;'
+        "background:#7b3fe4;color:#fff;padding:12px 26px;border-radius:6px;"
+        f'text-decoration:none;font-weight:600;font-size:14px">'
+        + t(digest.language, "weekly.cta")
+        + "</a></p>"
     )
     parts.append(
-        f'<p style="margin:0;font-size:12px;color:#888">'
-        f'<a href="{escape(unsubscribe_url)}" style="color:#888">'
+        '<p style="margin:0;padding-top:14px;border-top:1px solid #eee;'
+        f'font-size:12px;color:#999"><a href="{escape(unsubscribe_url)}" '
+        'style="color:#999;text-decoration:underline">'
         + t(digest.language, "weekly.unsubscribe")
         + "</a></p>"
     )
     body = "".join(parts)
+    header = (
+        '<div style="background:#7b3fe4;padding:16px 28px;border-radius:12px 12px 0 0">'
+        '<span style="color:#fff;font-size:16px;font-weight:700;'
+        'letter-spacing:.02em">StreamIntel</span></div>'
+    )
     return (
-        '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,'
-        "sans-serif;font-size:15px;line-height:1.55;color:#1a1a1a;"
-        f'max-width:560px">{body}</div>'
+        '<div style="background:#f4f4f7;padding:24px 12px;font-family:'
+        '-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">'
+        f'<div style="max-width:560px;margin:0 auto">{header}'
+        '<div style="background:#fff;padding:26px 28px;border-radius:0 0 12px 12px;'
+        f'font-size:15px;line-height:1.55;color:#1a1a1a">{body}</div>'
+        "</div></div>"
     )
 
 
