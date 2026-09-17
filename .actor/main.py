@@ -128,11 +128,15 @@ def prepara_pasta(apify: Apify, loja: str) -> Path:
         escreve_csv(
             pasta / "data/campaign/logins-tentados.csv", tentados, ["login", "data"]
         )
-    origem = Path(CODIGO_DO_REPO) / CORPO_HTML
-    if origem.exists():
-        destino = pasta / CORPO_HTML
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(origem, destino)
+    # Encena TODO corpo broadcast-body*.html, nao so o pt: depois do chdir o
+    # _carrega_corpos procura os corpos aqui, e faltar o de um idioma faz a
+    # trilha dele ser pulada calada (o ingles ficou 8.613 leads parados assim).
+    corpo_dir = Path(CORPO_HTML).parent
+    origem_dir = Path(CODIGO_DO_REPO) / corpo_dir
+    destino_dir = pasta / corpo_dir
+    destino_dir.mkdir(parents=True, exist_ok=True)
+    for corpo in origem_dir.glob("broadcast-body*.html"):
+        shutil.copy(corpo, destino_dir / corpo.name)
     os.chdir(pasta)
     sys.path.insert(0, CODIGO_DO_REPO)
     sys.path.insert(0, f"{CODIGO_DO_REPO}/scripts")

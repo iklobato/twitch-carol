@@ -205,3 +205,24 @@ def test_drops_an_invalid_address_so_one_bad_email_cant_422_the_batch(
 
     enviados = [p["to"][0] for chamada in sent_payloads for p in chamada]
     assert enviados == ["boa@exemplo.com", "outra@exemplo.com"]
+
+
+def test_prepara_pasta_encena_o_corpo_de_todo_idioma(tmp_path, monkeypatch):
+    """Regressao: prepara_pasta copiava so o corpo pt para o diretorio de
+    trabalho, entao no container o _carrega_corpos nunca achava o ingles e a
+    trilha en era pulada calada (8.613 leads parados). Todo broadcast-body*.html
+    tem de ser encenado."""
+    repo = tmp_path / "repo" / "ai-generated-messages"
+    repo.mkdir(parents=True)
+    (repo / "broadcast-body.html").write_text("pt")
+    (repo / "broadcast-body-en.html").write_text("en")
+    monkeypatch.setattr(actor, "CODIGO_DO_REPO", str(tmp_path / "repo"))
+    # ponto de restauro do cwd: prepara_pasta faz o proprio os.chdir
+    monkeypatch.chdir(tmp_path)
+
+    pasta = actor.prepara_pasta(FakeApify(), "loja")
+
+    encenados = sorted(
+        p.name for p in (pasta / "ai-generated-messages").glob("broadcast-body*.html")
+    )
+    assert encenados == ["broadcast-body-en.html", "broadcast-body.html"]
