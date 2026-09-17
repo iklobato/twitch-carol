@@ -241,16 +241,16 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "<strong>Assuntos que mais monetizaram</strong>",
     },
     "weekly.topicRevenueLine": {
-        "en": "{name}: {usd} ({streams} live(s))",
-        "pt": "{name}: {usd} ({streams} live(s))",
+        "en": "{name}: {usd} · {streams} \U0001f534",
+        "pt": "{name}: {usd} · {streams} \U0001f534",
     },
     "weekly.topLive": {
         "en": "<strong>Your top live</strong>",
         "pt": "<strong>Sua live destaque</strong>",
     },
     "weekly.topLiveLine": {
-        "en": "{title}: {usd}, {messages} chat messages",
-        "pt": "{title}: {usd}, {messages} mensagens no chat",
+        "en": "{title}: {usd} · {messages} \U0001f4ac",
+        "pt": "{title}: {usd} · {messages} \U0001f4ac",
     },
     "weekly.sentiment": {
         "en": "<strong>Chat mood</strong>",
@@ -269,16 +269,16 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "majoritariamente negativo",
     },
     "weekly.sentimentLine": {
-        "en": "{label} this period ({messages} messages read)",
-        "pt": "{label} nesse período ({messages} mensagens lidas)",
+        "en": "{label} · {messages} \U0001f4ac",
+        "pt": "{label} · {messages} \U0001f4ac",
     },
     "weekly.engagedUsers": {
         "en": "<strong>Most engaged chatters</strong>",
         "pt": "<strong>Chatters mais engajados</strong>",
     },
     "weekly.engagedUserLine": {
-        "en": "{login}: {messages} messages in {streams} live(s), {usd} contributed",
-        "pt": "{login}: {messages} mensagens em {streams} live(s), {usd} contribuído",
+        "en": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
+        "pt": "{login}: {messages} \U0001f4ac · {streams} \U0001f534 · {usd} \U0001f4b0",
     },
     "weekly.insights": {
         "en": "<strong>Key takeaways</strong>",
