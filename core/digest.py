@@ -984,6 +984,22 @@ def _heat_cell(rank: int, total: int) -> str:
 _CALENDAR_EMPTY_SHADE = "#f0eef7"
 
 
+def _heat_legend(language: str) -> str:
+    """Less->more color key for the daily-revenue heat map, so the shade
+    steps aren't left for the reader to decode on their own."""
+    swatches = "".join(
+        f'<div style="width:10px;height:10px;border-radius:2px;background:{shade}">'
+        "</div>"
+        for shade in _HEAT_SHADES
+    )
+    return (
+        '<div style="display:flex;align-items:center;gap:4px;margin:0 0 14px;'
+        f'font-size:11px;color:#999">{t(language, "weekly.heatLegendLess")}'
+        f'<div style="display:flex;gap:2px">{swatches}</div>'
+        f'{t(language, "weekly.heatLegendMore")}</div>'
+    )
+
+
 def _daily_revenue_grid(digest: Digest) -> str:
     """A month-at-a-glance heat map, one cell per calendar day, darker for
     more revenue that day. Solid color buckets (_heat_shade_by_value), never
@@ -994,7 +1010,17 @@ def _daily_revenue_grid(digest: Digest) -> str:
     weeks = calendar.Calendar(firstweekday=0).monthdatescalendar(
         month_date.year, month_date.month
     )
-    rows = []
+    weekday_labels = t(digest.language, "weekly.dailyRevenueWeekdays").split(",")
+    header = (
+        '<div style="display:table-row">'
+        + "".join(
+            '<div style="display:table-cell;width:14%;padding:2px 2px 4px;'
+            f'text-align:center;font-size:10px;color:#999">{label}</div>'
+            for label in weekday_labels
+        )
+        + "</div>"
+    )
+    rows = [header]
     for week in weeks:
         cells = []
         for day in week:
@@ -1078,10 +1104,18 @@ def _topic_revenue_line(
 def _top_live_row(
     digest: Digest, top_live: DigestTopLive, metric: RecordMetric, rank: int, total: int
 ) -> tuple[str, str, str]:
-    title = (
+    raw_title = (
         escape(top_live.title)
         if top_live.title
         else t(digest.language, "weekly.untitledLive")
+    )
+    # Stream titles run much longer than every other _value_grid label (a
+    # login, a metric name); without a capped width they push the value and
+    # heat-cell columns off the card in email clients that honor overflow.
+    title = (
+        '<span style="display:inline-block;max-width:300px;overflow:hidden;'
+        f'text-overflow:ellipsis;white-space:nowrap;vertical-align:middle">'
+        f"{raw_title}</span>"
     )
     value = (
         top_live.revenue_usd
@@ -1357,9 +1391,10 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
         parts.append(_section_title(t(digest.language, "weekly.dailyRevenue")))
         parts.append(_daily_revenue_grid(digest))
         parts.append(
-            f'<p style="margin:0 0 14px;font-size:11px;color:#999">'
+            f'<p style="margin:2px 0 6px;font-size:11px;color:#999">'
             f'{t(digest.language, "weekly.dailyRevenueCaption")}</p>'
         )
+        parts.append(_heat_legend(digest.language))
 
     parts.append(
         f'<p style="margin:26px 0 18px;text-align:center">'

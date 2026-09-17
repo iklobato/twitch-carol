@@ -268,6 +268,12 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": "Darker = more revenue that day.",
         "pt": "Mais escuro = mais dinheiro naquele dia.",
     },
+    "weekly.dailyRevenueWeekdays": {
+        "en": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+        "pt": "Seg,Ter,Qua,Qui,Sex,Sáb,Dom",
+    },
+    "weekly.heatLegendLess": {"en": "Less", "pt": "Menos"},
+    "weekly.heatLegendMore": {"en": "More", "pt": "Mais"},
     "weekly.sentiment": {
         "en": "\U0001f321️ <strong>Chat mood</strong>",
         "pt": "\U0001f321️ <strong>Clima do chat</strong>",
