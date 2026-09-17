@@ -470,11 +470,42 @@ def _delta_label(digest: Digest, metric: RecordMetric) -> str:
     if delta is None:
         return ""
     key = "monthly.delta" if digest.period == DigestPeriod.MONTHLY else "weekly.delta"
-    return t(
+    text = t(
         digest.language,
         key,
         sign="+" if delta >= 0 else "",
         pct=format_number(delta, digest.language, decimals=1),
+    )
+    color, arrow = ("#0a8a3f", "▲") if delta >= 0 else ("#c0392b", "▼")
+    return f'<span style="color:{color};font-weight:600">{arrow}</span>{text}'
+
+
+# Emoji, not an image: every mail client renders these inline for free, no
+# attachment and no extra spam signal.
+_METRIC_ICON: dict[RecordMetric, str] = {
+    RecordMetric.MESSAGES: "\U0001f4ac",
+    RecordMetric.PEAK_VIEWERS: "\U0001f465",
+    RecordMetric.FOLLOWS: "❤️",
+    RecordMetric.REVENUE_USD: "\U0001f4b0",
+    RecordMetric.DURATION_MINUTES: "⏱️",
+}
+
+
+def _comparison_bar(current: float, previous: float) -> str:
+    """A two-line CSS bar (no image) showing this period against the last
+    one, right under a headline metric. Skipped when there is nothing to
+    compare against, same condition as _delta_label."""
+    if previous <= 0:
+        return ""
+    top = max(current, previous, 1.0)
+    current_pct = round(min(current, top) / top * 100)
+    previous_pct = round(min(previous, top) / top * 100)
+    return (
+        '<div style="margin-top:5px">'
+        f'<div style="background:#e4defa;border-radius:3px;height:5px;'
+        f'width:{previous_pct}%;margin-bottom:3px"></div>'
+        f'<div style="background:#7b3fe4;border-radius:3px;height:5px;'
+        f'width:{current_pct}%"></div></div>'
     )
 
 
@@ -549,17 +580,16 @@ def render_html(digest: Digest, dashboard_url: str, unsubscribe_url: str) -> str
     # label ("peak viewers: 320", not "320 of peak viewers").
     headline = [f"<strong>{live_count}</strong>"]
     for metric in HEADLINE_METRICS:
-        headline.append(
-            t(
-                digest.language,
-                "weekly.metricLine",
-                label=metric_label(metric, digest.language),
-                value=format_value(
-                    metric, digest.totals.metrics[metric], digest.language
-                ),
-                delta=_delta_label(digest, metric),
-            )
+        current = digest.totals.metrics[metric]
+        previous = digest.previous.metrics.get(metric, 0.0) if digest.previous else 0.0
+        line = t(
+            digest.language,
+            "weekly.metricLine",
+            label=f"{_METRIC_ICON.get(metric, '')} {metric_label(metric, digest.language)}",
+            value=format_value(metric, current, digest.language),
+            delta=_delta_label(digest, metric),
         )
+        headline.append(line + _comparison_bar(current, previous))
     headline.append(
         t(digest.language, "weekly.uniqueChatters")
         + f": <strong>{digest.totals.unique_chatters}</strong>"
