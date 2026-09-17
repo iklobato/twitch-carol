@@ -149,12 +149,13 @@ def test_previous_period_absent_when_there_was_none(db: Session) -> None:
 
 def test_moments_rank_by_score_and_carry_their_explanation(db: Session) -> None:
     channel = make_channel(db)
-    live = _live(db, channel, days_ago=9)
-    weak = add_peak(db, live, offset_seconds=60, score=2.0)
-    strong = add_peak(db, live, offset_seconds=3720, score=9.0)
+    first = _live(db, channel, days_ago=9)
+    second = _live(db, channel, days_ago=8)
+    weak = add_peak(db, first, offset_seconds=60, score=2.0)
+    strong = add_peak(db, second, offset_seconds=3720, score=9.0)
     add_insight(
         db,
-        live,
+        second,
         insight_type=InsightType.PEAK_EXPLANATION,
         content="O chat explodiu com a jogada.",
         evidence={"peak_id": strong.id},
@@ -167,6 +168,21 @@ def test_moments_rank_by_score_and_carry_their_explanation(db: Session) -> None:
     assert moments[0].explanation == "O chat explodiu com a jogada."
     assert moments[1].explanation is None
     assert weak.id != strong.id
+
+
+def test_moments_keep_only_the_loudest_peak_per_live(db: Session) -> None:
+    """A live's second, weaker peak would have made the old "top 5 peaks
+    overall" list; it must not also show up now that each live contributes
+    at most one moment."""
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_peak(db, live, offset_seconds=60, score=2.0)
+    add_peak(db, live, offset_seconds=120, score=9.0)
+
+    moments = _build_week(db, channel).moments
+
+    assert len(moments) == 1
+    assert moments[0].score == 9.0
 
 
 def test_top_topic_ranks_by_how_many_lives_mentioned_it(db: Session) -> None:
@@ -208,9 +224,12 @@ def test_topic_revenue_attributes_money_events_to_their_topic_window(
 
     assert digest.topic_revenue[0].name == "Deploy"
     assert digest.topic_revenue[0].estimated_usd == 5.0
+    assert digest.topic_revenue[0].offset_label == "5m10s"
+    assert digest.topic_revenue[0].stream_title == live.title
     html = render_html(digest, DASHBOARD, UNSUBSCRIBE)
     assert "Deploy" in html
     assert "US$ 5,00" in html
+    assert "5m10s" in html
 
 
 def test_content_revenue_groups_by_stream_category(db: Session) -> None:
@@ -223,7 +242,92 @@ def test_content_revenue_groups_by_stream_category(db: Session) -> None:
 
     assert digest.content_revenue[0].category == "Just Chatting"
     assert digest.content_revenue[0].estimated_usd == 10.0
-    assert "Just Chatting" in render_html(digest, DASHBOARD, UNSUBSCRIBE)
+
+
+def test_top_live_is_the_highest_revenue_stream_with_its_moment(db: Session) -> None:
+    channel = make_channel(db)
+    quiet = _live(db, channel, days_ago=9)
+    add_event(db, quiet, "channel.cheer", offset_seconds=60, amount=100)
+    add_chat(db, quiet, count=50)
+
+    top = _live(db, channel, days_ago=8)
+    add_event(db, top, "channel.cheer", offset_seconds=60, amount=2000)
+    add_chat(db, top, count=5)
+    peak = add_peak(db, top, offset_seconds=90, score=7.0)
+    add_insight(
+        db,
+        top,
+        insight_type=InsightType.PEAK_EXPLANATION,
+        content="Doou tudo.",
+        evidence={"peak_id": peak.id},
+    )
+
+    digest = _build_week(db, channel)
+
+    assert digest.top_live is not None
+    assert digest.top_live.stream_id == top.id
+    assert digest.top_live.revenue_usd == 20.0
+    assert digest.top_live.messages == 5
+    assert digest.top_live.moment is not None
+    assert digest.top_live.moment.explanation == "Doou tudo."
+
+
+def test_top_live_is_none_without_any_revenue(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_chat(db, live, count=5)
+
+    digest = _build_week(db, channel)
+
+    assert digest.top_live is None
+
+
+def test_period_sentiment_is_none_below_the_minimum_sample(db: Session) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_chat(db, live, count=5, text="great")
+
+    digest = _build_week(db, channel)
+
+    assert digest.sentiment is None
+
+
+def test_period_sentiment_labels_the_average_once_theres_enough_signal(
+    db: Session,
+) -> None:
+    channel = make_channel(db)
+    live = _live(db, channel, days_ago=9)
+    add_chat(db, live, count=25, text="great")
+
+    digest = _build_week(db, channel)
+
+    assert digest.sentiment is not None
+    assert digest.sentiment.label == "positive"
+    assert digest.sentiment.score == 0.8
+    assert digest.sentiment.messages == 25
+
+
+def test_engaged_users_rank_by_streams_then_messages_and_carry_their_usd(
+    db: Session,
+) -> None:
+    channel = make_channel(db)
+    first = _live(db, channel, days_ago=9)
+    second = _live(db, channel, days_ago=8)
+    add_chat(db, first, count=3, author="fiel")
+    add_chat(db, second, count=3, author="fiel")
+    cheer = add_event(db, first, "channel.cheer", offset_seconds=60, amount=500)
+    cheer.payload = {"user_login": "fiel"}
+    add_chat(db, first, count=10, author="so_uma_live")
+
+    engaged = _build_week(db, channel).engaged_users
+
+    assert engaged[0].login == "fiel"
+    assert engaged[0].streams_attended == 2
+    assert engaged[0].messages == 6
+    assert engaged[0].estimated_usd == 5.0
+    only_one_live = next(u for u in engaged if u.login == "so_uma_live")
+    assert only_one_live.streams_attended == 1
+    assert only_one_live.estimated_usd == 0.0
 
 
 def test_insights_are_absent_until_attached_then_render(db: Session) -> None:
@@ -270,7 +374,14 @@ def test_render_uses_sql_numbers_and_escapes_text(db: Session) -> None:
     live = _live(db, channel, days_ago=9, title="<script>alert(1)</script>")
     add_chat(db, live, count=7)
     add_event(db, live, event_type="channel.follow")
-    add_insight(db, live, content="Resumo & tal.")
+    peak = add_peak(db, live, offset_seconds=60, score=5.0)
+    add_insight(
+        db,
+        live,
+        insight_type=InsightType.PEAK_EXPLANATION,
+        content="Resumo & tal.",
+        evidence={"peak_id": peak.id},
+    )
 
     html = render_html(_build_week(db, channel), DASHBOARD, UNSUBSCRIBE)
 
