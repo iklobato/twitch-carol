@@ -16,13 +16,17 @@ from sqlalchemy.orm import Session
 import scripts.send_email_digests as sed
 from core.config import get_settings
 from core.digest import last_period_bounds
-from core.mailer import MailerError
+from core.mailer import MailerError, MailerUncertain
 from core.models import DigestPeriod, EmailDigestLog
 from tests.factories import add_event, make_channel, make_stream
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env", "resend_env")
 
-NOW = datetime(2026, 9, 15, 8, 0, tzinfo=UTC)  # 08:00 UTC = the default send hour
+# 08:00 UTC = the default send hour. Anchored to TODAY, not a fixed date:
+# make_stream places a live relative to the real clock, so a hardcoded date
+# silently walks out of the period window as the calendar moves and every
+# test here starts reporting "skipped (no lives)".
+NOW = datetime.now(UTC).replace(hour=8, minute=0, second=0, microsecond=0)
 
 
 class _FakeBackend:
@@ -206,6 +210,39 @@ def test_a_failed_send_releases_the_reservation_so_the_next_run_retries(
     )
     assert second[f"{channel.login}/weekly"] == "sent (msg_3)"
     assert mailer.sent_to == ["retry@example.com"]
+
+
+def test_a_send_with_no_answer_keeps_the_reservation_so_it_is_never_resent(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A timeout is not a failure: Resend may already hold the email. The
+    reservation stays so the next hourly run cannot send it a second time."""
+    channel = _channel_with_a_live_in_last_week(db, login="uncertain")
+    channel.email = "uncertain@example.com"
+    db.commit()
+
+    def _timeout(to: str, subject: str, html: str, unsubscribe_url: str) -> str:
+        raise MailerUncertain("resend did not answer")
+
+    monkeypatch.setattr(sed, "send_email", _timeout)
+
+    first = sed.run(
+        db, [DigestPeriod.WEEKLY], None, NOW, dry_run=False, to_override=None
+    )
+    assert first[f"{channel.login}/weekly"] == "uncertain (not retried)"
+    assert _log_count(db) == 1
+
+    reservation = db.scalar(select(EmailDigestLog))
+    assert reservation is not None
+    assert reservation.sent_at is None  # nothing is claimed as delivered
+
+    mailer = _FakeMailer("msg_dup")
+    monkeypatch.setattr(sed, "send_email", mailer)
+    second = sed.run(
+        db, [DigestPeriod.WEEKLY], None, NOW, dry_run=False, to_override=None
+    )
+    assert second[f"{channel.login}/weekly"] == "skipped (already sent)"
+    assert mailer.sent_to == []
 
 
 def test_a_channel_with_no_lives_in_the_period_is_skipped_without_reserving(

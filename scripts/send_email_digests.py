@@ -38,7 +38,7 @@ from core.digest import (
 from core.digest_insights import build_digest_facts, generate_digest_insights
 from core.llm import TokenBudget, get_llm_backend
 from core.logging_setup import setup_logging
-from core.mailer import MailerError, send_email
+from core.mailer import MailerError, MailerUncertain, send_email
 from core.models import Channel, DigestPeriod, EmailDigestLog
 
 logger = logging.getLogger(__name__)
@@ -122,6 +122,15 @@ def _send_one(
             db.rollback()
             return "skipped (no recipient)"
         message_id = send_email(to, digest_subject(digest), html, unsubscribe_url)
+    except MailerUncertain:
+        # Keep the reservation: Resend may already hold this digest, and the
+        # unique constraint is what stops the next hourly run resending it.
+        db.commit()
+        logger.exception(
+            "digest send outcome unknown, not retried",
+            extra={"login": channel.login, "period": period.value},
+        )
+        return "uncertain (not retried)"
     except MailerError:
         db.rollback()
         logger.exception(

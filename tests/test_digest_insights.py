@@ -317,7 +317,27 @@ def test_category_engagement_fact_flags_the_most_participative_category() -> Non
 
     facts = build_digest_facts(digest)
 
-    assert any("Just Chatting" in fact and "45%" in fact for fact in facts)
+    assert any(
+        "Just Chatting" in fact and "0.45 unique chatters per peak viewer" in fact
+        for fact in facts
+    )
+
+
+def test_category_engagement_fact_stays_readable_above_one_chatter_per_viewer() -> None:
+    """Unique chatters over a whole broadcast can outnumber the single-instant
+    peak, so the fact is a ratio per peak viewer, never a share of the audience
+    that would read as "136% of the audience chatted"."""
+    digest = _base_digest(
+        lives=(
+            _live("Just Chatting", chatters=136.0, peak_viewers=100.0, stream_id=1),
+            _live("Minecraft", chatters=20.0, peak_viewers=100.0, stream_id=2),
+        )
+    )
+
+    facts = build_digest_facts(digest)
+
+    assert any("1.36 unique chatters per peak viewer" in fact for fact in facts)
+    assert not any("%" in fact and "chatt" in fact for fact in facts)
 
 
 def test_category_engagement_fact_absent_with_only_one_category() -> None:
