@@ -30,6 +30,7 @@ flowchart TB
       WT[worker-transcribe]
       WA[worker-analyze]
       MIG[migrate<br/>PRE_DEPLOY]
+      DIG[send-digests<br/>SCHEDULED, de hora em hora]
     end
 
     subgraph data[Managed - estado]
@@ -41,6 +42,7 @@ flowchart TB
       TW[Twitch<br/>EventSub / Helix / IRC / OAuth]
       OR[OpenRouter<br/>LLM + Whisper]
       SE[Sentry]
+      RS[Resend<br/>envio de email]
     end
 
     subgraph obs[Observabilidade]
@@ -72,6 +74,9 @@ flowchart TB
     API --> WEB
 
     MIG -->|alembic upgrade| PG
+    DIG -->|le o periodo fechado| PG
+    DIG -->|insights citando fatos| OR
+    DIG -->|recap semanal / mensal| RS
     MON -->|probe HTTPS| API
     MON -->|grafana_ro read-only| PG
     API -.erros.-> SE
@@ -94,9 +99,10 @@ flowchart TB
 | 10 | **OpenRouter** | Externo (API) | Backend remoto de LLM e de transcricao | Audio (transcribe) / prompt + fatos SQL (analyze) | Texto transcrito / JSON de insights | Chamado por job |
 | 11 | **Sentry** | Externo (SaaS) | Captura de erros da api/workers | Excecoes instrumentadas | Nada (quota esgotada ate renovar) | Sempre ativo; sem entrega enquanto sem quota |
 | 12 | **migrate** | App Platform, PRE_DEPLOY job | Aplica migracoes antes de cada deploy | Scripts alembic + `DATABASE_URL` | Schema atualizado | **Inicia:** antes de todo deploy. **Termina:** sucesso -> deploy segue; falha -> deploy ERROR (funciona como canario) |
-| 13 | **Droplet de monitoramento** (`financialdata-monitoring`) | Droplet, compartilhado | Prometheus + Grafana + blackbox + alertas | Probe do site + leitura do PG via `grafana_ro` (read-only) | Dashboards e alertas | Sempre ativo |
-| 14 | **~~Valkey~~** (`financialdata-valkey`) | Managed, nyc1 | Fora de producao (fila e dedup foram pro PG) | Apenas chaves `sim:*` do simulador local | Nada em prod | Desativado em prod em 2026-07-16/17 |
-| 15 | **~~Droplet `stream-intel`~~** | (destruido) | Era o prod antigo (rsync + docker compose) | - | - | Destruido 2026-07-16; snapshot `stream-intel-pre-retire-20260716` guardado |
+| 13 | **send-digests** | App Platform, SCHEDULED job | Manda o recap semanal/mensal por email (`core/digest.py`) | Leitura do PG (lives, chat, eventos, recordes do periodo) + LLM pros insights | Email via Resend; linha em `email_digest_log` | **Inicia:** cron `0 * * * *` UTC. **Envia** so quando o relogio LOCAL do canal bate `DIGEST_SEND_HOUR` e ainda nao existe linha pra aquele canal+periodo+janela |
+| 14 | **Droplet de monitoramento** (`financialdata-monitoring`) | Droplet, compartilhado | Prometheus + Grafana + blackbox + alertas | Probe do site + leitura do PG via `grafana_ro` (read-only) | Dashboards e alertas | Sempre ativo. **Atencao:** o Grafana nao tem SMTP configurado, entao alerta dispara e nao chega em ninguem |
+| 15 | **~~Valkey~~** (`financialdata-valkey`) | Managed, nyc1 | Fora de producao (fila e dedup foram pro PG) | Apenas chaves `sim:*` do simulador local | Nada em prod | Desativado em prod em 2026-07-16/17 |
+| 16 | **~~Droplet `stream-intel`~~** | (destruido) | Era o prod antigo (rsync + docker compose) | - | - | Destruido 2026-07-16; snapshot `stream-intel-pre-retire-20260716` guardado |
 
 ## Idioma (duas coisas diferentes)
 
