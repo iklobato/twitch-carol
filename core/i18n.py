@@ -232,13 +232,99 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": " ({sign}{pct}% vs last week)",
         "pt": " ({sign}{pct}% vs semana passada)",
     },
+    "monthly.delta": {
+        "en": " ({sign}{pct}% vs last month)",
+        "pt": " ({sign}{pct}% vs mês passado)",
+    },
+    "weekly.topicRevenue": {
+        "en": "\U0001f4b0 <strong>Most-monetized topics</strong>",
+        "pt": "\U0001f4b0 <strong>Assuntos que mais monetizaram</strong>",
+    },
+    "weekly.topicRevenueLine": {
+        "en": "{name}: {usd} · {streams} \U0001f534 · {messages} \U0001f4ac",
+        "pt": "{name}: {usd} · {streams} \U0001f534 · {messages} \U0001f4ac",
+    },
+    "weekly.topLives": {
+        "en": "\U0001f3c6 <strong>Top lives</strong>",
+        "pt": "\U0001f3c6 <strong>Melhores lives</strong>",
+    },
+    "weekly.byRevenue": {"en": "By revenue", "pt": "Por dinheiro"},
+    "weekly.byMessages": {"en": "By messages", "pt": "Por mensagens"},
+    "weekly.topPayers": {"en": "Top payers", "pt": "Quem mais pagou"},
+    "weekly.moneyMoments": {
+        "en": "\U0001f4b0 <strong>Biggest single payments</strong>",
+        "pt": "\U0001f4b0 <strong>Maiores pagamentos</strong>",
+    },
+    "weekly.moneyMomentLine": {
+        "en": "{usd} \U0001f4b0 from {login}",
+        "pt": "{usd} \U0001f4b0 de {login}",
+    },
+    "weekly.anonymousContributor": {"en": "someone", "pt": "alguém"},
+    "weekly.dailyRevenue": {
+        "en": "\U0001f4c5 <strong>Revenue by day</strong>",
+        "pt": "\U0001f4c5 <strong>Dinheiro por dia</strong>",
+    },
+    "weekly.dailyRevenueCaption": {
+        "en": "Darker = more revenue that day.",
+        "pt": "Mais escuro = mais dinheiro naquele dia.",
+    },
+    "weekly.dailyRevenueWeekdays": {
+        "en": "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+        "pt": "Seg,Ter,Qua,Qui,Sex,Sáb,Dom",
+    },
+    "weekly.heatLegendLess": {"en": "Less", "pt": "Menos"},
+    "weekly.heatLegendMore": {"en": "More", "pt": "Mais"},
+    "weekly.sentiment": {
+        "en": "\U0001f321️ <strong>Chat mood</strong>",
+        "pt": "\U0001f321️ <strong>Clima do chat</strong>",
+    },
+    "weekly.sentimentPositive": {
+        "en": "mostly positive",
+        "pt": "majoritariamente positivo",
+    },
+    "weekly.sentimentNeutral": {
+        "en": "mostly neutral",
+        "pt": "majoritariamente neutro",
+    },
+    "weekly.sentimentNegative": {
+        "en": "mostly negative",
+        "pt": "majoritariamente negativo",
+    },
+    "weekly.sentimentLine": {
+        "en": "{label} · {messages} \U0001f4ac",
+        "pt": "{label} · {messages} \U0001f4ac",
+    },
+    "weekly.engagedUsers": {
+        "en": "\U0001f5e3️ <strong>Most engaged chatters</strong>",
+        "pt": "\U0001f5e3️ <strong>Chatters mais engajados</strong>",
+    },
+    "weekly.insightsKeep": {
+        "en": "✅ <strong>Keep doing this</strong>",
+        "pt": "✅ <strong>Continue fazendo isso</strong>",
+    },
+    "weekly.insightsStop": {
+        "en": "\U0001f6d1 <strong>Stop doing this</strong>",
+        "pt": "\U0001f6d1 <strong>Pare de fazer isso</strong>",
+    },
+    "weekly.insightsImprove": {
+        "en": "\U0001f4c8 <strong>Room to improve</strong>",
+        "pt": "\U0001f4c8 <strong>Dá pra melhorar</strong>",
+    },
+    "weekly.unsubscribe": {
+        "en": "Unsubscribe from this email",
+        "pt": "Cancelar inscrição neste email",
+    },
+    "digest.unsubscribed": {
+        "en": "Done: you won't receive this email anymore.",
+        "pt": "Feito: você não vai mais receber esse email.",
+    },
     "weekly.records": {
-        "en": "<strong>Records you broke:</strong> {broken}.",
-        "pt": "<strong>Recordes que você bateu:</strong> {broken}.",
+        "en": "<strong>Records you broke</strong>",
+        "pt": "<strong>Recordes que você bateu</strong>",
     },
     "weekly.moments": {
-        "en": "<strong>Best moments</strong>",
-        "pt": "<strong>Melhores momentos</strong>",
+        "en": "✨ <strong>Best moments</strong>",
+        "pt": "✨ <strong>Melhores momentos</strong>",
     },
     "weekly.momentIn": {"en": ' in "{title}"', "pt": ' em "{title}"'},
     "weekly.topTopic": {
@@ -250,14 +336,22 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "pt": "Também falou de: {rest}.",
     },
     "weekly.clips": {
-        "en": "<strong>Clips you saved</strong>",
-        "pt": "<strong>Clips que você guardou</strong>",
+        "en": "\U0001f3ac <strong>Clips you saved</strong>",
+        "pt": "\U0001f3ac <strong>Clips que você guardou</strong>",
     },
     "weekly.untitledClip": {"en": "untitled clip", "pt": "clip sem título"},
     "weekly.untitledLive": {"en": "No title", "pt": "Sem título"},
     "weekly.cta": {
         "en": "See everything in the dashboard",
         "pt": "Ver tudo no painel",
+    },
+    "weekly.subject": {
+        "en": "Your weekly StreamIntel recap",
+        "pt": "Seu resumo semanal do StreamIntel",
+    },
+    "monthly.subject": {
+        "en": "Your monthly StreamIntel recap",
+        "pt": "Seu resumo mensal do StreamIntel",
     },
 }
 

@@ -85,6 +85,16 @@ class Settings(BaseSettings):
     # Sentry error reporting. Empty DSN disables it (dev/tests never send).
     sentry_dsn: str = ""
     sentry_environment: str = "development"
+    # Weekly/monthly email digest (core.digest, scripts/send_email_digests.py).
+    resend_api_key: str = ""
+    # Must be a verified Resend sending domain, e.g. "StreamIntel <digest@notify.streamintel.cc>".
+    digest_from: str = ""
+    # Set only outside prod: sends every digest to this address instead of the
+    # channel's own, so dev/staging never emails a real streamer.
+    digest_recipient_override: str = ""
+    # Local hour (0-23) at which a channel's digest goes out, in the channel's
+    # own timezone. The sending script runs hourly and compares against this.
+    digest_send_hour: int = 8
 
 
 @lru_cache

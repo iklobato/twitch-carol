@@ -155,11 +155,13 @@ def _add_category_efficiency(
 
 
 # (message key, start hour, end hour); anything outside falls to the evening.
-_PERIODS = (("period.morning", 5, 12), ("period.afternoon", 12, 18))
+# Public: core.digest_insights reuses this lookup for the period-scoped
+# best-time-of-day fact, so the morning/afternoon boundary is defined once.
+PERIODS = (("period.morning", 5, 12), ("period.afternoon", 12, 18))
 
 
-def _period_key(hour: int) -> str:
-    for key, start, end in _PERIODS:
+def period_key(hour: int) -> str:
+    for key, start, end in PERIODS:
         if start <= hour < end:
             return key
     return "period.evening"
@@ -185,7 +187,7 @@ def _add_best_period(
     Needs 2+ paying slots to compare."""
     tz = _channel_tz(db, channel_id)
     seconds, groups = _hours_by(
-        streams, lambda s: _period_key(s.started_at.astimezone(tz).hour)
+        streams, lambda s: period_key(s.started_at.astimezone(tz).hour)
     )
     rates = _per_hour_rates(seconds, groups, per_stream)
     if len(rates) < 2:
