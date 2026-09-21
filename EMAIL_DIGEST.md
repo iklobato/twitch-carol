@@ -35,7 +35,7 @@ Sections, in render order:
 - Most engaged chatters and top payers.
 - **Keep / Stop / Improve insights**: an LLM-written takeaway per bucket,
   each required to cite a real numbered fact computed from the digest (never
-  invented — see "Insights" below).
+  invented, see "Insights" below).
 - Clips saved.
 - **Revenue by day**: a monthly-only calendar heat map, weekday header +
   color-scale legend, darker = more revenue.
@@ -71,7 +71,7 @@ Every round below was verified by a real Resend send to
 `tiktachack@gmail.com` from the `streamintel-dev` app
 (`3f70eb48-2543-4e97-a9ae-e008317dbbac`, `dev.streamintel.cc`), against
 `iklobat`'s real production-shaped data, followed by regenerating the
-identical HTML *inside the running container* and reading it directly — not
+identical HTML *inside the running container* and reading it directly, not
 just trusting the 200 OK from Resend.
 
 - **PR #85** (rankings + heat maps): confirmed Top lives (by revenue/by
@@ -169,7 +169,7 @@ Fastest kill switch, before any email has gone out, needs no deploy:
 
 - **Most-monetized topics** didn't render for `iklobat` this month: real
   data had zero money events attributable to any topic window. Pre-existing
-  gate (`if digest.topic_revenue:`), unaffected by this cycle's changes —
+  gate (`if digest.topic_revenue:`), unaffected by this cycle's changes:
   a data gap for this specific channel/period, not a code defect.
 - **Category-engagement fact could read above 100%**: fixed in PR #88, see
   "Production readiness" above.
