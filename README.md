@@ -159,11 +159,21 @@ Para a IA remota (prod): `LLM_BACKEND=openai`, `LLM_BASE_URL` + `LLM_API_KEY`
 com `TRANSCRIBE_BASE_URL/API_KEY/MODEL`. Em dev, o default é local (GGUF +
 faster-whisper), sem essas chaves.
 
+Para o recap por email (job `send-digests`): `RESEND_API_KEY` e `DIGEST_FROM`
+(remetente num domínio verificado no Resend). `DIGEST_SEND_HOUR` é a hora local
+de cada canal em que o email sai (default 8). `DIGEST_RECIPIENT_OVERRIDE` manda
+todo digest para um endereço só: é para dev não escrever para streamer de
+verdade, e **nunca deve ser definida em produção**.
+
 ## Deploy em produção (DigitalOcean App Platform)
 
 Produção roda 100% no App Platform (spec em `deploy/app.yaml`): os componentes
-`web`, `api`, `worker-capture`, `worker-transcribe`, `worker-analyze` e o job
-`migrate` (PRE_DEPLOY). Estado só no Postgres gerenciado (via pool PgBouncer) e
+`web`, `api`, `worker-capture`, `worker-transcribe`, `worker-analyze`, o job
+`migrate` (PRE_DEPLOY) e o job `send-digests` (SCHEDULED, de hora em hora).
+Atenção: um `git push` NÃO aplica o `deploy/app.yaml`, o App Platform roda o
+spec que ele já guarda; mudança de spec exige `doctl apps update --spec`, e o
+spec a aplicar sai do `doctl apps spec get`, nunca do arquivo do repo, cujos
+secrets são nomes sem valor e apagariam os de verdade. Estado só no Postgres gerenciado (via pool PgBouncer) e
 no Spaces; sem droplet e sem Valkey. A responsabilidade de cada peça está em
 [`ARCHITECTURE.md`](ARCHITECTURE.md), a fonte da verdade do que roda hoje.
 
