@@ -4,7 +4,7 @@ from typing import Any
 import httpx
 import pytest
 
-from core.mailer import MailerError, send_email
+from core.mailer import MailerError, MailerUncertain, send_email
 
 pytestmark = pytest.mark.usefixtures("resend_env")
 
@@ -44,6 +44,23 @@ def test_send_email_failure_raises() -> None:
         return httpx.Response(422, json={"message": "invalid from"})
 
     with pytest.raises(MailerError, match="422"):
+        send_email(
+            "streamer@example.com",
+            "Subject",
+            "<p>oi</p>",
+            "https://streamintel.cc/api/digest/unsubscribe?t=fake",
+            client=_mock_client(handler),
+        )
+
+
+def test_send_email_with_no_answer_raises_uncertain_not_a_plain_failure() -> None:
+    """The caller retries a MailerError and must NOT retry this one: Resend
+    may have accepted the email before the connection died."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("no answer", request=request)
+
+    with pytest.raises(MailerUncertain):
         send_email(
             "streamer@example.com",
             "Subject",

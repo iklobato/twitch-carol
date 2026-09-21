@@ -17,7 +17,14 @@ REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 class MailerError(Exception):
-    pass
+    """The send did NOT happen. Safe to try again."""
+
+
+class MailerUncertain(MailerError):
+    """The request left, but no answer came back (timeout, dropped
+    connection). Resend may or may not have accepted it, so the caller must
+    NOT send this digest again: a retry here is how one streamer gets the
+    same recap twice."""
 
 
 def _http(client: httpx.Client | None):
@@ -53,8 +60,11 @@ def send_email(
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         },
     }
-    with _http(client) as http:
-        response = http.post(RESEND_URL, headers=headers, json=payload)
+    try:
+        with _http(client) as http:
+            response = http.post(RESEND_URL, headers=headers, json=payload)
+    except httpx.RequestError as err:
+        raise MailerUncertain(f"Resend did not answer: {err!r}") from err
     if response.status_code >= 300:
         raise MailerError(f"Resend returned {response.status_code}")
     message_id = response.json().get("id")
