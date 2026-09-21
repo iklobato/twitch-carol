@@ -177,10 +177,13 @@ def _add_category_engagement_fact(digest: Digest, add: Callable[[str], None]) ->
     best, best_ratio = max(per_category.items(), key=lambda item: item[1])
     worst, worst_ratio = min(per_category.items(), key=lambda item: item[1])
     if worst_ratio > 0 and best_ratio >= worst_ratio * ENGAGEMENT_LIFT_MIN:
+        # Stated per peak viewer, not as a percentage of the audience: unique
+        # chatters over a whole broadcast can outnumber the single-instant
+        # peak, and "136% of the audience chatted" reads as a broken number.
         add(
-            f"In '{best}' lives, {best_ratio * 100:.0f}% of the peak audience "
-            f"chatted this period, {best_ratio / worst_ratio:.1f}x '{worst}' lives "
-            f"({worst_ratio * 100:.0f}%)."
+            f"In '{best}' lives, {best_ratio:.2f} unique chatters per peak "
+            f"viewer this period, {best_ratio / worst_ratio:.1f}x '{worst}' "
+            f"lives ({worst_ratio:.2f})."
         )
 
 
