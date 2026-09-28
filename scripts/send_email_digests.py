@@ -21,6 +21,7 @@ import argparse
 import logging
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,14 +30,17 @@ from core.config import get_settings
 from core.crypto import create_unsubscribe_token
 from core.db import session_factory
 from core.digest import (
+    Digest,
+    DigestInsight,
     build_last_period,
     channel_zone,
     digest_subject,
+    last_period_bounds,
     render_html,
     with_insights,
 )
 from core.digest_insights import build_digest_facts, generate_digest_insights
-from core.llm import TokenBudget, get_llm_backend
+from core.llm import LLMBackend, LLMError, TokenBudget, get_llm_backend
 from core.logging_setup import setup_logging
 from core.mailer import MailerError, MailerUncertain, send_email
 from core.models import Channel, DigestPeriod, EmailDigestLog
@@ -62,8 +66,32 @@ def _eligible_channels(
 
 
 def _due_now(channel: Channel, now: datetime, send_hour: int) -> bool:
-    """True once the channel's own local clock reaches the configured hour."""
-    return now.astimezone(channel_zone(channel)).hour == send_hour
+    """True once the channel's own local clock reaches the configured hour.
+
+    At or after, not only during, that hour: with an exact match, a scheduled
+    run that started late or failed skipped the channel for the whole period,
+    and a failed send was never retried. Re-sending is stopped by the
+    EmailDigestLog reservation, not by this check."""
+    return now.astimezone(channel_zone(channel)).hour >= send_hour
+
+
+def _already_reserved(
+    db: Session, channel: Channel, period: DigestPeriod, now: datetime
+) -> bool:
+    """Checked before building the digest, so the hourly runs after the send
+    hour do not rebuild every channel's digest just to hit the unique
+    constraint."""
+    start, _ = last_period_bounds(period, now, channel_zone(channel))
+    return (
+        db.scalar(
+            select(EmailDigestLog.id).where(
+                EmailDigestLog.channel_id == channel.id,
+                EmailDigestLog.period == period,
+                EmailDigestLog.period_start == start,
+            )
+        )
+        is not None
+    )
 
 
 def _reserve(
@@ -86,6 +114,24 @@ def _reserve(
 def _unsubscribe_url(base_url: str, channel_id: int, period: DigestPeriod) -> str:
     token = create_unsubscribe_token(channel_id)
     return f"{base_url}/api/digest/unsubscribe?t={token}&period={period.value}"
+
+
+def _insights_best_effort(
+    digest: Digest, backend: LLMBackend, budget: TokenBudget
+) -> list[DigestInsight]:
+    """The insights section is optional; the email is not. An LLM outage used
+    to escape _send_one and stop the whole run, and since each channel is only
+    due during one hour a day, every channel after it lost that period's
+    digest. Now the digest goes out without insights instead."""
+    try:
+        facts = build_digest_facts(digest)
+        return generate_digest_insights(digest, facts, backend, budget)
+    except (LLMError, httpx.HTTPError):
+        logger.exception(
+            "digest insights unavailable, sending without them",
+            extra={"login": digest.login},
+        )
+        return []
 
 
 def _send_one(
@@ -111,9 +157,7 @@ def _send_one(
         budget = TokenBudget(
             backend, settings.llm_max_input_tokens, settings.llm_max_output_tokens
         )
-        facts = build_digest_facts(digest)
-        insights = generate_digest_insights(digest, facts, backend, budget)
-        digest = with_insights(digest, insights)
+        digest = with_insights(digest, _insights_best_effort(digest, backend, budget))
 
         unsubscribe_url = _unsubscribe_url(settings.public_base_url, channel.id, period)
         html = render_html(digest, settings.public_base_url, unsubscribe_url)
@@ -160,6 +204,9 @@ def run(
             key = f"{channel.login}/{period.value}"
             if not _due_now(channel, now, settings.digest_send_hour):
                 results[key] = "not due yet"
+                continue
+            if _already_reserved(db, channel, period, now):
+                results[key] = "skipped (already sent)"
                 continue
             if dry_run:
                 digest = build_last_period(db, channel, period, now)

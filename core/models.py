@@ -169,7 +169,7 @@ class Follower(Base):
     account_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Streamer-only enrichment (affiliate/partner), from Get Channel Information.
-    stream_category: Mapped[str | None] = mapped_column(String(128))
+    stream_category: Mapped[str | None] = mapped_column(Text)
     stream_language: Mapped[str | None] = mapped_column(String(16))
     streamer_enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
@@ -321,7 +321,7 @@ class Stream(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     title: Mapped[str | None] = mapped_column(String(256))
-    category: Mapped[str | None] = mapped_column(String(128))
+    category: Mapped[str | None] = mapped_column(Text)
     status: Mapped[StreamStatus] = mapped_column(
         _enum(StreamStatus, "stream_status"), default=StreamStatus.CAPTURING
     )
@@ -460,7 +460,7 @@ class EmailDigestLog(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
     period: Mapped[DigestPeriod] = mapped_column(_enum(DigestPeriod, "digest_period"))
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))

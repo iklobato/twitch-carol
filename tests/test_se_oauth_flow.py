@@ -1,5 +1,6 @@
 """StreamElements OAuth: the connect callback and OAuth-aware tips sync."""
 
+import pytest
 from sqlalchemy.orm import Session
 
 import apps.api.integrations as integrations_module
@@ -9,6 +10,8 @@ from core.integrations.streamelements import SEToken
 from core.integrations.tips import set_streamelements_oauth, sync_streamelements_tips
 from tests.conftest import login_as
 from tests.factories import make_channel
+
+pytestmark = pytest.mark.usefixtures("fernet_key")
 
 CALLBACK = "/api/integrations/streamelements/callback"
 

@@ -84,6 +84,15 @@ def channels_due(db: Session, now: datetime) -> list[Channel]:
                     Channel.followers_synced_at < now - SYNC_INTERVAL,
                 )
             )
+            # A refused refresh token only comes back when the streamer signs in
+            # again (request_sync clears it). Retrying it here every cooldown hit
+            # Twitch's token endpoint 72 times in 18h for one channel in prod.
+            .where(
+                or_(
+                    Channel.follower_sync_error.is_(None),
+                    Channel.follower_sync_error.not_like(f"{TOKEN_ERROR_PREFIX}%"),
+                )
+            )
             .order_by(Channel.followers_synced_at.asc().nulls_first())
         )
     )
@@ -101,8 +110,13 @@ def needs_reconnect(channel: Channel) -> bool:
 
 
 def request_sync(channel: Channel) -> None:
-    """Put a channel at the front of the sync queue. The caller commits."""
+    """Put a channel at the front of the sync queue. The caller commits.
+
+    Called on login, which is also the one thing that fixes a refused token, so
+    the token error that kept the channel out of channels_due is cleared here."""
     channel.followers_synced_at = None
+    if needs_reconnect(channel):
+        channel.follower_sync_error = None
 
 
 def sync_channel(

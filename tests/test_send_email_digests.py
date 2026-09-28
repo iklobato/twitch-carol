@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 import scripts.send_email_digests as sed
 from core.config import get_settings
 from core.digest import last_period_bounds
+from core.llm import LLMError
 from core.mailer import MailerError, MailerUncertain
 from core.models import DigestPeriod, EmailDigestLog
 from tests.factories import add_event, make_channel, make_stream
@@ -80,7 +81,7 @@ def test_skips_a_channel_not_due_yet_by_its_own_local_hour(db: Session) -> None:
     channel = _channel_with_a_live_in_last_week(db, login="notdue")
     channel.email = "notdue@example.com"
 
-    off_hour = NOW.replace(hour=(get_settings().digest_send_hour + 1) % 24)
+    off_hour = NOW.replace(hour=get_settings().digest_send_hour - 1)
     results = sed.run(
         db, [DigestPeriod.WEEKLY], None, off_hour, dry_run=False, to_override=None
     )
@@ -257,3 +258,53 @@ def test_a_channel_with_no_lives_in_the_period_is_skipped_without_reserving(
 
     assert results[f"{channel.login}/weekly"] == "skipped (no lives)"
     assert _log_count(db) == 0
+
+
+def test_an_llm_outage_still_sends_every_channel_without_insights(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _channel_with_a_live_in_last_week(db, login="llm_a")
+    first.email = "a@example.com"
+    second = _channel_with_a_live_in_last_week(db, login="llm_b")
+    second.email = "b@example.com"
+    mailer = _FakeMailer("msg_llm")
+    monkeypatch.setattr(sed, "send_email", mailer)
+
+    def _llm_down(*args: object, **kwargs: object) -> list:
+        raise LLMError("LLM endpoint returned 503")
+
+    monkeypatch.setattr(sed, "generate_digest_insights", _llm_down)
+
+    results = sed.run(
+        db, [DigestPeriod.WEEKLY], None, NOW, dry_run=False, to_override=None
+    )
+
+    assert results["llm_a/weekly"] == "sent (msg_llm)"
+    assert results["llm_b/weekly"] == "sent (msg_llm)"
+    assert sorted(mailer.sent_to) == ["a@example.com", "b@example.com"]
+
+
+def test_a_run_that_starts_late_still_sends_once(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    channel = _channel_with_a_live_in_last_week(db, login="late")
+    channel.email = "late@example.com"
+    mailer = _FakeMailer("msg_late")
+    monkeypatch.setattr(sed, "send_email", mailer)
+    two_hours_late = NOW + timedelta(hours=2)
+
+    first = sed.run(
+        db, [DigestPeriod.WEEKLY], None, two_hours_late, dry_run=False, to_override=None
+    )
+    next_hour = sed.run(
+        db,
+        [DigestPeriod.WEEKLY],
+        None,
+        two_hours_late + timedelta(hours=1),
+        dry_run=False,
+        to_override=None,
+    )
+
+    assert first["late/weekly"] == "sent (msg_late)"
+    assert next_hour["late/weekly"] == "skipped (already sent)"
+    assert mailer.sent_to == ["late@example.com"]
