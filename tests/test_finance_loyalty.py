@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,8 @@ from core.integrations.tips import (
 from core.models import ExternalTip, LoyaltyEntry
 from tests.conftest import login_as
 from tests.factories import make_channel
+
+pytestmark = pytest.mark.usefixtures("fernet_key")
 
 WHEN = datetime(2026, 7, 1, tzinfo=UTC)
 

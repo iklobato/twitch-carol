@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,8 @@ from core.integrations.tips import (
 )
 from core.models import ExternalTip
 from tests.factories import make_channel
+
+pytestmark = pytest.mark.usefixtures("fernet_key")
 
 
 def _tip(external_id: str, amount: float) -> RemoteTip:
