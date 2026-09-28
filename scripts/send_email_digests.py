@@ -35,6 +35,7 @@ from core.digest import (
     build_last_period,
     channel_zone,
     digest_subject,
+    last_period_bounds,
     render_html,
     with_insights,
 )
@@ -65,8 +66,32 @@ def _eligible_channels(
 
 
 def _due_now(channel: Channel, now: datetime, send_hour: int) -> bool:
-    """True once the channel's own local clock reaches the configured hour."""
-    return now.astimezone(channel_zone(channel)).hour == send_hour
+    """True once the channel's own local clock reaches the configured hour.
+
+    At or after, not only during, that hour: with an exact match, a scheduled
+    run that started late or failed skipped the channel for the whole period,
+    and a failed send was never retried. Re-sending is stopped by the
+    EmailDigestLog reservation, not by this check."""
+    return now.astimezone(channel_zone(channel)).hour >= send_hour
+
+
+def _already_reserved(
+    db: Session, channel: Channel, period: DigestPeriod, now: datetime
+) -> bool:
+    """Checked before building the digest, so the hourly runs after the send
+    hour do not rebuild every channel's digest just to hit the unique
+    constraint."""
+    start, _ = last_period_bounds(period, now, channel_zone(channel))
+    return (
+        db.scalar(
+            select(EmailDigestLog.id).where(
+                EmailDigestLog.channel_id == channel.id,
+                EmailDigestLog.period == period,
+                EmailDigestLog.period_start == start,
+            )
+        )
+        is not None
+    )
 
 
 def _reserve(
@@ -179,6 +204,9 @@ def run(
             key = f"{channel.login}/{period.value}"
             if not _due_now(channel, now, settings.digest_send_hour):
                 results[key] = "not due yet"
+                continue
+            if _already_reserved(db, channel, period, now):
+                results[key] = "skipped (already sent)"
                 continue
             if dry_run:
                 digest = build_last_period(db, channel, period, now)

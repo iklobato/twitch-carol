@@ -460,7 +460,7 @@ class EmailDigestLog(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
     period: Mapped[DigestPeriod] = mapped_column(_enum(DigestPeriod, "digest_period"))
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
