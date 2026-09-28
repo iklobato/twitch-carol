@@ -106,8 +106,21 @@ def _post_token(
     with _http(client) as http:
         response = http.post(TOKEN_URL, data=payload)
     if response.status_code != 200:
-        raise TwitchAuthError(f"Twitch token endpoint returned {response.status_code}")
+        # Twitch's own reason ("Invalid refresh token", ...) is what tells a
+        # revoked grant apart from a bad client secret; the body carries no token.
+        raise TwitchAuthError(
+            f"Twitch token endpoint returned {response.status_code}: "
+            f"{_error_message(response)}"
+        )
     return TokenGrant.model_validate(response.json())
+
+
+def _error_message(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    return str(body.get("message", "")) if isinstance(body, dict) else ""
 
 
 def exchange_code(code: str, client: httpx.Client | None = None) -> TokenGrant:

@@ -18,6 +18,7 @@ from core.follower_sync import (
     enrich_followers,
     enrich_streamer_followers,
     needs_reconnect,
+    request_sync,
     sync_channel,
 )
 from core.models import Channel, Follower, Unfollow, UnfollowReason
@@ -543,6 +544,48 @@ def test_a_dead_refresh_token_is_recorded_not_raised(db) -> None:
     assert result.completed is False
     assert channel.follower_sync_error is not None
     assert "token" in channel.follower_sync_error
+
+
+def test_a_dead_token_channel_leaves_the_queue_until_the_streamer_logs_in(
+    db,
+) -> None:
+    dead = make_channel(db)
+    dead.followers_synced_at = None
+    dead.follower_sync_error = (
+        "token: TwitchAuthError: Twitch token endpoint returned 400"
+    )
+    other_error = make_channel(db)
+    other_error.followers_synced_at = None
+    other_error.follower_sync_error = "enrichment: DataError: boom"
+    db.flush()
+    now = datetime.now(UTC)
+
+    due_ids = {c.id for c in channels_due(db, now)}
+    assert dead.id not in due_ids
+    assert other_error.id in due_ids
+
+    request_sync(dead)
+    db.flush()
+
+    assert dead.follower_sync_error is None
+    assert dead.id in {c.id for c in channels_due(db, now)}
+
+
+def test_the_token_error_keeps_twitchs_reason(db) -> None:
+    channel = make_channel(db)
+    channel.refresh_token_encrypted = encrypt_secret("revogado")
+    channel.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400, json={"status": 400, "message": "Invalid refresh token"}
+        )
+
+    sync_channel(db, channel, _mock_client(handler), _no_sleep)
+
+    assert channel.follower_sync_error.endswith("400: Invalid refresh token")
+    assert needs_reconnect(channel) is True
 
 
 def test_a_failed_channel_is_not_attempted_again_immediately(db) -> None:
