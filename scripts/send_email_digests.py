@@ -21,6 +21,7 @@ import argparse
 import logging
 from datetime import UTC, datetime
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -29,6 +30,8 @@ from core.config import get_settings
 from core.crypto import create_unsubscribe_token
 from core.db import session_factory
 from core.digest import (
+    Digest,
+    DigestInsight,
     build_last_period,
     channel_zone,
     digest_subject,
@@ -36,7 +39,7 @@ from core.digest import (
     with_insights,
 )
 from core.digest_insights import build_digest_facts, generate_digest_insights
-from core.llm import TokenBudget, get_llm_backend
+from core.llm import LLMBackend, LLMError, TokenBudget, get_llm_backend
 from core.logging_setup import setup_logging
 from core.mailer import MailerError, MailerUncertain, send_email
 from core.models import Channel, DigestPeriod, EmailDigestLog
@@ -88,6 +91,24 @@ def _unsubscribe_url(base_url: str, channel_id: int, period: DigestPeriod) -> st
     return f"{base_url}/api/digest/unsubscribe?t={token}&period={period.value}"
 
 
+def _insights_best_effort(
+    digest: Digest, backend: LLMBackend, budget: TokenBudget
+) -> list[DigestInsight]:
+    """The insights section is optional; the email is not. An LLM outage used
+    to escape _send_one and stop the whole run, and since each channel is only
+    due during one hour a day, every channel after it lost that period's
+    digest. Now the digest goes out without insights instead."""
+    try:
+        facts = build_digest_facts(digest)
+        return generate_digest_insights(digest, facts, backend, budget)
+    except (LLMError, httpx.HTTPError):
+        logger.exception(
+            "digest insights unavailable, sending without them",
+            extra={"login": digest.login},
+        )
+        return []
+
+
 def _send_one(
     db: Session,
     channel: Channel,
@@ -111,9 +132,7 @@ def _send_one(
         budget = TokenBudget(
             backend, settings.llm_max_input_tokens, settings.llm_max_output_tokens
         )
-        facts = build_digest_facts(digest)
-        insights = generate_digest_insights(digest, facts, backend, budget)
-        digest = with_insights(digest, insights)
+        digest = with_insights(digest, _insights_best_effort(digest, backend, budget))
 
         unsubscribe_url = _unsubscribe_url(settings.public_base_url, channel.id, period)
         html = render_html(digest, settings.public_base_url, unsubscribe_url)

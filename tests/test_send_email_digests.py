@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 import scripts.send_email_digests as sed
 from core.config import get_settings
 from core.digest import last_period_bounds
+from core.llm import LLMError
 from core.mailer import MailerError, MailerUncertain
 from core.models import DigestPeriod, EmailDigestLog
 from tests.factories import add_event, make_channel, make_stream
@@ -257,3 +258,27 @@ def test_a_channel_with_no_lives_in_the_period_is_skipped_without_reserving(
 
     assert results[f"{channel.login}/weekly"] == "skipped (no lives)"
     assert _log_count(db) == 0
+
+
+def test_an_llm_outage_still_sends_every_channel_without_insights(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _channel_with_a_live_in_last_week(db, login="llm_a")
+    first.email = "a@example.com"
+    second = _channel_with_a_live_in_last_week(db, login="llm_b")
+    second.email = "b@example.com"
+    mailer = _FakeMailer("msg_llm")
+    monkeypatch.setattr(sed, "send_email", mailer)
+
+    def _llm_down(*args: object, **kwargs: object) -> list:
+        raise LLMError("LLM endpoint returned 503")
+
+    monkeypatch.setattr(sed, "generate_digest_insights", _llm_down)
+
+    results = sed.run(
+        db, [DigestPeriod.WEEKLY], None, NOW, dry_run=False, to_override=None
+    )
+
+    assert results["llm_a/weekly"] == "sent (msg_llm)"
+    assert results["llm_b/weekly"] == "sent (msg_llm)"
+    assert sorted(mailer.sent_to) == ["a@example.com", "b@example.com"]
