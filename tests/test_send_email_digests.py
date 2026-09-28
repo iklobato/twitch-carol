@@ -81,7 +81,7 @@ def test_skips_a_channel_not_due_yet_by_its_own_local_hour(db: Session) -> None:
     channel = _channel_with_a_live_in_last_week(db, login="notdue")
     channel.email = "notdue@example.com"
 
-    off_hour = NOW.replace(hour=(get_settings().digest_send_hour + 1) % 24)
+    off_hour = NOW.replace(hour=get_settings().digest_send_hour - 1)
     results = sed.run(
         db, [DigestPeriod.WEEKLY], None, off_hour, dry_run=False, to_override=None
     )
@@ -282,3 +282,29 @@ def test_an_llm_outage_still_sends_every_channel_without_insights(
     assert results["llm_a/weekly"] == "sent (msg_llm)"
     assert results["llm_b/weekly"] == "sent (msg_llm)"
     assert sorted(mailer.sent_to) == ["a@example.com", "b@example.com"]
+
+
+def test_a_run_that_starts_late_still_sends_once(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    channel = _channel_with_a_live_in_last_week(db, login="late")
+    channel.email = "late@example.com"
+    mailer = _FakeMailer("msg_late")
+    monkeypatch.setattr(sed, "send_email", mailer)
+    two_hours_late = NOW + timedelta(hours=2)
+
+    first = sed.run(
+        db, [DigestPeriod.WEEKLY], None, two_hours_late, dry_run=False, to_override=None
+    )
+    next_hour = sed.run(
+        db,
+        [DigestPeriod.WEEKLY],
+        None,
+        two_hours_late + timedelta(hours=1),
+        dry_run=False,
+        to_override=None,
+    )
+
+    assert first["late/weekly"] == "sent (msg_late)"
+    assert next_hour["late/weekly"] == "skipped (already sent)"
+    assert mailer.sent_to == ["late@example.com"]
