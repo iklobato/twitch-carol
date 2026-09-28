@@ -314,6 +314,14 @@ _MESSAGES: Final[dict[str, dict[str, str]]] = {
         "en": "Unsubscribe from this email",
         "pt": "Cancelar inscrição neste email",
     },
+    "digest.unsubscribeConfirm": {
+        "en": "Stop receiving this email?",
+        "pt": "Parar de receber esse email?",
+    },
+    "digest.unsubscribeButton": {
+        "en": "Unsubscribe",
+        "pt": "Cancelar inscrição",
+    },
     "digest.unsubscribed": {
         "en": "Done: you won't receive this email anymore.",
         "pt": "Feito: você não vai mais receber esse email.",
