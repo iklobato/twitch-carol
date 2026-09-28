@@ -4,6 +4,7 @@ import secrets
 import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from apps.api.deps import SESSION_COOKIE, DbSession
 from core.backfill import (
@@ -117,7 +118,7 @@ def _backfill_best_effort(db: DbSession, channel: Channel) -> None:
         try:
             count = step(db, channel)
             db.commit()
-        except (httpx.HTTPError, TwitchAuthError):
+        except (httpx.HTTPError, TwitchAuthError, SQLAlchemyError):
             db.rollback()
             logger.exception(
                 "backfill step %s failed", name, extra={"channel_id": channel.id}
