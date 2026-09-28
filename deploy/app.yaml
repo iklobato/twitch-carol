@@ -109,6 +109,15 @@ envs:
   - key: LLM_API_KEY # OpenRouter key sk-or-v1-... (preencher no dashboard/doctl)
     scope: RUN_TIME
     type: SECRET
+  # Envio do recap por email (job send-digests). DIGEST_RECIPIENT_OVERRIDE
+  # NAO entra aqui de proposito: em prod o email vai pro streamer, e essa
+  # variavel desviaria TODOS os envios pra um endereco so.
+  - key: DIGEST_FROM  # remetente verificado no Resend
+    scope: RUN_TIME
+    value: StreamIntel <digest@notify.streamintel.cc>
+  - key: RESEND_API_KEY
+    scope: RUN_TIME
+    type: SECRET
 
 # --- API (HTTP) ---
 services:
@@ -223,6 +232,23 @@ jobs:
       branch: main
     run_command: alembic upgrade head
     instance_size_slug: apps-s-1vcpu-0.5gb
+
+  # Recap semanal/mensal por email (core/digest.py). Roda de hora em hora
+  # porque cada canal envia no SEU fuso, às DIGEST_SEND_HOUR locais; quem
+  # impede envio repetido é a unique constraint de email_digest_log, não o
+  # cron. Nada é enviado enquanto RESEND_API_KEY e DIGEST_FROM não existirem.
+  - name: send-digests
+    kind: SCHEDULED
+    dockerfile_path: deploy/Dockerfile
+    source_dir: /
+    github:
+      repo: iklobato/twitch-carol
+      branch: main
+    run_command: python scripts/send_email_digests.py
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    schedule:
+      cron: "0 * * * *"
+      time_zone: UTC
 
 # --- Anexa o cluster Postgres EXISTENTE (só pra trusted sources / rede) ---
 # Não cria banco novo. A conexão real vem de DATABASE_URL (pool), acima.

@@ -45,6 +45,15 @@ def twitch_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     _clear_settings_caches()
 
 
+@pytest.fixture
+def resend_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("RESEND_API_KEY", "test-resend-key")
+    monkeypatch.setenv("DIGEST_FROM", "StreamIntel <digest@notify.streamintel.cc>")
+    _clear_settings_caches()
+    yield
+    _clear_settings_caches()
+
+
 class FakeValkey:
     """In-memory stand-in for the two Valkey operations the app uses."""
 

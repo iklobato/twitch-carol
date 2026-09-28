@@ -439,3 +439,25 @@ def test_login_with_invalid_code_fails(api_client, db, fake_twitch: FakeTwitch) 
     )
     assert callback.status_code == 502
     assert db.scalar(select(Channel).where(Channel.login == FAKE_USER["login"])) is None
+
+
+def test_login_captures_email_when_helix_grants_it(
+    api_client, db, fake_twitch: FakeTwitch
+) -> None:
+    fake_twitch.user["email"] = "streamer@example.com"
+
+    channel = _login(api_client, fake_twitch, db)
+
+    assert channel.email == "streamer@example.com"
+
+
+def test_relogin_without_email_scope_keeps_the_stored_one(
+    api_client, db, fake_twitch: FakeTwitch
+) -> None:
+    fake_twitch.user["email"] = "streamer@example.com"
+    channel = _login(api_client, fake_twitch, db)
+
+    del fake_twitch.user["email"]
+    channel = _login(api_client, fake_twitch, db)
+
+    assert channel.email == "streamer@example.com"

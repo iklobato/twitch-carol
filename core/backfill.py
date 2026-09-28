@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from core.channels import ensure_fresh_token
 from core.models import BitsLeader, Channel, Goal, PastBroadcast, Subscription, Vip
 from core.twitch import (
+    SubscriptionRecord,
     get_bits_leaderboard,
     get_goals,
     get_subscriptions,
@@ -130,15 +131,21 @@ def backfill_subscriptions(
     db: Session, channel: Channel, client: httpx.Client | None = None
 ) -> int:
     """Replace the current-subscriber snapshot from Helix. Affiliate-only, so
-    this stays empty until the channel monetizes. Returns the snapshot size."""
+    this stays empty until the channel monetizes. Returns the snapshot size.
+
+    Helix can list the same subscriber twice across pages (seen in production on
+    a 5-page list), and the table holds one row per user, so the first record for
+    each user wins."""
     token = ensure_fresh_token(db, channel, client)
-    records = get_subscriptions(channel.twitch_user_id, token, client)
+    records: dict[int, SubscriptionRecord] = {}
+    for record in get_subscriptions(channel.twitch_user_id, token, client):
+        records.setdefault(int(record.user_id), record)
     db.execute(delete(Subscription).where(Subscription.channel_id == channel.id))
-    for record in records:
+    for user_id, record in records.items():
         db.add(
             Subscription(
                 channel_id=channel.id,
-                twitch_user_id=int(record.user_id),
+                twitch_user_id=user_id,
                 login=record.user_login,
                 tier=record.tier,
                 is_gift=record.is_gift,

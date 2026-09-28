@@ -2,6 +2,7 @@
 best time to go live, growth, and recurring topics. All numbers from SQL."""
 
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from zoneinfo import available_timezones
 
@@ -699,6 +700,31 @@ def _topic_windows_by_stream(
     return windows
 
 
+def _topic_revenue(
+    events: Sequence[Event],
+    windows: dict[int, list[tuple[str, datetime, datetime]]],
+    limit: int = MONETIZING_TOPIC_LIMIT,
+) -> list[MonetizingTopic]:
+    """Money events attributed to the topic whose window they fall inside.
+    A stream's topic windows can overlap, so one event may count toward more
+    than one topic; that is existing, accepted behavior, not a bug here."""
+    topic_usd: dict[str, float] = defaultdict(float)
+    topic_streams: dict[str, set[int]] = defaultdict(set)
+    for event in events:
+        for name, start, end in windows.get(event.stream_id, []):
+            if start <= event.occurred_at < end:
+                topic_usd[name] += event_usd(event)
+                topic_streams[name].add(event.stream_id)
+    ranked = sorted(topic_usd.items(), key=lambda item: item[1], reverse=True)[:limit]
+    return [
+        MonetizingTopic(
+            name=name, estimated_usd=round(usd, 2), streams=len(topic_streams[name])
+        )
+        for name, usd in ranked
+        if usd > 0
+    ]
+
+
 def _channel_finance(
     db: DbSession, channel_id: int, ready_ids: list[int]
 ) -> ChannelFinance:
@@ -740,24 +766,8 @@ def _channel_finance(
         for login, usd in ranked
     ]
 
-    topic_usd: dict[str, float] = defaultdict(float)
-    topic_streams: dict[str, set[int]] = defaultdict(set)
     windows = _topic_windows_by_stream(db, ready_ids) if ready_ids else {}
-    for event in events:
-        for name, start, end in windows.get(event.stream_id, []):
-            if start <= event.occurred_at < end:
-                topic_usd[name] += event_usd(event)
-                topic_streams[name].add(event.stream_id)
-    monetizing = sorted(topic_usd.items(), key=lambda item: item[1], reverse=True)[
-        :MONETIZING_TOPIC_LIMIT
-    ]
-    top_topics = [
-        MonetizingTopic(
-            name=name, estimated_usd=round(usd, 2), streams=len(topic_streams[name])
-        )
-        for name, usd in monetizing
-        if usd > 0
-    ]
+    top_topics = _topic_revenue(events, windows)
 
     return ChannelFinance(
         total_estimated_usd=round(total, 2),
@@ -843,6 +853,9 @@ class PreferencesIn(BaseModel):
     # hour to go live, the per-day chatter counts and the monetization period,
     # all of which were computed in UTC for everyone until now.
     timezone: str | None = None
+    # Opt-out toggles for the weekly/monthly email digest (core.digest).
+    digest_weekly: bool | None = None
+    digest_monthly: bool | None = None
 
 
 def _validated_zone(zone: str) -> str:
@@ -875,6 +888,10 @@ def update_preferences(
         channel.language = _validated_language(body.screen_language, "screen_language")
     if body.timezone is not None:
         channel.timezone = _validated_zone(body.timezone)
+    if body.digest_weekly is not None:
+        channel.digest_weekly = body.digest_weekly
+    if body.digest_monthly is not None:
+        channel.digest_monthly = body.digest_monthly
     if channel.spoken_language and channel.onboarded_at is None:
         channel.onboarded_at = datetime.now(UTC)
     db.commit()

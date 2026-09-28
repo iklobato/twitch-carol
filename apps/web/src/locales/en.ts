@@ -21,6 +21,13 @@ export default {
   "settings.failed": "Could not save that. Try again.",
   "settings.timezone": "Times are shown in {zone}, read from your browser when you signed up.",
 
+  // digest email settings
+  "digest.title": "Email recap",
+  "digest.weekly": "Weekly recap by email",
+  "digest.monthly": "Monthly recap by email",
+  "digest.saved": "Saved.",
+  "digest.noEmail": "No email on file. Log in with Twitch again to grant email access.",
+
   // shell
   "app.loading": "Loading...",
   "app.search.placeholder": "Search chat and speech...",

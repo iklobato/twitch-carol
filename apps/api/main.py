@@ -10,6 +10,7 @@ from apps.api.clips import router as clips_router
 from apps.api.community import router as community_router
 from apps.api.dashboard import router as dashboard_router
 from apps.api.deps import CurrentChannel, CurrentSession, DbSession
+from apps.api.digest import router as digest_router
 from apps.api.eventsub import router as eventsub_router
 from apps.api.finance import router as finance_router
 from apps.api.followers import router as followers_router
@@ -35,6 +36,7 @@ app.include_router(followers_router)
 app.include_router(public_router)
 app.include_router(admin_router)
 app.include_router(marketing_router)
+app.include_router(digest_router)
 
 
 class Impersonation(BaseModel):
@@ -60,6 +62,11 @@ class MeResponse(BaseModel):
     is_admin: bool = False
     impersonating: Impersonation | None = None
     streamelements_connected: bool = False
+    # Populated only once the channel has granted user:read:email (re-login
+    # after the scope was added). What the settings section shows and edits.
+    email: str | None = None
+    digest_weekly: bool = True
+    digest_monthly: bool = True
 
 
 @app.get("/healthz")
@@ -89,4 +96,7 @@ def me(session: CurrentSession, channel: CurrentChannel, db: DbSession) -> MeRes
         is_admin=is_admin,
         impersonating=impersonating,
         streamelements_connected=channel.streamelements_account_id is not None,
+        email=channel.email,
+        digest_weekly=channel.digest_weekly,
+        digest_monthly=channel.digest_monthly,
     )

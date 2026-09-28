@@ -22,6 +22,14 @@ const pt: Record<keyof typeof en, string> = {
   "settings.failed": "N\u00e3o deu para salvar. Tente de novo.",
   "settings.timezone": "Os hor\u00e1rios aparecem em {zone}, lido do seu navegador no cadastro.",
 
+  // digest email settings
+  "digest.title": "Resumo por email",
+  "digest.weekly": "Resumo semanal por email",
+  "digest.monthly": "Resumo mensal por email",
+  "digest.saved": "Salvo.",
+  "digest.noEmail":
+    "Sem email cadastrado. Fa\u00e7a login de novo pela Twitch pra liberar o acesso ao email.",
+
   // shell
   "app.loading": "Carregando...",
   "app.search.placeholder": "Buscar no chat e na fala...",

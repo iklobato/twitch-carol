@@ -13,6 +13,11 @@ export type Me = {
   /** IANA zone every time on screen is rendered in. */
   timezone: string;
   impersonating: { as_login: string; admin_login: string } | null;
+  /** Captured from the Twitch login grant (user:read:email); null until the
+   * streamer re-logs in with that scope granted. */
+  email: string | null;
+  digest_weekly: boolean;
+  digest_monthly: boolean;
 };
 
 export type ChannelOption = { login: string; display_name: string };
