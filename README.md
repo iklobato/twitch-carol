@@ -11,6 +11,12 @@ A IA é plugável, trocada por env e não por código: **produção usa OpenRout
 (Whisper remoto + Claude Haiku/Sonnet), mas o mesmo pipeline roda **100% local**
 em dev (faster-whisper + llama.cpp em CPU, sem API paga).
 
+O produto é servido em **inglês**, e português é a exceção (navegador `pt*`).
+O que o streamer *fala* é outra coisa: ele declara na entrada e isso escolhe as
+stopwords e o léxico do chat, então uma live em português rende relatório em
+inglês sem estragar a leitura do chat. Os dois idiomas e por que não podem ser
+um só: [`ARCHITECTURE.md`](ARCHITECTURE.md#idioma-duas-coisas-diferentes).
+
 Produção de referência: https://streamintel.cc
 
 ## Arquitetura
@@ -27,7 +33,7 @@ workers/capture    IRC do chat, viewers, gravador HLS->Opus, auto-clip nos picos
 workers/transcribe VAD + Whisper (OpenRouter em prod, faster-whisper em dev)
 workers/analyze    picos por SQL + insights via LLM (OpenRouter/llama.cpp), evidência validada
 core               modelos, config, filas, crypto, cliente Twitch, métricas, recordes
-scripts            simulador de live, seed de estados, benchmark, backup, backfill de recordes
+scripts            simulador de live, seed, benchmark, backup, backfill, lotes da campanha
 deploy             Dockerfile, docker compose (dev + prod), Caddyfile
 ```
 
@@ -183,6 +189,24 @@ Deploy é git: **um push na branch dispara o deploy** de cada componente
 `alembic upgrade head`; se a migração falhar, o deploy vira ERROR e a versão
 atual continua no ar (funciona como canário). Não há passo manual de migração.
 
+**Código deploya por push; spec não.** Mudar `deploy/app.yaml` (rota, env,
+tamanho de instância) não muda nada em servidor nenhum até alguém rodar
+`doctl apps update <APP_ID> --spec deploy/app.yaml`, e são dois apps, cada um
+com o seu spec vivo. Foi assim que `/howto.html` respondeu 404 em produção desde
+que a página existe: a rota estava certa na api e faltava no ingress.
+
+E `doctl apps update` **reinicia o app inteiro**, workers junto. Se tiver live
+sendo capturada na hora, a captura volta sozinha (ela é restart-safe por
+desenho), mas o áudio que estava no buffer se perde, até uns 10 minutos. Antes
+de aplicar spec em prod, confira:
+
+```bash
+doctl apps logs <APP_ID> worker-capture --type run --tail 40
+```
+
+Linha de `audio segment stored` ou poll em `helix/streams?user_id=` nos últimos
+minutos significa live no ar: espere ela acabar.
+
 ```bash
 doctl apps list                          # acha o app (streamintel)
 doctl apps get <APP_ID>                  # status + ingress
@@ -230,11 +254,16 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
 - Benchmark de transcrição (dev): `docker compose ... exec worker-transcribe \
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
 - Convite beta por email: `python scripts/build_campaign_batches.py` divide a
-  lista bruta em `data/campaign/lote-1..5.csv` (lotes crescentes, contatos de
+  lista bruta em `data/campaign/lote-N.csv` (lotes crescentes, contatos de
   negócio primeiro e Microsoft por último, para aquecer o domínio remetente).
-  O disparo é manual pelo Resend, um lote por dia; o texto do email está em
-  `ai-generated-messages/`. A lista e os CSVs são dados pessoais: ficam fora do
-  git (`data/` e `emails*.txt` no `.gitignore`)
+  Cada linha sai como `email,language`: o idioma vem da coluna do arquivo de
+  origem, ou de `--language` para a lista inteira, e **lista sem idioma para o
+  script** em vez de assumir português. O texto do email está em
+  `ai-generated-messages/` (um corpo por idioma). A lista e os CSVs são dados
+  pessoais: ficam fora do git (`data/` e `emails*.txt` no `.gitignore`).
+  Quem dispara é o ator do Apify, que vive na branch `feat/campanha-beta` junto
+  com `send_campaign_batch.py`: ele ainda guarda a fila só com endereço, então
+  o envio em inglês continua bloqueado lá, não aqui
 
 ### Impersonar um cliente (suporte/debug)
 

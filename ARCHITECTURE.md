@@ -107,6 +107,23 @@ Um canal carrega **dois** idiomas, e confundi-los ja quebrou o produto uma vez:
 | `channels.language` | idioma da tela e do texto que o LLM escreve | fixado em **ingles** no cadastro (`SIGNUP_LANGUAGE`); canal antigo mantem `pt` |
 | `channels.spoken_language` | stopwords e lexico de sentimento do chat | **declarado pelo streamer** na tela de cadastro; a deteccao do Whisper so preenche quem ainda nao declarou |
 
+**O produto e servido em ingles, e portugues e a excecao.** Quem ainda nao fez
+login cai na regra do navegador, e ela e a mesma em todo lugar: navegador `pt*`
+le portugues, qualquer outro le ingles. Vale para o app (`resolveLang` em
+`apps/web/src/i18n.ts`), para a pagina de venda `/howto` (`DEFAULT_LANG` em
+`apps/api/marketing.py`) e para o default da coluna `channels.language`. Ate
+2026-08-13 a `/howto` e a coluna faziam o contrario, mandando quem chegava em
+espanhol ou frances para uma pagina em portugues e depois para um painel em
+ingles.
+
+A `/howto` e servida **pela api**, nao pelo site estatico: o App Platform nao
+resolve URL sem extensao. As duas grafias (`/howto` e `/howto.html`) estao
+listadas no ingress do `deploy/app.yaml` porque **rota casa por segmento de
+caminho, nao por prefixo de string**: enquanto so `/howto` estava la, a forma
+`.html` caia no 404 do site estatico, em producao, e nenhum teste via porque
+teste bate direto na api. A escolha do idioma da pagina: `?lang=` na URL, senao
+o cookie `howto_lang`, senao o idioma do canal logado, senao o navegador.
+
 O `broadcaster_language` da Twitch responde `en` para canal que fala portugues
 (medido no `iklobat`), e enquanto um campo so alimentava as duas coisas esse
 palpite nao trocava so a tela: mandava o Whisper transcrever audio em portugues
