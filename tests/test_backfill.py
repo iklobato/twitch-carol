@@ -191,6 +191,36 @@ def test_backfill_subscriptions_replaces_snapshot(db) -> None:
     assert total == 2
 
 
+def test_backfill_subscriptions_keeps_one_row_per_repeated_subscriber(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    pages = {
+        None: {
+            "data": [{"user_id": "7", "user_login": "sub_a", "tier": "1000"}],
+            "pagination": {"cursor": "page-2"},
+        },
+        "page-2": {
+            "data": [
+                {"user_id": "7", "user_login": "sub_a", "tier": "1000"},
+                {"user_id": "8", "user_login": "sub_b", "tier": "3000"},
+            ],
+            "pagination": {},
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=pages[request.url.params.get("after")])
+
+    added = backfill_subscriptions(db, channel, client=_mock_client(handler))
+    db.commit()
+
+    assert added == 2
+    logins = db.scalars(
+        select(Subscription.login).where(Subscription.channel_id == channel.id)
+    ).all()
+    assert sorted(logins) == ["sub_a", "sub_b"]
+
+
 def test_backfill_bits_leaders_replaces_snapshot(db) -> None:
     channel = make_channel(db)
     _with_fresh_token(db, channel)

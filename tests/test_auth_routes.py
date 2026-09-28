@@ -3,7 +3,10 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.api import auth
 from apps.api.main import app
+from core.models import Subscription, Vip
+from tests.factories import make_channel
 
 pytestmark = pytest.mark.usefixtures("fernet_key", "twitch_env")
 
@@ -59,3 +62,32 @@ def test_logout_clears_session(client: TestClient) -> None:
     assert response.status_code == 307
     set_cookie = response.headers["set-cookie"]
     assert 'session=""' in set_cookie
+
+
+def test_backfill_database_error_does_not_block_the_other_steps(
+    db, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    channel = make_channel(db)
+    db.commit()
+
+    def duplicate_subscribers(db, channel) -> int:
+        for _ in range(2):
+            db.add(Subscription(channel_id=channel.id, twitch_user_id=1, login="a"))
+        return 2
+
+    def one_vip(db, channel) -> int:
+        db.add(Vip(channel_id=channel.id, twitch_user_id=2, login="vip"))
+        return 1
+
+    monkeypatch.setattr(
+        auth,
+        "BACKFILL_STEPS",
+        (("subs", duplicate_subscribers), ("vips", one_vip)),
+    )
+
+    auth._backfill_best_effort(db, channel)
+
+    vips = db.query(Vip.login).filter_by(channel_id=channel.id).all()
+    assert [login for (login,) in vips] == ["vip"]
+    assert db.query(Subscription).filter_by(channel_id=channel.id).count() == 0
+    assert channel.followers_synced_at is None
