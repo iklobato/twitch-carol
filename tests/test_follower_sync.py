@@ -584,6 +584,7 @@ def test_the_token_error_keeps_twitchs_reason(db) -> None:
 
     sync_channel(db, channel, _mock_client(handler), _no_sleep)
 
+    assert channel.follower_sync_error is not None
     assert channel.follower_sync_error.endswith("400: Invalid refresh token")
     assert needs_reconnect(channel) is True
 
