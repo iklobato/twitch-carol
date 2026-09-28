@@ -215,3 +215,28 @@ def test_channel_update_sets_title_and_records_event(
     assert stream.category == "Just Chatting"
     recorded = db.scalars(select(Event).where(Event.stream_id == stream.id)).all()
     assert [e.type for e in recorded] == ["channel.update"]
+
+
+def test_channel_update_accepts_a_game_name_longer_than_128(
+    api_client, db, eventsub_env
+) -> None:
+    long_game_name = (
+        "BRAZILIAN DRUG DEALER BEFORE 4: DEMONS FROM THE PORTAL TO HELL I OPENED "
+        "ARE STILL IN THE FAVELA AND NOW I HAVE TO SAVE MAMADAS FROM RONALDO"
+    )
+    channel = make_channel(db)
+    stream = make_stream(db, channel, StreamStatus.CAPTURING, duration_minutes=None)
+
+    status = post_notification(
+        api_client,
+        "channel.update",
+        {
+            "broadcaster_user_id": str(channel.twitch_user_id),
+            "title": "t",
+            "category_name": long_game_name,
+        },
+    )
+
+    assert status == 204
+    db.refresh(stream)
+    assert stream.category == long_game_name

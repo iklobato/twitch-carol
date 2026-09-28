@@ -169,7 +169,7 @@ class Follower(Base):
     account_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Streamer-only enrichment (affiliate/partner), from Get Channel Information.
-    stream_category: Mapped[str | None] = mapped_column(String(128))
+    stream_category: Mapped[str | None] = mapped_column(Text)
     stream_language: Mapped[str | None] = mapped_column(String(16))
     streamer_enriched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
@@ -321,7 +321,7 @@ class Stream(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     title: Mapped[str | None] = mapped_column(String(256))
-    category: Mapped[str | None] = mapped_column(String(128))
+    category: Mapped[str | None] = mapped_column(Text)
     status: Mapped[StreamStatus] = mapped_column(
         _enum(StreamStatus, "stream_status"), default=StreamStatus.CAPTURING
     )

@@ -417,6 +417,45 @@ def test_enrich_streamer_followers_fills_category(db) -> None:
     assert enrich_streamer_followers(db, channel, _mock_client(handler), _no_sleep) == 0
 
 
+# A real Twitch game name seen in production on 2026-09-27 (139 characters).
+LONG_GAME_NAME = (
+    "BRAZILIAN DRUG DEALER BEFORE 4: DEMONS FROM THE PORTAL TO HELL I OPENED ARE "
+    "STILL IN THE FAVELA AND NOW I HAVE TO SAVE MAMADAS FROM RONALDO"
+)
+
+
+def test_enrich_streamer_followers_stores_a_game_name_longer_than_128(db) -> None:
+    channel = make_channel(db)
+    _with_fresh_token(db, channel)
+    streamer = add_follower(db, channel, "longgame", broadcaster_type="affiliate")
+    db.flush()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        app = _app_token(request)
+        if app is not None:
+            return app
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {
+                        "broadcaster_id": str(streamer.twitch_user_id),
+                        "broadcaster_language": "en",
+                        "game_name": LONG_GAME_NAME,
+                        "title": "live",
+                    }
+                ]
+            },
+        )
+
+    enriched = enrich_streamer_followers(db, channel, _mock_client(handler), _no_sleep)
+    db.commit()
+
+    assert enriched == 1
+    db.refresh(streamer)
+    assert streamer.stream_category == LONG_GAME_NAME
+
+
 def test_a_candidate_list_bigger_than_the_channel_is_refused_not_deleted(db) -> None:
     """Measured on dev on 2026-08-11: a database carrying another channel's
     followers produced 20,570 candidates for a channel Twitch reports 42 followers
