@@ -13,6 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
+import campaign_stats  # noqa: E402
 from campaign_stats import gate, load_batches, tally  # noqa: E402
 
 BATCHES = {f"lote-{n}": {f"pessoa{n}@exemplo.com"} for n in range(6, 11)}
@@ -160,6 +161,58 @@ def test_caixa_cheia_nao_conta_como_bounce_duro():
 
     assert counts["bounced"] == 2  # inexistente + sem tipo
     assert counts["bounced_temporario"] == 1
+
+
+def test_502_do_resend_e_repetido_e_o_portao_segue(monkeypatch):
+    """Em 16/10 um 502 no `GET /emails/{id}` derrubou o envio do dia. A chamada
+    so le, entao repetir e seguro."""
+    monkeypatch.setattr(campaign_stats.time, "sleep", lambda _: None)
+    falhas = {"id-inexistente": 2}
+
+    def resend_instavel(request: httpx.Request) -> httpx.Response:
+        email_id = request.url.path.rsplit("/", 1)[-1]
+        if falhas.get(email_id):
+            falhas[email_id] -= 1
+            return httpx.Response(502)
+        return resend_falso(request)
+
+    cliente = httpx.Client(transport=httpx.MockTransport(resend_instavel))
+
+    counts = tally("chave", BATCHES, client=cliente)["lote-8"]
+
+    assert falhas["id-inexistente"] == 0
+    assert counts["bounced"] == 2
+    assert counts["bounced_temporario"] == 1
+
+
+def test_resend_fora_do_ar_ainda_falha_depois_das_tentativas(monkeypatch):
+    monkeypatch.setattr(campaign_stats.time, "sleep", lambda _: None)
+    chamadas = []
+
+    def resend_fora(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request)
+        return httpx.Response(502)
+
+    cliente = httpx.Client(transport=httpx.MockTransport(resend_fora))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        tally("chave", BATCHES, client=cliente)
+    assert len(chamadas) == len(campaign_stats.RETRY_WAITS_SECONDS) + 1
+
+
+def test_erro_4xx_do_resend_nao_e_repetido(monkeypatch):
+    monkeypatch.setattr(campaign_stats.time, "sleep", lambda _: None)
+    chamadas = []
+
+    def chave_errada(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request)
+        return httpx.Response(401)
+
+    cliente = httpx.Client(transport=httpx.MockTransport(chave_errada))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        tally("chave", BATCHES, client=cliente)
+    assert len(chamadas) == 1
 
 
 TRILHAS = {

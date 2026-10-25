@@ -25,6 +25,7 @@ import argparse
 import collections
 import os
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -47,6 +48,25 @@ HARD_BOUNCE = "bounced"
 SOFT_BOUNCE = "bounced_temporario"
 BAD_EVENTS = (HARD_BOUNCE, "complained")
 OUTSIDE = "fora dos lotes"
+# Um 502 do Resend em 16/10 derrubou o envio do dia inteiro. As chamadas daqui so
+# leem, entao repetir e seguro; 4xx nao repete, porque e erro nosso.
+RETRY_WAITS_SECONDS = (2, 4)
+
+
+def _get(client: httpx.Client, url: str, **params) -> httpx.Response:
+    for wait in RETRY_WAITS_SECONDS:
+        try:
+            response = client.get(url, params=params or None)
+        except httpx.TransportError:
+            time.sleep(wait)
+            continue
+        if response.status_code < 500:
+            break
+        time.sleep(wait)
+    else:
+        response = client.get(url, params=params or None)
+    response.raise_for_status()
+    return response
 
 
 def fetch_emails(client: httpx.Client) -> list[dict]:
@@ -54,9 +74,7 @@ def fetch_emails(client: httpx.Client) -> list[dict]:
     after = None
     while True:
         params = {"limit": PAGE_SIZE} | ({"after": after} if after else {})
-        response = client.get(RESEND_EMAILS_URL, params=params)
-        response.raise_for_status()
-        page = response.json()
+        page = _get(client, RESEND_EMAILS_URL, **params).json()
         emails += page["data"]
         if not page.get("has_more") or not page["data"]:
             return emails
@@ -68,8 +86,7 @@ def classify_bounce(client: httpx.Client, email_id: str) -> str:
 
     Sem tipo o email conta como duro, que e o lado seguro: barrar atrasa um dia,
     liberar queima o dominio."""
-    response = client.get(f"{RESEND_EMAILS_URL}/{email_id}")
-    response.raise_for_status()
+    response = _get(client, f"{RESEND_EMAILS_URL}/{email_id}")
     tipo = (response.json().get("bounce") or {}).get("type")
     return SOFT_BOUNCE if tipo == "Transient" else HARD_BOUNCE
 
