@@ -120,6 +120,21 @@ declarou, divergencia vira aviso no log, nunca sobrescrita.
 decide os chatters por dia, o agrupamento por dia na lista de lives, o periodo
 que mais rende e o melhor dia da semana.
 
+## Funil da campanha de email (de onde veio o cadastro)
+
+O email frio da campanha (enviado por um actor do Apify, fora deste repo) linka
+para `/howto?ref=<lote>`. Tres passos ficam gravados, so com o nome do lote:
+
+| Passo | Onde | Grava |
+|---|---|---|
+| visita | `GET /howto?ref=` (`apps/api/marketing.py`) | linha `howto` em `campaign_clicks` + cookie `campaign_ref` (30 dias) |
+| clique em Connect | `GET /auth/login` (`apps/api/auth.py`) | linha `login` em `campaign_clicks`, se o cookie existir |
+| cadastro | `GET /auth/callback` -> `upsert_channel` | `channels.signup_ref`, **so em canal novo**; o cookie e apagado |
+
+Regras em `core/campaign.py`: ref fora de `lote-[a-z0-9-]{1,24}` e ignorado, e
+erro de banco ao contar nunca derruba a pagina nem o login. Sem IP, navegador ou
+email. A query do funil por lote esta no `CLAUDE.md`.
+
 ## Isolamento entre contas
 
 O produto e multi-tenant e o dado e do streamer. **Nenhum canal pode ler ou
