@@ -43,6 +43,9 @@ FROM = "Henrique <henrique@send.streamintel.cc>"
 # From e o Reply-To em dominios diferentes, coisa que filtro de spam nota.
 REPLY_TO = "henrique@send.streamintel.cc"
 BROADCAST_UNSUBSCRIBE_TOKEN = "{{{RESEND_UNSUBSCRIBE_URL}}}"
+# Trocado pelo nome do lote no link do /howto: a API conta visita, clique no
+# login e cadastro por lote, sem pixel no email.
+REF_TOKEN = "{{ref}}"
 BROADCAST_UNSUBSCRIBE_BLOCK = re.compile(
     r"\s*<p[^>]*>(?:(?!</p>).)*\{\{\{RESEND_UNSUBSCRIBE_URL\}\}\}(?:(?!</p>).)*</p>",
     re.DOTALL,
@@ -80,8 +83,24 @@ def body_for_api(html: str) -> str:
     return stripped
 
 
+# Ponto so vale entre caracteres: `nome..x`, `.nome` ou `nome.` sao invalidos.
+# O colhedor extrai email assim de bio ("aninha....@") e o /emails/batch do
+# Resend recusa a chamada INTEIRA com 422 se um endereco for invalido, derrubando
+# os 100 do bloco. O padrao do colhedor (`[a-z0-9._%+-]+`) aceita ponto duplo; a
+# guarda mora aqui, no unico ponto por onde todo envio passa.
+_EMAIL_VALIDO = re.compile(
+    r"[a-z0-9!#$%&'*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*"
+    r"@[a-z0-9-]+(\.[a-z0-9-]+)+",
+    re.IGNORECASE,
+)
+
+
+def email_valido(email: str) -> bool:
+    return bool(_EMAIL_VALIDO.fullmatch((email or "").strip()))
+
+
 def build_payloads(
-    destinatarios: list[tuple[str, str]], corpos: dict[str, str]
+    destinatarios: list[tuple[str, str]], corpos: dict[str, str], lote: str
 ) -> list[dict]:
     return [
         {
@@ -89,7 +108,7 @@ def build_payloads(
             "to": [email],
             "reply_to": REPLY_TO,
             "subject": SUBJECT[idioma],
-            "html": corpos[idioma],
+            "html": corpos[idioma].replace(REF_TOKEN, lote),
             "headers": {"List-Unsubscribe": f"<{UNSUBSCRIBE_MAILTO[idioma]}>"},
         }
         for email, idioma in destinatarios
@@ -121,7 +140,7 @@ def main() -> int:
     if faltando:
         raise ValueError(f"sem corpo de email para: {', '.join(faltando)}")
     corpos = {i: body_for_api(BODY_HTML[i].read_text()) for i in idiomas}
-    payloads = build_payloads(destinatarios, corpos)
+    payloads = build_payloads(destinatarios, corpos, args.batch)
     print(
         f"{args.batch}: {len(destinatarios)} destinatarios | idiomas: {'/'.join(idiomas)}"
     )

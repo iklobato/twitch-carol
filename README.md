@@ -209,133 +209,136 @@ Restauração: baixe o `.sql.gz` do Spaces e aplique com `psql` na URL do banco
   python scripts/benchmark_transcription.py --audio /data/sim/arquivo.wav`
 ### Prospecção e convite beta
 
-Achar streamer, confirmar o tamanho do canal e convidar por email. Nada disso
-toca produção. Roda em dois lugares: na mão nesta máquina, e num actor no Apify
-(`.actor/`) com duas schedules, colheita todo dia 03h e envio de segunda a sexta
-10h.
+Achar streamer com email público na bio, confirmar o tamanho do canal e convidar
+por email frio. Nada disso roda no produto. Tudo roda num **actor do Apify**
+(`streamintel-campanha`, id `QonxRkaUpM4tcPsWs`), que é este mesmo código: ele
+baixa o estado de um Key-Value Store (`streamintel-campanha`, id
+`uvXvn4Kyy4XIL2gAW`) para um diretório temporário, roda os scripts e sobe o
+resultado de volta.
 
-O actor é o mesmo código deste repo: ele baixa o estado de um Key-Value Store
-para um diretório temporário, entra nele (os caminhos do script são relativos) e
-sobe o resultado de volta. Nenhuma função do `prospect_leads.py` foi alterada
-para isso.
+#### Como funciona hoje (2026-10-25)
+
+| Peça | O que faz |
+|---|---|
+| `colher` | todo dia 03:00 `America/Sao_Paulo` (06:00 UTC). `sweep` grátis da Helix (quem está ao vivo em pt e en) + busca paga no Google (`harvest`, só se o freio de gasto deixar) + `qualify` (faixa de seguidores, idioma, MX). Quem passa entra na `fila` como par `(email, idioma)`. |
+| `enviar` | segunda a sexta 10:00 `America/Sao_Paulo` (13:00 UTC). Uma trilha por idioma: `lote-N` é pt, `lote-en-N` é en. Cada trilha passa pelo portão e manda até `maximo_por_dia` (160). Grava o progresso a cada bloco de 100. |
+| portão (`scripts/campaign_stats.py`) | lê a entrega de cada endereço na API do Resend. Barra o lote se: já saiu; o lote anterior da trilha não saiu; tem **qualquer** spam na janela; bounce duro >= 3% numa janela de pelo menos 200 enviados da mesma trilha. Abaixo de 200 não decide por bounce. Caixa cheia (`Transient`) não conta como bounce duro. Repete 3 vezes em erro 5xx/timeout do Resend. |
+| email | `ai-generated-messages/broadcast-body.html` (pt) e `broadcast-body-en.html` (en), do `henrique@send.streamintel.cc`. O link é `https://streamintel.cc/howto?ref=<lote>`: o produto conta visita, clique no Connect e cadastro por lote (tabela `campaign_clicks` e `channels.signup_ref`, ver `CLAUDE.md` da `dev`). Sem pixel de abertura, de propósito. |
+| estado no KV | `fila`, `contatados`, `historico`, `candidatos`, `seguidores`, `estado`. A fonte da verdade sobre o que saiu é **sempre a API do Resend**, nunca o `historico`. |
+
+Entradas dos agendamentos (leia na API antes de confiar, elas mudam):
+
+- colher: `{"acao": "colher", "teto_usd": 0, "paginas": 3, "paginas_sweep": 400, "idiomas": "pt,en"}`.
+  `teto_usd: 0` desliga a busca paga (decidido em 2026-10-25, a fila en tinha ~8
+  semanas). Para religar, volte para 25. O freio compara com o gasto da **conta
+  inteira** do Apify no mês, não só da campanha.
+- enviar: `{"acao": "enviar", "comecar_em": "2026-08-04", "maximo_por_dia": 160, "minimo_por_dia": 30}`.
+  O schema limita `minimo_por_dia` a 200.
+
+#### Publicar o actor
+
+Push no git **não** deploya. Da raiz deste worktree:
 
 ```bash
-cd .actor && npx apify-cli push        # publica; precisa de --registry publico nesta maquina
+APIFY_USER_TOKEN="$APIFY_TOKEN" python publish_actor.py
 ```
 
-Segredos ficam no ambiente do actor (Twitch, Resend, e um token de conta do
-Apify, porque o token do run não cria loja nomeada nem lê o consumo do mês). O
-teto de gasto é input do actor: ele lê quanto já foi gasto no mês, divide o que
-sobra pelos **dias** que faltam e converte em número de buscas. Dividir por
-semana estouraria o mês em uma rodada, porque a colheita é diária.
+Ele faz `PUT /v2/acts/QonxRkaUpM4tcPsWs/versions/0.1` com a lista **completa** de
+13 arquivos que o `.actor/Dockerfile` copia e depois o build. Regras que já
+custaram envio:
+
+- O PUT de `sourceFiles` **substitui tudo**. Mandar só `.actor/` gera build verde
+  com imagem sem `scripts/` (2026-08-28). Por isso a lista é fixa no script.
+- O script omite `envVars`, o que preserva os 4 segredos (`TWITCH_CLIENT_ID`,
+  `TWITCH_CLIENT_SECRET`, `APIFY_USER_TOKEN`, `RESEND_API_KEY`). Reenviar o que a
+  leitura devolve dá 400. Segredo é assado na imagem: trocou a chave, refaça o build.
+- **Antes** de publicar, compare os `sourceFiles` no ar com o worktree e confirme
+  que só os arquivos que você mudou diferem. Guarde a versão no ar para voltar.
+- Build verde não prova que a imagem importa. Não existe run de fumaça que não
+  mande email (o schema limita `minimo_por_dia` a 200 e a fila tem milhares).
+  O que dá para fazer: montar a pasta como o Dockerfile monta e importar
+  `main`, `campaign_stats` e `send_campaign_batch` localmente.
+
+Rodar na mão, local (precisa dos CSVs em `data/campaign/`, fora do git):
 
 ```bash
-python scripts/prospect_leads.py sweep --idiomas pt,en     # quem está ao vivo agora (grátis)
-APIFY_TOKEN=... python scripts/prospect_leads.py harvest --skip 798   # Google, pago por busca
+python scripts/prospect_leads.py sweep --idiomas pt,en
+APIFY_TOKEN=... python scripts/prospect_leads.py harvest --skip 798
 python scripts/prospect_leads.py qualify --min-seguidores 500 --max-seguidores 100000000
-python scripts/prospect_leads.py batches --start 11        # divide nos lotes da rampa
-```
-
-`sweep` e `harvest` só juntam candidatos em `data/campaign/candidates.csv`;
-quem decide é o `qualify`, porque o tamanho do canal só existe na Helix
-(`/helix/channels/followers` devolve o total de qualquer canal com app token).
-Ele mantém quem está na faixa de seguidores pedida (`--min-seguidores` /
-`--max-seguidores`, e `--sem-partner` para excluir parceiro), com canal no idioma
-pedido, email de domínio que responde MX, e que ainda não está em nenhum
-`lote-*.csv`. Sai em `data/campaign/leads.csv`, com a coluna `language`.
-
-**O `--idiomas` do `qualify` continua `pt` por padrão, de propósito.** A coleta
-varre inglês porque é grátis, mas mandar português para canal em inglês vira
-reclamação de spam, que é o único número que o portão trata como fatal. Medido em
-2026-07-29: 4.417 leads em inglês contra 198 em português esperando na base.
-
-O corpo em inglês já existe (`ai-generated-messages/broadcast-body-en.html`) e o
-`send_campaign_batch.py` sabe escolher o corpo por idioma, mas **a trilha inglesa
-continua fechada nas duas pontas**: a imagem do actor carrega só o corpo em
-português, e ele recusa a entrada que pedir outro idioma em vez de mandar o texto
-errado. Antes de abrir, falta a fase que importa, o léxico e as stopwords por
-idioma em `core/text.py`: sem isso o convite promete uma análise que devolve
-`the`/`you` como assuntos da live e reação de chat vazia.
-
-Duas coisas gravadas em tempo de execução para não perder trabalho quando algo
-falha no meio:
-
-- `data/campaign/coleta-parcial.csv` é o diário da busca no Google. Cada consulta
-  é paga, e o `candidates.csv` só era escrito no fim: um erro depois de 2.000
-  buscas jogava ~USD 5 no lixo. Agora o resultado vai para o diário conforme
-  chega, e ele é consumido e apagado quando a coleta fecha. Se sobrar, a próxima
-  coleta o recolhe.
-- `data/campaign/seguidores.csv` guarda a contagem de seguidores por 7 dias, que
-  é a etapa mais lenta (uma chamada por canal). Erro no meio não faz repetir 6.000
-  chamadas, e a qualificação diária passa a custar só os canais novos.
-
-Também importa que a qualificação **não morre** por um erro transitório da Twitch:
-um `500` em 6.071 chamadas derrubou duas rodadas em 2026-07-29. Agora ela insiste
-3 vezes, pula o canal se a Twitch continuar fora, e diz quantos pulou.
-
-As duas fontes se completam: `sweep` vê só quem está transmitindo naquele
-instante, `harvest` alcança canal offline pelo que o Google indexou. Buscar no
-Google é a mesma coisa que o actor pago da Apify fazia, direto pelo proxy de
-busca e sem o aluguel.
-
-Envio, um lote por dia, sempre com `--dry-run` antes:
-
-```bash
 RESEND_API_KEY=... python scripts/send_campaign_batch.py lote-6 --dry-run
-RESEND_API_KEY=... python scripts/campaign_stats.py   # entrega e bounce por lote
+RESEND_API_KEY=... python scripts/campaign_stats.py            # entrega por lote
+RESEND_API_KEY=... python scripts/campaign_stats.py --portao lote-24
 ```
 
-O `campaign_stats.py` é o portão: lê a entrega de cada endereço na API do Resend
-e cruza com os CSVs dos lotes. Não mostra abertura porque o rastreamento está
-desligado no domínio de propósito (o porquê está no doc da campanha).
+#### Números (medidos em 2026-10-24, fontes: API do Apify, KV, Resend, banco de produção)
 
-**O envio roda só no actor do Apify.** O droplet `lekture-sfu`, que disparava os
-lotes por systemd timer, foi destruído em 2026-08-03 depois de chegar ao lote-10.
-`deploy/campanha/` continua no repo como histórico, mas não há mais droplet para
-instalar: rodar `instalar.sh` hoje não serve para nada.
+- `contatados`: 5.333. `fila`: 7.189 (6.591 en, 598 pt). `candidatos`: 799 mil.
+- Desde 2026-09-16: 3.350 emails (3.030 en em `lote-en-1` a `lote-en-20`, 320 pt
+  em `lote-22` e `lote-23`). Antes disso, `lote-10` a `lote-21` em pt (julho e agosto).
+- Resend, campanha, de 2026-09-28 a 2026-10-24: 2.080 enviados, 28 bounce (1,35%),
+  1 suppressed, **0 spam**.
+- Trilha pt **barrada** desde 2026-10-15: `PORTAO BLOQUEADO: janela de 320 enviados
+  com bounce 28.1%`. A colheita pt recente traz caixa gmail que não existe (22 de
+  25 bounces do `lote-22`). Trilha en passa: `janela de 320 enviados com bounce 1.6%`.
+- Conversão: 3 cadastros provados (email enviado antes do cadastro) em ~3.140
+  enviados desde 16/09, **~0,1%**. Em agosto, no pt, era 0,42% (5 em 1.192).
+  Convertidos tinham 6,6 mil a 13 mil seguidores (amostra pequena).
+- Quem cadastra fica: dos 19 canais criados desde 01/08, 14 tiveram live capturada
+  em outubro. O problema é trazer, não segurar.
+- Custo Apify: US$ 27,62 (ciclo 25/08 a 24/09) e US$ 29,05 (25/09 a 24/10). A
+  busca no Google (`PROXY_SERPS`) foi US$ 12,87 desse último e **não aparece no
+  custo do run**, só no uso da conta.
 
-O actor tem dois modos e duas schedules: `colher` todo dia às 03h (sweep grátis +
-busca paga dentro do teto) e `enviar` de segunda a sexta às 10h, até
-`maximo_por_dia` da entrada. O envio tem três freios: não manda antes de
-`comecar_em`, não manda com fila abaixo de 30, e não manda se o portão barrar. Ele
-grava o progresso a cada bloco de 100, então container que morre no meio não
-reenvia para quem já recebeu.
+#### Armadilhas descobertas (todas medidas)
 
-O portão confere entrega, nunca tamanho de lote. Quem segura a rampa (no máximo
-+33% por degrau) é o `maximo_por_dia`, e ele tem de sair do último lote que saiu
-**de verdade**, não do que o plano previa.
+- **Teto da conta Apify para tudo sem aviso.** Em 2026-10-17 a conta bateu US$
+  29.05 contra o teto de 29: o run da colheita foi abortado, os agendamentos
+  pararam de disparar sem log nenhum e nada saiu até o ciclo virar. O teto agora
+  é US$ 40 (2026-10-25). O ciclo vai do dia 25 ao 24.
+- **Um 502 do Resend derrubava o dia.** Em 2026-10-16 `classify_bounce` levou
+  `502 Bad Gateway` e o envio inteiro falhou. Corrigido com retry (commit `7c8f886`).
+- **A trilha pt nunca volta sozinha.** A listagem do Resend guarda uns 27 dias.
+  Quando o `lote-23` sumir dela, o portão vai responder `lote-23 nao foi enviado,
+  nao pulo a fila` e barrar o pt para sempre. O mesmo vale para a trilha en se
+  ela ficar mais de ~4 semanas parada. Destravar exige decisão (ver abaixo).
+- **`estado.proximo_lote` diz 22**, mas o histórico já tem `lote-23`. O `enviar`
+  deriva o número do `historico`, não desse campo; não confie nele.
+- **O email prometia "read-only"** e o app pede `clips:edit` e faz clip sozinho.
+  Corrigido no email (commit `41c8336`) e no `/howto`/landing (PR #100).
+- Mais antigas, ainda valendo: o Resend recusa o `/emails/batch` inteiro (422) se
+  um endereço for inválido, por isso `email_valido()` filtra ponto duplo; a
+  verificação de caixa por SMTP não roda em lugar nenhum porque a DigitalOcean
+  bloqueia as portas 25 e 587 de saída; `deploy/campanha/` é histórico do droplet
+  destruído em 2026-08-03.
 
-Duas armadilhas do Apify que custam um envio inteiro:
+#### Feito nos últimos dois meses
 
-- **Variável de ambiente é assada na imagem.** Trocar um segredo (por exemplo
-  girar a `RESEND_API_KEY`) não muda nada para builds já feitos: é preciso
-  reconstruir o actor depois. Sem isso o container segue com a chave velha, e a
-  API do Resend responde `400 API key is invalid`, não 401.
-- **Para conferir a credencial sem mandar email**, aponte `proximo_lote` para um
-  lote já enviado e rode: o portão consulta o Resend antes de qualquer disparo, e
-  um run que chega em `PORTAO BLOQUEADO` já provou que a chave funciona.
+| Data | O que |
+|---|---|
+| 2026-08-28 | Conta Apify e Resend pagas (o 403 parava a colheita); suporte a idioma na fila |
+| 2026-08-31 a 09-16 | Envio parado 15 dias por 3 bugs (422 do Resend, portão julgando amostra < 200, corpo en nunca copiado para o container) |
+| 2026-09-16 | Os 3 consertados e provados ao vivo: `lote-22` (pt, 160) e `lote-en-1` (en, 50) |
+| 2026-09-17 a 10-15 | Envio diário en de `lote-en-2` a `lote-en-20`; `lote-23` pt saiu e barrou a trilha pt |
+| 2026-10-17 a 10-24 | Parado pelo teto de US$ 29 da conta Apify |
+| 2026-10-25 | Teto para US$ 40; busca paga desligada (`teto_usd: 0`); retry no Resend; link com `ref=<lote>`; texto sem "read-only"; actor publicado (build `fO1x2TVeSOCOGaqoE`) |
 
-O estado do actor (fila, contatados, histórico) vive no Key-Value Store, e a
-fonte da verdade sobre o que saiu é sempre a API do Resend, nunca o histórico
-gravado. Foi assim que os 657 contatos fantasmas de 03/08 apareceram: o histórico
-tinha sido semeado com lotes que o droplet nunca chegou a enviar.
+#### O que falta e próximos passos
 
-Expectativa realista, medida em 2026-07-29: um sweep completo rende 44 a 80 leads
-e o Google já está seco para português, então a oferta de streamer br novo com
-email público fica entre 10 e 30 por dia. O teto quase nunca vai ser atingido; o
-normal vai ser disparar 30 a 60 a cada um ou dois dias.
-
-Situação em 2026-08-03: fila com 946 e `maximo_por_dia` em 160, recalculado a
-partir do lote-10 (121 enviados) porque os lotes 11 a 14 nunca saíram. Nesse
-ritmo a fila em português esvazia por volta de 12/08. O que repõe é o sweep
-diário, e **a busca paga está parada até 24/08**: o crédito do mês foi quase todo
-consumido num pico em 29/07, então o freio de gasto do actor libera centavos por
-dia e a colheita roda só na parte grátis.
-
-Rampa e portões (bounce < 3%, zero spam, cadastro/resposta) em
-`ai-generated-messages/2026-07-24-broadcast-beta-streamers.md`, junto do texto do
-email. O volume sobe devagar de propósito: `send.streamintel.cc` é domínio novo,
-e pico de envio em domínio sem histórico cai no spam.
+1. **Conferir o primeiro envio com o código novo**: segunda 2026-10-26, 13:00 UTC
+   (`lote-en-21`). O link precisa sair com `ref=lote-en-21`.
+2. **Ler o funil depois de uma semana de envio**, com a query do `CLAUDE.md` da
+   `dev` (precisa do release #99 em produção). É esse número que diz se o
+   problema é o assunto, o texto ou a página.
+3. Só depois do funil medido, testar uma coisa por vez: email de lembrete para
+   quem não cadastrou, prova social (14 streamers ativos, com permissão), assunto
+   personalizado com o jogo do canal, faixa de seguidores.
+4. **Decidir a trilha pt**: 598 leads parados com colheita ruim. Opções:
+   descartar, pagar um verificador de caixa por HTTPS, ou mudar o que o colhedor
+   coleta. Hoje nenhuma foi escolhida.
+5. **Religar a busca paga** (`teto_usd` de volta a 25) quando a fila en cair
+   abaixo de ~3 semanas de envio (~2.400 leads). Na cadência de 800 por semana,
+   por volta do fim de novembro de 2026.
+6. Fechar o PR #77 (base `feat/campanha-beta`, sem revisor).
 
 A lista e os CSVs são dados pessoais: ficam fora do git (`data/` e `emails*.txt`
 no `.gitignore`) e **não têm backup**.

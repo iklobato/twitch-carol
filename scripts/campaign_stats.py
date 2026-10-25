@@ -25,6 +25,7 @@ import argparse
 import collections
 import os
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -36,10 +37,36 @@ from send_campaign_batch import BATCH_DIR, read_batch  # noqa: E402
 RESEND_EMAILS_URL = "https://api.resend.com/emails"
 PAGE_SIZE = 100
 BOUNCE_LIMIT = 0.03
+# Piso de amostra antes de aplicar a %. Abaixo disso um lote pequeno estoura o
+# portao com azar, nao com lista ruim: 3 caixas mortas num lote de 41 dao 7,3% e
+# barram tudo, com o bounce duro geral em 1,3%. A 200 enviados, uma caixa morta
+# vale 0,5%, entao 3% pede ~6 mortas de verdade. ponytail: 200 e o menor teto
+# redondo onde a cauda pt saudavel (lotes 18-21, 450 enviados, 1,3%) abre; suba
+# para 300-500 se quiser a media mais estavel, a custo de reagir mais devagar.
+MIN_SAMPLE = 200
 HARD_BOUNCE = "bounced"
 SOFT_BOUNCE = "bounced_temporario"
 BAD_EVENTS = (HARD_BOUNCE, "complained")
 OUTSIDE = "fora dos lotes"
+# Um 502 do Resend em 16/10 derrubou o envio do dia inteiro. As chamadas daqui so
+# leem, entao repetir e seguro; 4xx nao repete, porque e erro nosso.
+RETRY_WAITS_SECONDS = (2, 4)
+
+
+def _get(client: httpx.Client, url: str, **params) -> httpx.Response:
+    for wait in RETRY_WAITS_SECONDS:
+        try:
+            response = client.get(url, params=params or None)
+        except httpx.TransportError:
+            time.sleep(wait)
+            continue
+        if response.status_code < 500:
+            break
+        time.sleep(wait)
+    else:
+        response = client.get(url, params=params or None)
+    response.raise_for_status()
+    return response
 
 
 def fetch_emails(client: httpx.Client) -> list[dict]:
@@ -47,9 +74,7 @@ def fetch_emails(client: httpx.Client) -> list[dict]:
     after = None
     while True:
         params = {"limit": PAGE_SIZE} | ({"after": after} if after else {})
-        response = client.get(RESEND_EMAILS_URL, params=params)
-        response.raise_for_status()
-        page = response.json()
+        page = _get(client, RESEND_EMAILS_URL, **params).json()
         emails += page["data"]
         if not page.get("has_more") or not page["data"]:
             return emails
@@ -61,8 +86,7 @@ def classify_bounce(client: httpx.Client, email_id: str) -> str:
 
     Sem tipo o email conta como duro, que e o lado seguro: barrar atrasa um dia,
     liberar queima o dominio."""
-    response = client.get(f"{RESEND_EMAILS_URL}/{email_id}")
-    response.raise_for_status()
+    response = _get(client, f"{RESEND_EMAILS_URL}/{email_id}")
     tipo = (response.json().get("bounce") or {}).get("type")
     return SOFT_BOUNCE if tipo == "Transient" else HARD_BOUNCE
 
@@ -155,6 +179,36 @@ def previous_batch(name: str, batches: dict[str, set[str]]) -> str | None:
     return max(earlier, key=batch_number, default=None)
 
 
+def janela_recente(
+    name: str, events: dict[str, collections.Counter], batches: dict[str, set[str]]
+) -> collections.Counter:
+    """Soma os lotes JA ENVIADOS da mesma trilha, do mais novo para o mais velho,
+    ate juntar MIN_SAMPLE enviados (ou acabarem os lotes). Um lote grande fecha a
+    janela sozinho (mede so ele, sensivel a um lote ruim recente); um lote pequeno
+    puxa os anteriores ate a amostra ficar de tamanho que a % signifique lista, e
+    nao sorte."""
+    trilha, numero = trilha_e_numero(name)
+    anteriores = sorted(
+        (
+            outro
+            for outro in batches
+            if trilha_e_numero(outro)[0] == trilha
+            and batch_number(outro) < numero
+            and sum(events[outro].values())
+        ),
+        key=batch_number,
+        reverse=True,
+    )
+    janela: collections.Counter = collections.Counter()
+    enviados = 0
+    for lote in anteriores:
+        janela.update(events[lote])
+        enviados += sum(events[lote].values())
+        if enviados >= MIN_SAMPLE:
+            break
+    return janela
+
+
 def gate(
     name: str, events: dict[str, collections.Counter], batches: dict[str, set[str]]
 ) -> int:
@@ -180,17 +234,29 @@ def gate(
         print(f"PORTAO BLOQUEADO: {anterior} nao foi enviado, nao pulo a fila")
         return 1
 
-    counts = events[anterior]
+    counts = janela_recente(name, events, batches)
     total = sum(counts.values())
+    if counts["complained"]:
+        # Spam e fatal em qualquer amostra: uma reclamacao ja queima dominio.
+        print(f"PORTAO BLOQUEADO: {counts['complained']} spam na janela de {total}")
+        return 1
+    if total < MIN_SAMPLE:
+        # A janela recente do Resend encolhe conforme os lotes antigos somem da
+        # listagem (so guarda email recente): quando cai abaixo do minimo, os 3%
+        # medem azar, nao a lista (foi o que travou lote-22 numa janela de 41 a
+        # 7,3% com o dominio inteiro em 1,3%). Sem amostra, libera; o freio do
+        # risco aqui e o degrau do lote (<=150), nao a %.
+        print(f"portao OK: amostra de {total} < {MIN_SAMPLE}, 0 spam. {name} liberado")
+        return 0
     bounced = counts["bounced"] / total
-    if bounced >= BOUNCE_LIMIT or counts["complained"]:
-        print(
-            f"PORTAO BLOQUEADO: {anterior} com bounce {bounced:.1%} "
-            f"e {counts['complained']} spam ({total} enviados)"
-        )
+    if bounced >= BOUNCE_LIMIT:
+        print(f"PORTAO BLOQUEADO: janela de {total} enviados com bounce {bounced:.1%}")
         return 1
 
-    print(f"portao OK: {anterior} com bounce {bounced:.1%}, 0 spam. {name} liberado")
+    print(
+        f"portao OK: janela de {total} enviados com bounce {bounced:.1%}, 0 spam. "
+        f"{name} liberado"
+    )
     return 0
 
 
