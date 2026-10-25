@@ -54,3 +54,21 @@ def test_fit_input_respects_remaining_budget() -> None:
     budget = TokenBudget(FakeBackend(), max_input=3, max_output=5)
     fitted = budget.fit_input("um dois três quatro cinco", cap=100)
     assert FakeBackend().count_tokens(fitted) <= 3
+
+
+def test_an_unparseable_answer_is_logged_with_its_size_and_tail(caplog) -> None:
+    cut_off = '{"topics": [{"name": "valorant", "evidence": "o jogo'
+
+    with caplog.at_level("WARNING", logger="core.llm"):
+        assert parse_json_object(cut_off) is None
+
+    message = caplog.records[-1].getMessage()
+    assert f"{len(cut_off)} chars" in message
+    assert "o jogo" in message
+
+
+def test_a_json_list_is_rejected_and_logged(caplog) -> None:
+    with caplog.at_level("WARNING", logger="core.llm"):
+        assert parse_json_object("[1, 2]") is None
+
+    assert "top level is list" in caplog.records[-1].getMessage()
