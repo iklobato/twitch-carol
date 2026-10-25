@@ -14,12 +14,13 @@ from core.backfill import (
     backfill_videos,
     backfill_vips,
 )
+from core.campaign import REF_COOKIE, record_step, valid_ref
 from core.channels import upsert_channel
 from core.config import get_settings
 from core.crypto import SESSION_MAX_AGE_SECONDS, create_session_token
 from core.eventsub import sync_channel_subscriptions
 from core.follower_sync import request_sync
-from core.models import Channel
+from core.models import CampaignStep, Channel
 from core.twitch import TwitchAuthError, build_authorize_url, exchange_code, get_user
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,10 @@ def _secure_cookies() -> bool:
 
 
 @router.get("/login")
-def login() -> RedirectResponse:
+def login(request: Request, db: DbSession) -> RedirectResponse:
+    ref = valid_ref(request.cookies.get(REF_COOKIE))
+    if ref is not None:
+        record_step(db, ref, CampaignStep.LOGIN)
     state = secrets.token_urlsafe(32)
     response = RedirectResponse(build_authorize_url(state))
     response.set_cookie(
@@ -85,13 +89,17 @@ def callback(
     except TwitchAuthError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
 
-    channel = upsert_channel(db, user, grant)
+    channel = upsert_channel(
+        db, user, grant, signup_ref=valid_ref(request.cookies.get(REF_COOKIE))
+    )
     db.commit()
     _backfill_best_effort(db, channel)
     _sync_eventsub_best_effort(channel)
 
     response = RedirectResponse("/")
     response.delete_cookie(STATE_COOKIE)
+    # Spent: a later re-login is not another campaign click.
+    response.delete_cookie(REF_COOKIE)
     response.set_cookie(
         SESSION_COOKIE,
         create_session_token(channel.id),

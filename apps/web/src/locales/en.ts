@@ -534,8 +534,8 @@ export default {
     "Stream Intel connects to your Twitch account and turns every live into money decisions: who pays, what converts, and the next step to earn more.",
   "landing.seeWhat": "See what you get",
   "landing.ctaNote.free": "Free to connect.",
-  "landing.ctaNote.readOnly": "Read only",
-  "landing.ctaNote.never": "— we never post anything. Tokens are",
+  "landing.ctaNote.readOnly": "Reads your channel",
+  "landing.ctaNote.never": "— it never posts, only clips chat spikes. Tokens are",
   "landing.ctaNote.encrypted": "encrypted",
   "landing.panel.live": "LIVE",
   "landing.panel.tag": "My channel · summary",
@@ -601,7 +601,7 @@ export default {
   "landing.how.h2": "Three steps. One click to start.",
   "landing.s1.h4": "Connect",
   "landing.s1.p":
-    "One click with Twitch. Read-only permissions, nothing that touches your channel.",
+    "One click with Twitch. It reads your channel and clips the moments your chat spikes, nothing else.",
   "landing.s2.h4": "We capture and analyze",
   "landing.s2.p":
     "Every live turns into numbers, a transcript and insights automatically, while you stream.",
@@ -613,9 +613,9 @@ export default {
   "landing.t1.k": "Numbers from the database",
   "landing.t1.d":
     "The metrics come from SQL, never from an AI guessing values in text.",
-  "landing.t2.k": "Read only",
+  "landing.t2.k": "Reads, never posts",
   "landing.t2.d":
-    "We never post, edit or change anything on your channel. Ever.",
+    "We never post, edit or delete anything on your channel. The one thing we create is clips of the moments your chat spikes (max 10 per stream).",
   "landing.t3.k": "Encrypted",
   "landing.t3.d": "Your Twitch tokens are stored encrypted at rest.",
   "landing.t4.k": "Honest estimates",
@@ -626,7 +626,7 @@ export default {
   "landing.final.p":
     "Connect your Twitch account and see, in minutes, where your money comes from and how to make it go further.",
   "landing.final.note":
-    "Free to connect · Read only · Cancel whenever you want",
+    "Free to connect · Cancel whenever you want",
   "landing.footer.made": "streamintel.cc · made for streamers",
   "landing.footer.fine":
     "Revenue estimates reflect your approximate share and are labelled as such. Some data (subscribers, bits leaderboard) depends on you being a Twitch affiliate or partner. Stream Intel is not affiliated with Twitch.",

@@ -537,8 +537,8 @@ const pt: Record<keyof typeof en, string> = {
     "O Stream Intel conecta na sua conta da Twitch e transforma cada live em decisões de dinheiro: quem contribui, o que converte, e qual o próximo passo pra faturar mais.",
   "landing.seeWhat": "Ver o que você recebe",
   "landing.ctaNote.free": "Grátis pra conectar.",
-  "landing.ctaNote.readOnly": "Só leitura",
-  "landing.ctaNote.never": "— nunca postamos nada. Tokens",
+  "landing.ctaNote.readOnly": "Lê o seu canal",
+  "landing.ctaNote.never": "— nunca posta, só faz clip quando o chat explode. Tokens",
   "landing.ctaNote.encrypted": "criptografados",
   "landing.panel.live": "AO VIVO",
   "landing.panel.tag": "Meu canal · resumo",
@@ -604,7 +604,7 @@ const pt: Record<keyof typeof en, string> = {
   "landing.how.h2": "Três passos. Um clique pra começar.",
   "landing.s1.h4": "Conecte",
   "landing.s1.p":
-    "Um clique com a Twitch. Só permissões de leitura, nada que mexa no seu canal.",
+    "Um clique com a Twitch. Ele lê o seu canal e faz clip dos momentos em que o chat explode, nada mais.",
   "landing.s2.h4": "A gente captura e analisa",
   "landing.s2.p":
     "Cada live vira números, transcrição e insights automaticamente, enquanto você transmite.",
@@ -616,9 +616,9 @@ const pt: Record<keyof typeof en, string> = {
   "landing.t1.k": "Números do banco",
   "landing.t1.d":
     'As métricas vêm de SQL, nunca de um texto de IA "chutando" valores.',
-  "landing.t2.k": "Só leitura",
+  "landing.t2.k": "Lê, nunca posta",
   "landing.t2.d":
-    "A gente nunca posta, edita ou muda nada no seu canal. Nunca.",
+    "A gente nunca posta, edita ou apaga nada no seu canal. A única coisa que criamos são clips dos momentos em que o chat explode (no máximo 10 por live).",
   "landing.t3.k": "Criptografado",
   "landing.t3.d":
     "Seus tokens da Twitch ficam guardados com criptografia em repouso.",
@@ -630,7 +630,7 @@ const pt: Record<keyof typeof en, string> = {
   "landing.final.p":
     "Conecte sua conta da Twitch e veja, em minutos, de onde vem sua grana e como fazer render mais.",
   "landing.final.note":
-    "Grátis pra conectar · Só leitura · Cancele quando quiser",
+    "Grátis pra conectar · Cancele quando quiser",
   "landing.footer.made": "streamintel.cc · feito para streamers",
   "landing.footer.fine":
     "Estimativas de receita refletem a sua parte aproximada e são rotuladas como tal. Alguns dados (inscritos, leaderboard de bits) dependem de você ser afiliado ou parceiro da Twitch. O Stream Intel não é afiliado à Twitch.",
