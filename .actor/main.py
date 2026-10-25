@@ -284,7 +284,7 @@ def _envia_lote(
         for inicio in range(0, len(escolhidos), POR_CHAMADA):
             bloco = escolhidos[inicio : inicio + POR_CHAMADA]
             resposta = cliente.post(
-                envio.RESEND_BATCH_URL, json=envio.build_payloads(bloco, corpos)
+                envio.RESEND_BATCH_URL, json=envio.build_payloads(bloco, corpos, nome)
             )
             resposta.raise_for_status()
             enviados += bloco

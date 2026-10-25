@@ -73,7 +73,7 @@ def open_gate(monkeypatch):
 def test_builds_one_payload_per_address_with_a_subject_and_a_body(
     open_gate, sent_payloads
 ):
-    """The signature this depends on is `build_payloads(pairs, bodies_by_language)`.
+    """The signature this depends on is `build_payloads(pairs, bodies_by_language, batch)`.
     Passing bare addresses and a single body raises ValueError instead, which the
     actor would only discover with the batch already approved."""
     apify = FakeApify(
@@ -87,6 +87,18 @@ def test_builds_one_payload_per_address_with_a_subject_and_a_body(
     payloads = sent_payloads[0]
     assert [p["to"] for p in payloads] == [["a@exemplo.com"], ["b@exemplo.com"]]
     assert all(p["subject"] and p["html"] for p in payloads)
+
+
+def test_the_howto_link_carries_the_batch_name(open_gate, sent_payloads):
+    """A API conta visita, clique no login e cadastro pelo `ref` do link; sem o
+    nome do lote ali nao da para saber qual lote converteu."""
+    apify = FakeApify(fila=["a@exemplo.com"], contatados=[], historico=[])
+
+    actor.enviar(apify, "loja", {"minimo_por_dia": 1})
+
+    html = sent_payloads[0][0]["html"]
+    assert "ref=lote-1" in html
+    assert "{{ref}}" not in html
 
 
 def test_records_who_was_mailed_so_a_retry_never_writes_twice(open_gate, sent_payloads):
