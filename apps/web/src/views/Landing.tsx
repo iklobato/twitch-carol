@@ -51,7 +51,7 @@ const STYLE = `
   .si-landing nav .btn { padding: 10px 16px; }
   .si-landing .tw { width: 18px; height: 20px; display: block; fill: #150b2b; }
   .si-landing header.hero { padding: 74px 0 40px; }
-  .si-landing .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 52px; align-items: center; }
+  .si-landing .hero-grid { display: grid; grid-template-columns: 1fr; gap: 48px; }
   .si-landing h1 { font-size: clamp(2.35rem, 5.4vw, 3.9rem); line-height: 1.03; letter-spacing: -0.025em; margin: 18px 0 0; text-wrap: balance; font-weight: 850; }
   .si-landing h1 .hl { color: var(--green-hi); }
   .si-landing .lead { color: var(--muted); font-size: 1.16rem; margin: 22px 0 0; max-width: 34ch; }
@@ -107,7 +107,6 @@ const STYLE = `
     color: var(--ink); font-variant-numeric: tabular-nums; }
   .si-landing .statband .l { margin-top: 4px; font-size: 0.8rem; color: var(--muted); text-wrap: balance; }
   @media (max-width: 940px) {
-    .si-landing .hero-grid { grid-template-columns: 1fr; gap: 34px; }
     .si-landing .benefits { grid-template-columns: 1fr 1fr; }
     .si-landing .card.wide { grid-column: span 2; }
     .si-landing .steps { grid-template-columns: 1fr; }
