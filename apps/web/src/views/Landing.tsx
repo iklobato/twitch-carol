@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { fmtInt, fmtMoney, t } from '../i18n'
+import { fmtInt, t } from '../i18n'
 import type { PlatformStats } from '../types'
 
 // The logged-out landing. Self-contained markup + styles so it stays isolated
@@ -51,7 +51,7 @@ const STYLE = `
   .si-landing nav .btn { padding: 10px 16px; }
   .si-landing .tw { width: 18px; height: 20px; display: block; fill: #150b2b; }
   .si-landing header.hero { padding: 74px 0 40px; }
-  .si-landing .hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 52px; align-items: center; }
+  .si-landing .hero-grid { display: grid; grid-template-columns: 1fr; gap: 48px; }
   .si-landing h1 { font-size: clamp(2.35rem, 5.4vw, 3.9rem); line-height: 1.03; letter-spacing: -0.025em; margin: 18px 0 0; text-wrap: balance; font-weight: 850; }
   .si-landing h1 .hl { color: var(--green-hi); }
   .si-landing .lead { color: var(--muted); font-size: 1.16rem; margin: 22px 0 0; max-width: 34ch; }
@@ -60,26 +60,7 @@ const STYLE = `
   .si-landing .cta-note b { color: var(--muted); font-weight: 600; }
   .si-landing .panel { background: linear-gradient(180deg, #14111f, #0e0c18); border: 1px solid var(--line-strong); border-radius: 18px; padding: 18px;
     box-shadow: 0 30px 80px -30px rgba(145,70,255,0.5), inset 0 1px 0 rgba(255,255,255,0.04); max-width: 100%; }
-  .si-landing .panel-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-  .si-landing .live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; color: var(--muted); }
-  .si-landing .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff4d6d; box-shadow: 0 0 0 0 rgba(255,77,109,0.6); animation: si-pulse 2s infinite; }
-  @keyframes si-pulse { 0% { box-shadow: 0 0 0 0 rgba(255,77,109,0.55); } 70% { box-shadow: 0 0 0 10px rgba(255,77,109,0); } 100% { box-shadow: 0 0 0 0 rgba(255,77,109,0); } }
-  .si-landing .panel-tag { font-family: var(--mono); font-size: 0.7rem; color: var(--muted-2); }
-  .si-landing .revenue { border: 1px solid var(--line); border-radius: 13px; padding: 16px; background: rgba(52,211,153,0.05); }
-  .si-landing .revenue .k { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
-  .si-landing .revenue .v { font-size: 2.3rem; font-weight: 800; color: var(--green-hi); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; margin-top: 2px; }
-  .si-landing .revenue .sub { font-size: 0.82rem; color: var(--muted); }
-  .si-landing .revenue .sub b { color: var(--green); }
-  .si-landing .spark { width: 100%; height: 46px; margin-top: 8px; display: block; }
-  .si-landing .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-  .si-landing .mini { border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; background: var(--bg-3); }
-  .si-landing .mini .k { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: var(--muted-2); text-transform: uppercase; }
-  .si-landing .mini .v { font-weight: 700; font-size: 1.02rem; margin-top: 3px; font-variant-numeric: tabular-nums; }
-  .si-landing .mini .v.g { color: var(--green-hi); }
-  .si-landing .mini .v.p { color: var(--violet-hi); }
-  .si-landing .ai-chip { margin-top: 12px; display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line-strong); border-radius: 11px; padding: 11px 12px;
-    background: linear-gradient(180deg, rgba(169,112,255,0.12), rgba(169,112,255,0.04)); font-size: 0.86rem; }
-  .si-landing .ai-chip .badge { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; color: var(--violet-hi); border: 1px solid var(--line-strong); border-radius: 6px; padding: 2px 6px; white-space: nowrap; margin-top: 1px; }
+  .si-landing .panel video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; border-radius: 10px; background: #000; }
   .si-landing .strip { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 34px; }
   .si-landing .strip .wrap { padding-top: 34px; padding-bottom: 34px; }
   .si-landing .strip p { margin: 8px 0 0; font-size: clamp(1.2rem, 2.6vw, 1.7rem); font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; max-width: 24ch; }
@@ -126,7 +107,6 @@ const STYLE = `
     color: var(--ink); font-variant-numeric: tabular-nums; }
   .si-landing .statband .l { margin-top: 4px; font-size: 0.8rem; color: var(--muted); text-wrap: balance; }
   @media (max-width: 940px) {
-    .si-landing .hero-grid { grid-template-columns: 1fr; gap: 34px; }
     .si-landing .benefits { grid-template-columns: 1fr 1fr; }
     .si-landing .card.wide { grid-column: span 2; }
     .si-landing .steps { grid-template-columns: 1fr; }
@@ -141,13 +121,22 @@ const STYLE = `
     .si-landing header.hero { padding-top: 48px; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .si-landing *, .si-landing .dot { animation: none !important; transition: none !important; }
+    .si-landing * { animation: none !important; transition: none !important; }
     .si-landing .card { opacity: 1; transform: none; }
   }
 `
 
 const TWITCH_SVG =
   '<svg class="tw" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2 2.5 6v13h4.5v3h3l3-3h4L23 14V2H4zm2 2h15v9l-3 3h-5l-3 3v-3H6V4zm5.5 4v5H13V8h-1.5zM16 8v5h1.5V8H16z"/></svg>'
+
+// Muted is what lets browsers autoplay at all; controls let the visitor turn
+// the sound on. Visitors who ask for less motion get the poster instead.
+function prefersReducedMotion(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
 
 // A function, not a const: the markup has to be built after setLang() has run,
 // otherwise every string would be resolved at import time in the default
@@ -174,31 +163,16 @@ function body(): string {
       </div>
       <p class="cta-note">${t('landing.ctaNote.free')} <b>${t('landing.ctaNote.readOnly')}</b> ${t('landing.ctaNote.never')} <b>${t('landing.ctaNote.encrypted')}</b>.</p>
     </div>
-    <div class="panel" aria-hidden="true">
-      <div class="panel-top"><span class="live"><span class="dot"></span> ${t('landing.panel.live')}</span><span class="panel-tag">${t('landing.panel.tag')}</span></div>
-      <div class="revenue">
-        <div class="k">${t('money.estimated')}</div>
-        <div class="v" data-count="44.50">${fmtMoney(0)}</div>
-        <div class="sub"><b>fiel_carlos</b> ${t('landing.panel.topSupporter')}</div>
-        <svg class="spark" viewBox="0 0 300 46" preserveAspectRatio="none">
-          <defs><linearGradient id="sig" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(52,211,153,0.5)"/><stop offset="1" stop-color="rgba(52,211,153,0)"/></linearGradient></defs>
-          <path d="M0,38 L40,34 L80,36 L120,26 L160,28 L200,16 L240,18 L300,6 L300,46 L0,46 Z" fill="url(#sig)"/>
-          <path d="M0,38 L40,34 L80,36 L120,26 L160,28 L200,16 L240,18 L300,6" fill="none" stroke="#6ee7b7" stroke-width="2"/>
-        </svg>
-      </div>
-      <div class="mini-grid">
-        <div class="mini"><div class="k">${t('landing.panel.converts')}</div><div class="v g">${fmtMoney(91.5)}/h</div></div>
-        <div class="mini"><div class="k">${t('landing.panel.followers')}</div><div class="v p">41</div></div>
-      </div>
-      <div class="ai-chip"><span class="badge">AI</span><span>${t('landing.panel.ai')}</span></div>
+    <div class="panel">
+      <video src="/landing-demo.mp4" poster="/landing-demo.jpg" ${prefersReducedMotion() ? '' : 'autoplay'} muted loop playsinline controls preload="metadata" aria-label="${t('landing.video.label')}"></video>
     </div>
   </div>
 </header>
 <div class="wrap"><div class="statband" id="si-stats" style="display:none">
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="chat_messages">—</div><div class="l">${t('landing.stats.messages')}</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="streams_analyzed">—</div><div class="l">${t('landing.stats.streams')}</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="hours_captured">—</div><div class="l">${t('landing.stats.hours')}</div></div>
-  <div><div class="n" data-count="0" data-fmt="int" data-stat="segments_transcribed">—</div><div class="l">${t('landing.stats.segments')}</div></div>
+  <div><div class="n" data-count="0" data-stat="chat_messages">—</div><div class="l">${t('landing.stats.messages')}</div></div>
+  <div><div class="n" data-count="0" data-stat="streams_analyzed">—</div><div class="l">${t('landing.stats.streams')}</div></div>
+  <div><div class="n" data-count="0" data-stat="hours_captured">—</div><div class="l">${t('landing.stats.hours')}</div></div>
+  <div><div class="n" data-count="0" data-stat="segments_transcribed">—</div><div class="l">${t('landing.stats.segments')}</div></div>
 </div></div>
 <div class="strip"><div class="wrap"><span class="eyebrow green">${t('landing.problem.eyebrow')}</span><p>${t('landing.problem.before')} <span class="hl">${t('landing.problem.highlight')}</span>${t('landing.problem.after')}</p></div></div>
 <section id="beneficios">
@@ -261,9 +235,7 @@ function body(): string {
 
 export default function Landing() {
   useEffect(() => {
-    const reduce =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reduce = prefersReducedMotion()
     const cards = Array.from(document.querySelectorAll<HTMLElement>('.si-landing .card'))
 
     if (reduce || !('IntersectionObserver' in window)) {
@@ -285,10 +257,7 @@ export default function Landing() {
     }
 
     const animate = (el: HTMLElement, target: number) => {
-      const fmt =
-        el.getAttribute('data-fmt') === 'int'
-          ? (n: number) => fmtInt(Math.round(n))
-          : (n: number) => fmtMoney(n)
+      const fmt = (n: number) => fmtInt(Math.round(n))
       if (reduce) {
         el.textContent = fmt(target)
         return
@@ -303,11 +272,6 @@ export default function Landing() {
       }
       requestAnimationFrame(step)
     }
-
-    // the hero panel's mock revenue animates on mount; real stats wait on the fetch
-    document
-      .querySelectorAll<HTMLElement>('.si-landing .panel [data-count]')
-      .forEach((el) => animate(el, parseFloat(el.getAttribute('data-count') || '0')))
 
     const band = document.getElementById('si-stats')
     if (band && typeof fetch === 'function') {

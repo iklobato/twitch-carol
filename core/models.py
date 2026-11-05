@@ -56,6 +56,11 @@ class InsightFeedback(enum.StrEnum):
     NOT_USEFUL = "not_useful"
 
 
+class CampaignStep(enum.StrEnum):
+    HOWTO = "howto"
+    LOGIN = "login"
+
+
 class JobStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -141,6 +146,9 @@ class Channel(Base):
     email: Mapped[str | None] = mapped_column(String(256))
     digest_weekly: Mapped[bool] = mapped_column(default=True)
     digest_monthly: Mapped[bool] = mapped_column(default=True)
+    # Campaign batch whose email brought this channel in (`lote-en-20`), set once
+    # at sign-up. Null for anyone who arrived another way or already existed.
+    signup_ref: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -444,6 +452,21 @@ class StreamRecord(Base):
     metric: Mapped[str] = mapped_column(String(32))
     value: Mapped[float] = mapped_column(Float)
     achieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CampaignClick(Base):
+    """One step of a campaign email's funnel: the /howto visit its link opens,
+    then the click on Connect. The sign-up itself is channels.signup_ref. Only
+    the batch name is kept: no IP, browser or address."""
+
+    __tablename__ = "campaign_clicks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ref: Mapped[str] = mapped_column(String(32), index=True)
+    step: Mapped[CampaignStep] = mapped_column(_enum(CampaignStep, "campaign_step"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class EmailDigestLog(Base):

@@ -17,7 +17,11 @@ TOKEN_REFRESH_MARGIN = timedelta(minutes=5)
 SIGNUP_LANGUAGE = "en"
 
 
-def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
+def upsert_channel(
+    db: Session, user: TwitchUser, grant: TokenGrant, signup_ref: str | None = None
+) -> Channel:
+    """`signup_ref` only lands on a channel created here: an existing user who
+    clicks a campaign link was not brought in by it."""
     channel = db.scalar(select(Channel).where(Channel.twitch_user_id == int(user.id)))
     if channel is None:
         channel = Channel(
@@ -25,6 +29,7 @@ def upsert_channel(db: Session, user: TwitchUser, grant: TokenGrant) -> Channel:
             login=user.login,
             display_name=user.display_name,
             language=SIGNUP_LANGUAGE,
+            signup_ref=signup_ref,
         )
         db.add(channel)
     channel.login = user.login

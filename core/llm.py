@@ -34,9 +34,34 @@ def parse_json_object(response: str) -> dict | None:
     text = fenced.group(1) if fenced else response
     try:
         parsed = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as err:
+        _log_unparseable(response, err)
         return None
-    return parsed if isinstance(parsed, dict) else None
+    if not isinstance(parsed, dict):
+        _log_unparseable(response, TypeError(f"top level is {type(parsed).__name__}"))
+        return None
+    return parsed
+
+
+# Enough of the answer to see its shape; the tail shows whether it was cut off.
+UNPARSEABLE_HEAD_CHARS = 300
+UNPARSEABLE_TAIL_CHARS = 80
+
+
+def _log_unparseable(response: str | None, err: Exception) -> None:
+    """Callers only log "unparseable", which never said why: 9 of 3,842 prod
+    answers (2026-09-10..24) were dropped with no way to tell a cut-off answer
+    from prose or a wrong shape."""
+    # In the message, not in extra: core.logging_setup only publishes the
+    # CONTEXT_FIELDS keys, so extra fields would be dropped silently.
+    text = response or ""
+    logger.warning(
+        "llm answer is not a JSON object: %s; %d chars; head=%r; tail=%r",
+        err,
+        len(text),
+        text[:UNPARSEABLE_HEAD_CHARS],
+        text[-UNPARSEABLE_TAIL_CHARS:],
+    )
 
 
 class LLMBackend(Protocol):
@@ -131,7 +156,14 @@ class OpenAICompatBackend:
         response = self._client.post(self._url, headers=self._headers, json=body)
         if response.status_code != 200:
             raise LLMError(f"LLM endpoint returned {response.status_code}")
-        return response.json()["choices"][0]["message"]["content"]
+        choice = response.json()["choices"][0]
+        if choice.get("finish_reason") == "length":
+            logger.warning(
+                "llm answer cut at max_tokens=%d (model %s)",
+                max_tokens,
+                self.model_name,
+            )
+        return choice["message"]["content"]
 
 
 _BACKENDS: dict[str, Callable[[Settings], LLMBackend]] = {

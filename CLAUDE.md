@@ -15,22 +15,68 @@ como rodar. Este arquivo tem o resto: o que ja custou caro descobrir.
 Fluxo: `feat/* -> PR -> dev -> PR -> main`. **Nunca commite direto em `dev` ou
 `main`.** Push na branch deploya sozinho (`deploy_on_push: true`).
 
-**`dev` esta 25+ commits a frente de `main`.** Todo o trabalho de idioma (i18n,
-colunas `language`/`spoken_language`, Whisper sem idioma forcado) esta so na
-`dev`. Producao roda a migracao **`0019`** e **nao tem essas colunas**.
+**Medido em 2026-10-25:** `dev` esta 4 commits a frente de `main` (o PR de
+release #99 leva os quatro). Producao roda a migracao **`0027`**, a `dev` roda a
+**`0028`** (`campaign_clicks` + `channels.signup_ref`). Enquanto o #99 nao entrar,
+o modelo da `dev` explode contra o banco de producao em qualquer `select(Channel)`
+(`column channels.signup_ref does not exist`): para medir producao, use um
+worktree da `main` ou rode SQL cru dentro do container (abaixo).
 
-Consequencia pratica: **o modelo da `dev` nao roda contra o banco de producao**.
-`select(Channel)` explode com `column channels.language does not exist`. Para
-medir producao, use um worktree da `main`.
+**O banco de producao so aceita conexao de dentro do app** (trusted sources).
+`psql` daqui da timeout. O caminho que funciona, so leitura:
+
+```bash
+CMD='python -c "import os,psycopg;c=psycopg.connect(os.environ[\"DATABASE_URL\"].replace(\"postgresql+psycopg\",\"postgresql\"));print(c.execute(\"select version_num from alembic_version\").fetchone())"'
+(echo "$CMD"; sleep 20; echo exit) | script -q /dev/null doctl apps console 9154182f-3392-4bfd-b76c-8da53ea52aa9 api
+```
+
+O `doctl apps console` exige o **id completo** do app (o prefixo `9154182f` da
+`400 invalid uuid`). A saida vem com codigo de terminal no meio: filtre com
+`tr -d '\r' | grep -ao 'SEU_MARCADOR.*'`, nao com `grep '^...'`.
+
+**Deploy com live no ar custa audio, nao a live.** Reiniciar o worker de captura
+perde ate ~10 min de audio de cada live aberta. A janela vazia medida e 13h-14h
+BRT; a madrugada e das piores (3 lives no ar as 00:20 BRT de 2026-10-25). Conte as
+lives abertas (`streams` com `ended_at` nulo) antes de soltar um release.
 
 ## A campanha de email nao esta neste repo, esta em outra branch
 
 `feat/campanha-beta` carrega `scripts/send_campaign_batch.py`,
-`scripts/campaign_stats.py`, `scripts/prospect_leads.py` e `.actor/`. Ela nunca
-foi para `dev` nem `main` de proposito: nada da campanha roda no produto.
+`scripts/campaign_stats.py`, `scripts/prospect_leads.py`, `.actor/` e
+`publish_actor.py`. Ela nunca foi para `dev` nem `main` de proposito. O trabalho
+corrente esta na branch `fix/campaign-gate-en-track` (PR #77, aberto, base
+`feat/campanha-beta`); o manual completo da campanha e a secao "Prospeccao e
+convite beta" do `README.md` dessa branch.
 
-O sender e um **actor do Apify** (`streamintel-campanha`, `QonxRkaUpM4tcPsWs`),
-com dois agendamentos: colheita 03:00 diaria e envio 10:00 de segunda a sexta.
+O sender e um **actor do Apify** (`streamintel-campanha`, `QonxRkaUpM4tcPsWs`).
+Agendamentos em `America/Sao_Paulo`: colheita 03:00 todo dia (06:00 UTC) e envio
+10:00 de segunda a sexta (13:00 UTC). **Push no git nao deploya o actor**: so o
+`publish_actor.py` daquela branch.
+
+**O unico pedaco da campanha que vive neste repo e a medicao do funil.** O link
+do email e `/howto?ref=<lote>`. `/howto` grava a visita em `campaign_clicks` e
+guarda o lote no cookie `campaign_ref` (30 dias); `/auth/login` grava o clique;
+canal **novo** criado no callback recebe `channels.signup_ref`. Canal que ja
+existia nunca recebe. Codigo em `core/campaign.py`; ref fora do padrao
+`lote-[a-z0-9-]{1,24}` e ignorado; erro de banco ali nunca derruba a pagina nem
+o login. Funil por lote:
+
+```sql
+select ref,
+       count(*) filter (where step = 'howto') as visitas,
+       count(*) filter (where step = 'login') as cliques_connect,
+       (select count(*) from channels c where c.signup_ref = k.ref) as cadastros
+from campaign_clicks k group by ref order by ref;
+```
+
+Visita pode vir inflada por antivirus de email que abre link sozinho; clique no
+Connect e cadastro nao.
+
+**O login NAO e so leitura.** `core/twitch.py` pede `clips:edit` e o worker de
+captura cria clip quando o chat explode (`MAX_CLIPS_PER_STREAM = 10`). Ate
+2026-10-25 o email, o `/howto` e a landing diziam "read-only, nunca postamos
+nada"; um streamer pegou a diferenca por email. Nenhum texto de venda pode voltar
+a dizer "read-only" enquanto o escopo existir.
 
 ## Armadilhas medidas, nao teoricas
 
@@ -54,6 +100,20 @@ o follower AI: os tres leitores tinham copia propria de `json.loads`.
 **Bloco vazio some da tela.** O front usa `{lista.length > 0 && (...)}` em todo
 lugar, entao feature sem dado fica indistinguivel de feature que nao existe. Foi
 o que escondeu o problema acima. Ao adicionar bloco novo, escreva o estado vazio.
+
+**A conta do Apify e dividida e tem teto.** Teto de US$ 40/mes (era 29 ate
+2026-10-25), ciclo do dia 25 ao 24. Quando estoura, todo run morre com
+`403 Monthly usage hard limit exceeded` e os agendamentos param sem log nenhum
+(foi o que parou a campanha de 17/10 a 24/10). A busca no Google da colheita usa
+o proxy `GOOGLE_SERP` direto do `prospect_leads.py`, entao **esse gasto nao
+aparece no custo do run**, so em `GET /v2/users/me/usage/monthly`. E o freio
+`teto_usd` do actor compara com o gasto da **conta inteira**, nao so da campanha.
+
+**A listagem do Resend so guarda uns 27 dias.** `GET /emails` em 2026-10-25
+voltava ate 2026-09-28. Tudo que conta bounce por lote (o portao) so enxerga
+lotes recentes. Consequencia lida no codigo: quando o ultimo lote de uma trilha
+some da listagem, o portao responde `<lote> nao foi enviado, nao pulo a fila` e
+**a trilha trava para sempre** ate alguem mexer na mao.
 
 **`last_event: bounced` do Resend junta coisas diferentes.** Caixa cheia e falha
 temporaria voltam iguais a caixa inexistente; so `GET /emails/{id}` traz
@@ -128,3 +188,24 @@ do Resend: nao mexa nele, e o que alimenta o portao da campanha.
 
 O droplet nao entrega direto (a DigitalOcean bloqueia a porta 25 de saida): ele
 relaya pelo Resend, entao **so envia por dominio verificado la**.
+
+## Estado em 2026-10-25 (data na frente de cada fato: confira antes de confiar)
+
+Feito e provado:
+- Medicao do funil da campanha (`campaign_clicks`, `signup_ref`, migracao
+  `0028`) e texto sem "read-only" no `/howto` e na landing: PR #100, na `dev`,
+  provado em dev.streamintel.cc (visita e clique gravados, linhas de teste
+  apagadas). O cadastro so esta coberto por teste automatico, nao por login real.
+- Release #99 (`dev` -> `main`, leva o #100 e o log de JSON invalido do LLM)
+  agendado para 2026-10-25 13:07 BRT, com contagem de lives antes.
+
+O que falta no produto (nao reconferido desde 2026-09-21):
+- Alertas do Grafana nao chegam em ninguem (SMTP nao configurado).
+- `/metrics` da API responde 404; so existe uptime externo.
+- `clips:edit` e obrigatorio no login; torna-lo opcional e pedido de streamer
+  (decisao de produto em aberto).
+- Erro de lint antigo: `core/models.py` `UnfollowReason(str, enum.Enum)` (UP042).
+
+Estado da campanha, numeros e proximos passos: secao "Prospeccao e convite beta"
+do `README.md` da branch `fix/campaign-gate-en-track`.
+

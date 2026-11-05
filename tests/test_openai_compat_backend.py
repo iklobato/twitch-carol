@@ -109,3 +109,35 @@ def test_missing_config_raises() -> None:
         OpenAICompatBackend(_settings(llm_model=""))
     with pytest.raises(RuntimeError, match="LLM_API_KEY"):
         OpenAICompatBackend(_settings(llm_api_key=""))
+
+
+def test_an_answer_cut_at_max_tokens_is_logged(caplog) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {"message": {"content": '{"topics": ['}, "finish_reason": "length"}
+                ]
+            },
+        )
+
+    backend = OpenAICompatBackend(_settings(), client=_mock_client(handler))
+    with caplog.at_level("WARNING", logger="core.llm"):
+        assert backend.generate("prompt", 512) == '{"topics": ['
+
+    assert "cut at max_tokens=512" in caplog.records[-1].getMessage()
+
+
+def test_a_complete_answer_logs_nothing(caplog) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "{}"}, "finish_reason": "stop"}]},
+        )
+
+    backend = OpenAICompatBackend(_settings(), client=_mock_client(handler))
+    with caplog.at_level("WARNING", logger="core.llm"):
+        backend.generate("prompt", 512)
+
+    assert caplog.records == []
