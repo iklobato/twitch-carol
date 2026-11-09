@@ -38,6 +38,9 @@ WEEK_START = NOW - timedelta(days=10)
 WEEK_END = WEEK_START + timedelta(days=7)
 DASHBOARD = "https://streamintel.cc"
 UNSUBSCRIBE = "https://streamintel.cc/api/digest/unsubscribe?t=fake"
+# 3 messages inside the topic window plus 2 outside it: chat outside every
+# topic goes to the nearest topic, the only one in that live.
+ALL_CHAT_OF_THE_ONE_TOPIC_LIVE = 5
 
 
 def _live(db: Session, channel, days_ago: float, **kwargs):
@@ -229,7 +232,7 @@ def test_topic_revenue_attributes_money_events_to_their_topic_window(
     assert digest.topic_revenue[0].estimated_usd == 5.0
     assert digest.topic_revenue[0].offset_label == "5m10s"
     assert digest.topic_revenue[0].stream_title == live.title
-    assert digest.topic_revenue[0].chat_messages == 3
+    assert digest.topic_revenue[0].chat_messages == ALL_CHAT_OF_THE_ONE_TOPIC_LIVE
     html = render_html(digest, DASHBOARD, UNSUBSCRIBE)
     assert "Deploy" in html
     assert "US$ 5,00" in html

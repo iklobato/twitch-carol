@@ -29,17 +29,14 @@ from core.models import (
     Event,
     Follower,
     Goal,
-    Insight,
-    InsightType,
     PastBroadcast,
     Stream,
     StreamStatus,
     Subscription,
-    TranscriptSegment,
     ViewerSample,
     Vip,
 )
-from core.topics import recurring_topics
+from core.topics import TopicTimeline, TopicWindowReader, recurring_topics
 
 router = APIRouter(prefix="/api/channel")
 
@@ -52,7 +49,6 @@ CONTENT_LIMIT = 8
 SECONDS_PER_HOUR = 3600
 POINTS_REWARD_LIMIT = 8
 AD_WINDOW = timedelta(seconds=90)
-TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 FOLLOW_EVENT_TYPE = "channel.follow"
 SUB_END = "channel.subscription.end"
 BITS_LEADER_LIMIT = 10
@@ -666,55 +662,21 @@ def _growth(db: DbSession, channel_id: int) -> list[GrowthPoint]:
     ]
 
 
-def _topic_windows_by_stream(
-    db: DbSession, stream_ids: list[int]
-) -> dict[int, list[tuple[str, datetime, datetime]]]:
-    """For each stream, its topics' (name, window_start, window_end), where the
-    window comes from the topic's cited transcript segments."""
-    from apps.api.dashboard import _cited_ids
-
-    topics = db.scalars(
-        select(Insight)
-        .where(Insight.stream_id.in_(stream_ids))
-        .where(Insight.type == InsightType.TOPIC)
-    ).all()
-    segment_ids = {i for t in topics for i in _cited_ids(t, "segment_ids")}
-    bounds: dict[int, tuple[datetime, datetime]] = {
-        row[0]: (row[1], row[2])
-        for row in db.execute(
-            select(
-                TranscriptSegment.id,
-                TranscriptSegment.started_at,
-                TranscriptSegment.ended_at,
-            ).where(TranscriptSegment.id.in_(segment_ids))
-        )
-    }
-    windows: dict[int, list[tuple[str, datetime, datetime]]] = defaultdict(list)
-    for topic in topics:
-        segs = [bounds[i] for i in _cited_ids(topic, "segment_ids") if i in bounds]
-        if not segs:
-            continue
-        start = min(s[0] for s in segs) - TOPIC_WINDOW_PADDING
-        end = max(s[1] for s in segs) + TOPIC_WINDOW_PADDING
-        windows[topic.stream_id].append((topic.content.split("\n")[0], start, end))
-    return windows
-
-
 def _topic_revenue(
     events: Sequence[Event],
-    windows: dict[int, list[tuple[str, datetime, datetime]]],
+    timeline: TopicTimeline,
     limit: int = MONETIZING_TOPIC_LIMIT,
 ) -> list[MonetizingTopic]:
-    """Money events attributed to the topic whose window they fall inside.
-    A stream's topic windows can overlap, so one event may count toward more
-    than one topic; that is existing, accepted behavior, not a bug here."""
+    """Each money event credited to one topic of its live: the one it falls
+    in, else the nearest (TopicTimeline.topic_at)."""
     topic_usd: dict[str, float] = defaultdict(float)
     topic_streams: dict[str, set[int]] = defaultdict(set)
     for event in events:
-        for name, start, end in windows.get(event.stream_id, []):
-            if start <= event.occurred_at < end:
-                topic_usd[name] += event_usd(event)
-                topic_streams[name].add(event.stream_id)
+        name = timeline.topic_at(event.stream_id, event.occurred_at)
+        if name is None:
+            continue
+        topic_usd[name] += event_usd(event)
+        topic_streams[name].add(event.stream_id)
     ranked = sorted(topic_usd.items(), key=lambda item: item[1], reverse=True)[:limit]
     return [
         MonetizingTopic(
@@ -766,8 +728,7 @@ def _channel_finance(
         for login, usd in ranked
     ]
 
-    windows = _topic_windows_by_stream(db, ready_ids) if ready_ids else {}
-    top_topics = _topic_revenue(events, windows)
+    top_topics = _topic_revenue(events, TopicWindowReader(db).timeline(ready_ids))
 
     return ChannelFinance(
         total_estimated_usd=round(total, 2),

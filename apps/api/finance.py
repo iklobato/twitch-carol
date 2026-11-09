@@ -30,7 +30,7 @@ from apps.api.channel import (
     _recommendations,
     _subscribers,
 )
-from apps.api.dashboard import _cited_ids, _owned_stream
+from apps.api.dashboard import _owned_stream
 from apps.api.deps import CurrentChannel, DbSession
 from core.finance import (
     CHEER,
@@ -51,18 +51,15 @@ from core.integrations.tips import (
 from core.models import (
     Event,
     ExternalTip,
-    Insight,
-    InsightType,
     LoyaltyEntry,
     Stream,
     StreamStatus,
-    TranscriptSegment,
 )
+from core.topics import TopicWindowReader
 
 router = APIRouter(prefix="/api")
 
 TOP_CONTRIBUTORS = 10
-TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 BY_STREAM_LIMIT = 50
 TOP_MOMENTS = 10
 
@@ -130,34 +127,6 @@ def _load_money_events(db: Session, stream_id: int) -> list[Event]:
     )
 
 
-def _topic_windows(db: Session, stream: Stream) -> list[tuple[str, datetime, datetime]]:
-    topics = db.scalars(
-        select(Insight)
-        .where(Insight.stream_id == stream.id)
-        .where(Insight.type == InsightType.TOPIC)
-    ).all()
-    windows = []
-    for topic in topics:
-        segment_ids = _cited_ids(topic, "segment_ids")
-        if not segment_ids:
-            continue
-        bounds = db.execute(
-            select(
-                func.min(TranscriptSegment.started_at),
-                func.max(TranscriptSegment.ended_at),
-            )
-            .where(TranscriptSegment.id.in_(segment_ids))
-            .where(TranscriptSegment.stream_id == stream.id)
-        ).one()
-        if bounds[0] is None:
-            continue
-        name = topic.content.split("\n")[0]
-        windows.append(
-            (name, bounds[0] - TOPIC_WINDOW_PADDING, bounds[1] + TOPIC_WINDOW_PADDING)
-        )
-    return windows
-
-
 @router.get("/streams/{stream_id}/finance")
 def stream_finance(
     stream_id: int, channel: CurrentChannel, db: DbSession
@@ -205,25 +174,20 @@ def stream_finance(
         for login, usd in top
     ]
 
-    windows = _topic_windows(db, stream)
-    by_topic: list[TopicRevenue] = []
-    for name, start, end in windows:
-        in_window = [e for e in events if start <= e.occurred_at < end]
-        if not in_window:
+    timeline = TopicWindowReader(db).timeline([stream.id])
+    usd_by_topic: dict[str, float] = defaultdict(float)
+    events_by_topic: dict[str, int] = defaultdict(int)
+    for event in events:
+        name = timeline.topic_at(stream.id, event.occurred_at)
+        if name is None:
             continue
-        by_topic.append(
-            TopicRevenue(
-                name=name,
-                estimated_usd=round(sum(event_usd(e) for e in in_window), 2),
-                events=len(in_window),
-            )
-        )
+        usd_by_topic[name] += event_usd(event)
+        events_by_topic[name] += 1
+    by_topic = [
+        TopicRevenue(name=name, estimated_usd=round(usd, 2), events=events_by_topic[name])
+        for name, usd in usd_by_topic.items()
+    ]
     by_topic.sort(key=lambda topic: topic.estimated_usd, reverse=True)
-
-    def _topic_at(moment: datetime) -> str | None:
-        return next(
-            (name for name, start, end in windows if start <= moment < end), None
-        )
 
     moments = [
         MomentRevenue(
@@ -231,7 +195,7 @@ def stream_finance(
             estimated_usd=round(event_usd(event), 2),
             kind=_event_kind(event),
             contributor=event_contributor(event),
-            topic=_topic_at(event.occurred_at),
+            topic=timeline.topic_at(stream.id, event.occurred_at),
         )
         for event in events
         if event_usd(event) > 0

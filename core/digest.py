@@ -31,7 +31,6 @@ from apps.api.channel import (
     ContentBucket,
     _content_revenue,
     _topic_revenue,
-    _topic_windows_by_stream,
 )
 from core.db import month_bounds
 from core.finance import MONEY_EVENT_TYPES, SUBSCRIBE, event_contributor, event_usd
@@ -58,7 +57,7 @@ from core.records import (
     metric_label,
 )
 from core.text import message_sentiment, strip_emotes, tokenize
-from core.topics import recurring_topics
+from core.topics import TopicTimeline, TopicWindowReader, recurring_topics
 
 MOMENTS_LIMIT = 5
 TOPICS_LIMIT = 5
@@ -446,22 +445,22 @@ def _best_moment_per_live(
 
 def _topic_moments(
     events: Sequence[Event],
-    windows: dict[int, list[tuple[str, datetime, datetime]]],
+    timeline: TopicTimeline,
     streams_by_id: dict[int, Stream],
 ) -> dict[str, tuple[str | None, str]]:
     """For each topic name, the stream title and offset label of its single
-    highest-value money event, using the same window attribution _topic_revenue
+    highest-value money event, using the same attribution _topic_revenue
     (apps.api.channel) uses to sum that topic's revenue."""
     best_event: dict[str, Event] = {}
     best_stream_id: dict[str, int] = {}
     for event in events:
-        for name, start, end in windows.get(event.stream_id, []):
-            if not (start <= event.occurred_at < end):
-                continue
-            current = best_event.get(name)
-            if current is None or event_usd(event) > event_usd(current):
-                best_event[name] = event
-                best_stream_id[name] = event.stream_id
+        name = timeline.topic_at(event.stream_id, event.occurred_at)
+        if name is None:
+            continue
+        current = best_event.get(name)
+        if current is None or event_usd(event) > event_usd(current):
+            best_event[name] = event
+            best_stream_id[name] = event.stream_id
     moments: dict[str, tuple[str | None, str]] = {}
     for name, event in best_event.items():
         stream = streams_by_id.get(best_stream_id[name])
@@ -550,12 +549,11 @@ def _money_moments(
 def _topic_message_counts(
     db: Session,
     streams: list[Stream],
-    windows: dict[int, list[tuple[str, datetime, datetime]]],
+    timeline: TopicTimeline,
 ) -> dict[str, int]:
-    """Chat volume during each topic's own window(s): the engagement half of
-    topic revenue, using the same window attribution _topic_revenue (money)
-    uses."""
-    if not any(windows.values()):
+    """Chat volume credited to each topic: the engagement half of topic
+    revenue, using the same attribution _topic_revenue (money) uses."""
+    if timeline.is_empty():
         return {}
     first, last = _chat_window(streams)
     rows = db.execute(
@@ -566,9 +564,9 @@ def _topic_message_counts(
     ).yield_per(2000)
     counts: dict[str, int] = defaultdict(int)
     for stream_id, sent_at in rows:
-        for name, start, end in windows.get(stream_id, []):
-            if start <= sent_at < end:
-                counts[name] += 1
+        name = timeline.topic_at(stream_id, sent_at)
+        if name is not None:
+            counts[name] += 1
     return counts
 
 
@@ -800,14 +798,14 @@ def build_period(
     language = chat_language(channel.spoken_language, channel.language)
 
     streams_by_id = {stream.id: stream for stream in streams}
-    windows = _topic_windows_by_stream(db, stream_ids)
+    timeline = TopicWindowReader(db).timeline(stream_ids)
     money_events = _money_events(db, stream_ids)
     moments_by_stream = _best_moment_per_live(db, streams)
     top_moments = sorted(
         moments_by_stream.values(), key=lambda moment: moment.score, reverse=True
     )[:MOMENTS_LIMIT]
-    topic_moments = _topic_moments(money_events, windows, streams_by_id)
-    topic_message_counts = _topic_message_counts(db, streams, windows)
+    topic_moments = _topic_moments(money_events, timeline, streams_by_id)
+    topic_message_counts = _topic_message_counts(db, streams, timeline)
 
     return Digest(
         period=period,
@@ -844,7 +842,7 @@ def build_period(
                 offset_label=topic_moments.get(topic.name, (None, None))[1],
                 chat_messages=topic_message_counts.get(topic.name, 0),
             )
-            for topic in _topic_revenue(money_events, windows)
+            for topic in _topic_revenue(money_events, timeline)
         ),
         content_revenue=tuple(_content_revenue(db, channel.id, stream_ids)),
         top_lives_by_revenue=_top_lives(
