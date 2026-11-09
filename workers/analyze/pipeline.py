@@ -8,7 +8,7 @@ have been shown in the prompt AND exist in the database.
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from statistics import median
 
@@ -39,8 +39,9 @@ from core.models import (
 )
 from core.monetization import build_monetization_facts, generate_channel_recommendations
 from core.records import RecordMetric, add_record_facts, update_stream_records
-from workers.analyze.evidence import validated_evidence
+from workers.analyze.evidence import SpreadSample, validated_evidence
 from workers.analyze.peaks import compute_and_store_peaks
+from workers.analyze.topic_blocks import BlockSummary, ShownBlocks, TopicBlockClaims
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,8 @@ class PromptContext:
     text: str
     message_ids: set[int]
     segment_ids: set[int]
+    # Only the topics prompt shows blocks.
+    blocks: ShownBlocks = field(default_factory=ShownBlocks.none)
 
 
 def run_analysis(
@@ -128,10 +131,11 @@ def run_analysis(
     for peak in peaks:
         _explain_peak(db, stream, backend, budget, peak, stats, language)
 
-    block_summaries = _summarize_blocks(db, stream, backend, budget, stats, language)
-    if block_summaries:
-        _final_summary(db, stream, backend, budget, block_summaries, stats, language)
-        _rank_topics(db, stream, backend, budget, block_summaries, stats, language)
+    blocks = _summarize_blocks(db, stream, backend, budget, stats, language)
+    if blocks:
+        summaries = [block.text for block in blocks]
+        _final_summary(db, stream, backend, budget, summaries, stats, language)
+        _rank_topics(db, stream, backend, budget, blocks, stats, language)
 
     _recommend(db, stream, strong, budget, stats, language)
     _recommend_channel(db, stream, strong, budget, broke_records, language)
@@ -324,9 +328,9 @@ def _summarize_blocks(
     budget: TokenBudget,
     stats: AnalysisStats,
     language: str | None,
-) -> list[str]:
-    summaries: list[str] = []
-    for start, end in _stream_blocks(stream):
+) -> list[BlockSummary]:
+    summaries: list[BlockSummary] = []
+    for number, (start, end) in enumerate(_stream_blocks(stream), start=1):
         # Blocks scale with how long the live ran, the final steps do not, and
         # the final steps are the ones the streamer actually reads. Without this
         # reserve a long live spends the whole budget narrating its own middle
@@ -340,7 +344,9 @@ def _summarize_blocks(
         context = _window_context(db, stream, start, end, BLOCK_CHAT_SAMPLE)
         fitted = budget.fit_input(context.text, BLOCK_PROMPT_INPUT_CAP)
         previous = (
-            f"Summary of what happened before: {summaries[-1]}\n" if summaries else ""
+            f"Summary of what happened before: {summaries[-1].text}\n"
+            if summaries
+            else ""
         )
         prompt = (
             f"{previous}Block from {start:%H:%M} to {end:%H:%M} (UTC) of a Twitch live.\n"
@@ -356,17 +362,24 @@ def _summarize_blocks(
                 extra={"stream_id": stream.id},
             )
             continue
-        summaries.append(str(parsed["content"]).strip())
+        text = str(parsed["content"]).strip()
+        summaries.append(BlockSummary(number, start, end, text))
     return summaries
 
 
 def _evidence_segment_context(db: Session, stream: Stream) -> PromptContext:
-    segments = db.scalars(
-        select(TranscriptSegment)
+    speech_ids = db.scalars(
+        select(TranscriptSegment.id)
         .where(TranscriptSegment.stream_id == stream.id)
         .where(TranscriptSegment.kind == SegmentKind.SPEECH)
+        .where(TranscriptSegment.text.is_not(None))
         .order_by(TranscriptSegment.started_at)
-        .limit(EVIDENCE_SEGMENT_SAMPLE)
+    ).all()
+    picked = SpreadSample(EVIDENCE_SEGMENT_SAMPLE).pick(speech_ids)
+    segments = db.scalars(
+        select(TranscriptSegment)
+        .where(TranscriptSegment.id.in_(picked))
+        .order_by(TranscriptSegment.started_at)
     ).all()
     text = "\n".join(f"{s.id}: {s.text}" for s in segments if s.text)
     return PromptContext(
@@ -415,27 +428,34 @@ def _rank_topics(
     stream: Stream,
     backend: LLMBackend,
     budget: TokenBudget,
-    block_summaries: list[str],
+    blocks: list[BlockSummary],
     stats: AnalysisStats,
     language: str | None,
 ) -> None:
-    """One insight per topic, ranked; each topic validates its own evidence."""
+    """One insight per topic, ranked; each topic validates its own evidence
+    and gets the blocks of the live it is about."""
     if not budget.can_afford(TOPICS_PROMPT_INPUT_CAP, TOPICS_OUTPUT_TOKENS):
         stats.skipped_for_budget.append("topics")
         return
-    context = _evidence_segment_context(db, stream)
     joined = budget.fit_input(
-        "\n".join(f"- {s}" for s in block_summaries), TOPICS_PROMPT_INPUT_CAP
+        "\n".join(block.prompt_line() for block in blocks), TOPICS_PROMPT_INPUT_CAP
+    )
+    context = replace(
+        _evidence_segment_context(db, stream),
+        blocks=ShownBlocks.in_prompt(blocks, joined),
     )
     prompt = (
-        f"Block-by-block summaries of a Twitch live:\n{joined}\n{context.text}\n"
+        "Block-by-block summaries of a Twitch live, each with its block id "
+        f"(B1 is block 1) and time:\n{joined}\n{context.text}\n"
         "Identify the main topics of the live, from most to least talked about. "
         'Reply with valid JSON ONLY: {"topics": [{"name": "<topic in a few words>", '
         f'"description": "<1 sentence written in {language_name(language)}>", '
-        '"segment_ids": [ids of the speech segments], "message_ids": []}]}. '
+        '"segment_ids": [ids of the speech segments], "message_ids": [], '
+        '"block_ids": [numbers of the blocks that are mostly about this topic]}]}. '
         f"Use only ids listed above, at most {TOPIC_MAX} DISTINCT topics (do not "
-        "slice the same topic), cite at least one id per topic. The name is a "
-        "short label, never a chat message."
+        "slice the same topic), cite at least one id per topic. Give every block "
+        "to the one topic it is mostly about, so together the topics cover the "
+        "whole live. The name is a short label, never a chat message."
     )
     response = backend.generate(prompt, TOPICS_OUTPUT_TOKENS)
     budget.spend(prompt, response)
@@ -483,6 +503,7 @@ def _store_topics(
 ) -> None:
     rank = 0
     kept_names: list[str] = []
+    claims = TopicBlockClaims.unclaimed(context.blocks)
     for topic in topics[:TOPIC_MAX]:
         if not isinstance(topic, dict):
             continue
@@ -505,6 +526,11 @@ def _store_topics(
         kept_names.append(name)
         rank += 1
         evidence["rank"] = rank
+        # Claimed only once a topic is kept, so a discarded topic never takes
+        # a block from the topics after it.
+        blocks = claims.claim(topic)
+        if blocks:
+            evidence["blocks"] = blocks
         description = str(topic.get("description", "")).strip()
         # first line = topic name, rest = description (the UI splits on this)
         content = f"{name}\n{description}" if description else name

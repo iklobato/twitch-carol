@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from apps.api.deps import CurrentChannel, DbSession
@@ -38,6 +38,7 @@ from core.models import (
 from core.records import MIN_LIVES_FOR_RECORDS, records_held_by_stream
 from core.schedule import HISTORY_LIMIT, estimate_next_live
 from core.text import meaningful_words, message_sentiment, strip_emotes, tokenize
+from core.topics import TopicWindowReader
 
 router = APIRouter(prefix="/api")
 
@@ -245,7 +246,7 @@ def stream_report(
         select(Insight).where(Insight.stream_id == stream.id).order_by(Insight.id)
     ).all()
     messages_by_id, segments_by_id = _resolve_citations(db, stream.id, insights)
-    engagement = _topic_engagement(db, stream.id, insights, segments_by_id)
+    engagement = _topic_engagement(db, stream.id, insights)
     return StreamReport(
         id=stream.id,
         started_at=stream.started_at,
@@ -315,28 +316,23 @@ def _topic_engagement(
     db: Session,
     stream_id: int,
     insights: Sequence[Insight],
-    segments_by_id: dict[int, TranscriptSegment],
 ) -> dict[int, float]:
-    """Chat rate (SQL buckets) inside each topic's cited window, normalized to
-    the busiest topic = 100. Never derived from LLM text (rule 2)."""
+    """Chat rate (SQL buckets) inside each topic's own window (its blocks, or
+    its cited speech for older topics), normalized to the busiest topic =
+    100. Never derived from LLM text (rule 2)."""
     topics = [i for i in insights if i.type == InsightType.TOPIC]
     if not topics:
         return {}
     buckets = chat_rate_buckets(db, stream_id)
     if not buckets:
         return {}
+    timeline = TopicWindowReader(db).timeline([stream_id])
 
     def window_rate(insight: Insight) -> float:
-        cited = [
-            segments_by_id[i]
-            for i in _cited_ids(insight, "segment_ids")
-            if i in segments_by_id
-        ]
-        if not cited:
+        window = timeline.window_for(insight.id)
+        if window is None:
             return 0.0
-        start = min(s.started_at for s in cited) - timedelta(seconds=60)
-        end = max(s.ended_at for s in cited) + timedelta(seconds=60)
-        rates = [count for t, count in buckets if start <= t <= end]
+        rates = [count for t, count in buckets if window.contains(t)]
         return sum(rates) / len(rates) if rates else 0.0
 
     rates = {insight.id: window_rate(insight) for insight in topics}
@@ -578,7 +574,6 @@ def search(
 CHATTERS_LIMIT = 20
 CHATTER_SAMPLE_MESSAGES = 3
 CHATTER_TOP_WORDS = 8
-TOPIC_WINDOW_PADDING = timedelta(seconds=60)
 TOPIC_TOP_CHATTERS = 3
 TOPIC_SAMPLE_MESSAGES = 8
 TOPIC_TOP_WORDS = 12
@@ -838,17 +833,20 @@ def topic_detail(
         .where(TranscriptSegment.id.in_(_cited_ids(insight, "segment_ids")))
         .order_by(TranscriptSegment.started_at)
     ).all()
-    if not segments:
+    window = TopicWindowReader(db).timeline([stream.id]).window_for(insight.id)
+    if window is None:
         raise HTTPException(status_code=404, detail="Topic has no cited window")
 
-    window_start = min(s.started_at for s in segments) - TOPIC_WINDOW_PADDING
-    window_end = max(s.ended_at for s in segments) + TOPIC_WINDOW_PADDING
-
+    # A topic's blocks need not be next to each other: chat between them
+    # belongs to other topics.
+    in_topic = or_(
+        *(
+            and_(ChatMessage.sent_at >= span.start, ChatMessage.sent_at < span.end)
+            for span in window.spans
+        )
+    )
     in_window = (
-        select(ChatMessage)
-        .where(ChatMessage.stream_id == stream.id)
-        .where(ChatMessage.sent_at >= window_start)
-        .where(ChatMessage.sent_at < window_end)
+        select(ChatMessage).where(ChatMessage.stream_id == stream.id).where(in_topic)
     )
     messages_in_window = (
         db.scalar(select(func.count()).select_from(in_window.subquery())) or 0
@@ -865,7 +863,7 @@ def topic_detail(
     )
     ended_at = stream.ended_at if stream.ended_at is not None else stream.started_at
     stream_minutes = max((ended_at - stream.started_at).total_seconds() / 60, 1)
-    window_minutes = max((window_end - window_start).total_seconds() / 60, 1)
+    window_minutes = max(window.duration().total_seconds() / 60, 1)
     stream_rate = total_messages / stream_minutes
     if stream_rate > 0:
         lift = round((messages_in_window / window_minutes) / stream_rate, 2)
@@ -873,8 +871,7 @@ def topic_detail(
     top_rows = db.execute(
         select(ChatMessage.author_login, func.count())
         .where(ChatMessage.stream_id == stream.id)
-        .where(ChatMessage.sent_at >= window_start)
-        .where(ChatMessage.sent_at < window_end)
+        .where(in_topic)
         .group_by(ChatMessage.author_login)
         .order_by(func.count().desc())
         .limit(TOPIC_TOP_CHATTERS)
@@ -884,8 +881,7 @@ def topic_detail(
     window_rows = db.execute(
         select(ChatMessage.text, ChatMessage.emotes)
         .where(ChatMessage.stream_id == stream.id)
-        .where(ChatMessage.sent_at >= window_start)
-        .where(ChatMessage.sent_at < window_end)
+        .where(in_topic)
     ).yield_per(2000)
     for text, emotes in window_rows:
         word_counter.update(meaningful_words(text, emotes, language))
@@ -896,8 +892,8 @@ def topic_detail(
 
     return TopicDetail(
         insight_id=insight.id,
-        window_start=window_start,
-        window_end=window_end,
+        window_start=window.start,
+        window_end=window.end,
         messages_in_window=messages_in_window,
         chat_rate_lift=lift,
         top_chatters=[
