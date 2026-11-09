@@ -3,6 +3,7 @@ stored if its cited message/segment ids really exist in this stream. Anything
 unverifiable is discarded and logged, never shown."""
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -11,6 +12,22 @@ from sqlalchemy.orm import Session
 from core.models import ChatMessage, TranscriptSegment
 
 logger = logging.getLogger(__name__)
+
+
+class SpreadSample:
+    """Up to `size` items picked evenly from first to last. The summary and
+    topics prompts used to offer only the first 12 speech segments, so every
+    topic could only cite the opening minutes of the live and came out as
+    "greetings"."""
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+
+    def pick(self, items: Sequence[int]) -> list[int]:
+        if len(items) <= self._size:
+            return list(items)
+        step = len(items) / self._size
+        return [items[int(index * step)] for index in range(self._size)]
 
 
 def validated_evidence(

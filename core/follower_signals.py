@@ -18,13 +18,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from core.models import Event, Follower, Insight, InsightType, Stream, TranscriptSegment
+from core.models import Event, Follower, Stream
+from core.topics import TopicWindowReader
 
 FOLLOW_EVENT = "channel.follow"
 RAID_EVENT = "channel.raid"
 
 RAID_WINDOW = timedelta(minutes=15)
-TOPIC_PADDING = timedelta(seconds=60)
 
 # Fake-follow scoring: each true signal adds its weight; total >= threshold flags.
 YOUNG_ACCOUNT_DAYS = 30
@@ -279,9 +279,9 @@ def follow_velocity(db: Session, channel_id: int) -> list[VelocityDay]:
 
 def topic_to_follows(db: Session, channel_id: int) -> list[TopicFollows]:
     """Transcript topics whose time window overlapped follow events: what you
-    were talking about when new people followed."""
-    from apps.api.dashboard import _cited_ids
-
+    were talking about when new people followed. Counted only inside a
+    topic's own window, never the nearest topic: a follow is credited to
+    what was on screen when it happened."""
     follows = sorted(
         db.scalars(
             select(Event.occurred_at)
@@ -291,42 +291,17 @@ def topic_to_follows(db: Session, channel_id: int) -> list[TopicFollows]:
     )
     if not follows:
         return []
-    # Join on Stream: an Insight only knows its stream, so without this the
-    # topics come from every channel on the platform and a follow of yours gets
-    # credited to whatever someone else happened to be talking about at that
-    # minute. Measured in production before the join existed: three of these,
-    # including another streamer's live titled "Falas incoerentes e confusao"
-    # showing up as what earned a follow.
-    topics = list(
-        db.scalars(
-            select(Insight)
-            .join(Stream, Stream.id == Insight.stream_id)
-            .where(Stream.channel_id == channel_id)
-            .where(Insight.type == InsightType.TOPIC)
-        )
-    )
-    segment_ids = {i for t in topics for i in _cited_ids(t, "segment_ids")}
-    if not segment_ids:
-        return []
-    bounds = {
-        row[0]: (row[1], row[2])
-        for row in db.execute(
-            select(
-                TranscriptSegment.id,
-                TranscriptSegment.started_at,
-                TranscriptSegment.ended_at,
-            ).where(TranscriptSegment.id.in_(segment_ids))
-        )
-    }
+    # Only this channel's lives: an Insight only knows its stream, so without
+    # this the topics come from every channel on the platform and a follow of
+    # yours gets credited to whatever someone else happened to be talking
+    # about at that minute. Measured in production before the filter existed:
+    # three of these, including another streamer's live titled "Falas
+    # incoerentes e confusao" showing up as what earned a follow.
+    stream_ids = list(db.scalars(select(Stream.id).where(Stream.channel_id == channel_id)))
+    timeline = TopicWindowReader(db).timeline(stream_ids)
     per_topic: dict[str, int] = defaultdict(int)
-    for topic in topics:
-        segs = [bounds[i] for i in _cited_ids(topic, "segment_ids") if i in bounds]
-        if not segs:
-            continue
-        start = min(s[0] for s in segs) - TOPIC_PADDING
-        end = max(s[1] for s in segs) + TOPIC_PADDING
-        name = topic.content.split("\n")[0]
-        per_topic[name] += sum(1 for f in follows if start <= f < end)
+    for window in timeline.every_window():
+        per_topic[window.name] += sum(1 for follow in follows if window.contains(follow))
     ranked = [
         TopicFollows(topic=name, follows=count)
         for name, count in per_topic.items()
