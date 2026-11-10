@@ -22,12 +22,13 @@ export default function DigestSettings({ me }: { me: Me }) {
   }
 
   return (
-    <section className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <h3 className="mb-3 font-semibold">{t('digest.title')}</h3>
+    <section className="rounded-2xl border border-line bg-panel p-5">
+      <h3 className="mb-2 font-display text-lg font-semibold">{t('digest.title')}</h3>
       <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
           <input
             type="checkbox"
+            className="h-5 w-5 accent-accent"
             checked={weekly}
             onChange={(event) => {
               setWeekly(event.target.checked)
@@ -36,9 +37,10 @@ export default function DigestSettings({ me }: { me: Me }) {
           />
           {t('digest.weekly')}
         </label>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex min-h-11 items-center gap-3 text-sm">
           <input
             type="checkbox"
+            className="h-5 w-5 accent-accent"
             checked={monthly}
             onChange={(event) => {
               setMonthly(event.target.checked)
@@ -49,7 +51,7 @@ export default function DigestSettings({ me }: { me: Me }) {
         </label>
       </div>
       {state === 'saved' && (
-        <p className="mt-2 text-sm text-zinc-400">{t('digest.saved')}</p>
+        <p className="mt-2 text-sm text-ink-muted">{t('digest.saved')}</p>
       )}
       {state === 'failed' && (
         <p role="alert" className="mt-2 text-sm text-red-400">
@@ -57,7 +59,7 @@ export default function DigestSettings({ me }: { me: Me }) {
         </p>
       )}
       {!me.email && (
-        <p className="mt-2 text-xs text-zinc-500">{t('digest.noEmail')}</p>
+        <p className="mt-2 text-sm text-ink-muted">{t('digest.noEmail')}</p>
       )}
     </section>
   )

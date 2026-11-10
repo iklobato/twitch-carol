@@ -9,12 +9,16 @@ import Landing from "./views/Landing";
 import StreamReport from "./views/StreamReport";
 import StreamsList from "./views/StreamsList";
 import SearchView from "./views/SearchView";
+import SettingsView from "./views/SettingsView";
+import Sidebar from "./components/Sidebar";
 import type { ChannelOption, Me } from "./types";
 
 function SearchBox() {
   const [value, setValue] = useState("");
   return (
     <form
+      role="search"
+      className="w-full sm:w-auto sm:max-w-md sm:flex-1"
       onSubmit={(event) => {
         event.preventDefault();
         if (value.trim().length >= 2) {
@@ -26,7 +30,8 @@ function SearchBox() {
         value={value}
         onChange={(event) => setValue(event.target.value)}
         placeholder={t("app.search.placeholder")}
-        className="w-64 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm placeholder-zinc-500 focus:border-purple-500 focus:outline-none"
+        aria-label={t("app.search.placeholder")}
+        className="min-h-11 w-full rounded-xl border border-line-strong bg-panel px-4 text-sm placeholder-ink-faint focus:border-accent focus:outline-none"
       />
     </form>
   );
@@ -52,7 +57,8 @@ function ImpersonatePicker() {
     <select
       defaultValue=""
       onChange={(event) => impersonate(event.target.value)}
-      className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-300 focus:border-purple-500 focus:outline-none"
+      aria-label={t("app.impersonate.placeholder")}
+      className="min-h-11 rounded-lg border border-line-strong bg-panel px-2 text-sm text-ink-muted focus:border-accent focus:outline-none"
     >
       <option value="" disabled>
         {t("app.impersonate.placeholder")}
@@ -110,7 +116,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 p-8 text-zinc-400">
+      <div className="min-h-screen bg-canvas p-8 font-sans text-ink-muted">
         {t("app.loading")}
       </div>
     );
@@ -127,56 +133,39 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-canvas font-sans text-ink">
       {me.impersonating && (
         <ImpersonationBanner login={me.impersonating.as_login} />
       )}
-      <header className="border-b border-zinc-800 bg-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex items-center gap-4">
-            <a href="#/" className="text-lg font-bold">
-              Stream Intel
-            </a>
-            <a
-              href="#/channel"
-              className="text-sm text-zinc-400 hover:text-purple-300"
-            >
-              {t("app.nav.channel")}
-            </a>
-            <a
-              href="#/followers"
-              className="text-sm text-zinc-400 hover:text-purple-300"
-            >
-              {t("app.nav.followers")}
-            </a>
-            <a
-              href="#/finance"
-              className="text-sm text-zinc-400 hover:text-purple-300"
-            >
-              {t("app.nav.finance")}
-            </a>
-          </div>
-          <SearchBox />
-          <div className="flex items-center gap-3 text-sm">
-            {me.is_admin && <ImpersonatePicker />}
-            <span className="text-zinc-400">@{me.login}</span>
-            <a
-              href="/auth/logout"
-              className="text-zinc-500 underline hover:text-zinc-300"
-            >
-              Sair
-            </a>
-          </div>
+      <div className="md:flex">
+        <Sidebar route={route} />
+        <div className="min-w-0 flex-1">
+          <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 pt-5 md:px-8">
+            <SearchBox />
+            <div className="flex items-center gap-3 text-sm">
+              {me.is_admin && <ImpersonatePicker />}
+              <span className="text-ink-muted">@{me.login}</span>
+              <a
+                href="/auth/logout"
+                className="inline-flex min-h-11 items-center text-ink-faint hover:text-ink"
+              >
+                {t("app.logout")}
+              </a>
+            </div>
+          </header>
+          <main className="mx-auto max-w-5xl px-4 py-6 md:px-8">
+            {route.view === "home" && <StreamsList />}
+            {route.view === "channel" && <ChannelView />}
+            {route.view === "audience" && <FollowersView />}
+            {route.view === "money" && <FinanceView />}
+            {route.view === "settings" && <SettingsView me={me} />}
+            {route.view === "stream" && (
+              <StreamReport streamId={route.streamId} />
+            )}
+            {route.view === "search" && <SearchView query={route.query} />}
+          </main>
         </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        {route.view === "home" && <StreamsList />}
-        {route.view === "channel" && <ChannelView me={me} />}
-        {route.view === "followers" && <FollowersView />}
-        {route.view === "finance" && <FinanceView />}
-        {route.view === "stream" && <StreamReport streamId={route.streamId} />}
-        {route.view === "search" && <SearchView query={route.query} />}
-      </main>
+      </div>
     </div>
   );
 }

@@ -11,11 +11,9 @@ import {
 } from 'chart.js'
 import { useEffect, useRef, useState } from 'react'
 import { apiGet, formatDate } from '../api'
-import DigestSettings from '../components/DigestSettings'
-import LanguageSettings from '../components/LanguageSettings'
 import { fmtInt, fmtMoney, t, type MessageKey } from '../i18n'
 import { liveCount } from './StreamsList'
-import type { ChannelOverview, GoalOut, GrowthPoint, Me } from '../types'
+import type { ChannelOverview, GoalOut, GrowthPoint } from '../types'
 
 Chart.register(
   LineController,
@@ -688,33 +686,7 @@ function ChannelMonetization({ overview }: { overview: ChannelOverview }) {
   )
 }
 
-function AccountSummary({ overview }: { overview: ChannelOverview }) {
-  return (
-    <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-lg font-bold">{t('channel.accountSummary')}</h3>
-        <span className="text-xs text-zinc-500">
-          {t('channel.connectedAt', { date: formatDate(overview.connected_at) })}
-        </span>
-      </div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        {t('channel.scopesTitle')}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {overview.scopes.map((scope) => (
-          <span
-            key={scope}
-            className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-300"
-          >
-            {t(`scope.${scope}` as MessageKey)}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-export default function ChannelView({ me }: { me: Me }) {
+export default function ChannelView() {
   const [overview, setOverview] = useState<ChannelOverview | null>(null)
 
   useEffect(() => {
@@ -731,8 +703,6 @@ export default function ChannelView({ me }: { me: Me }) {
         {t('nav.back')}
       </a>
       <h2 className="mb-4 mt-2 text-xl font-bold">{t('channel.title')}</h2>
-      <LanguageSettings me={me} />
-      <DigestSettings me={me} />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard label={t('channel.stat.streams')} value={fmtInt(overview.total_streams)} />
         <StatCard label={t('channel.stat.messages')} value={fmtInt(overview.total_messages)} />
@@ -749,7 +719,6 @@ export default function ChannelView({ me }: { me: Me }) {
           value={fmtMoney(overview.finance.total_estimated_usd)}
         />
       </div>
-      <AccountSummary overview={overview} />
       {noStreams && (
         <p className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-400">
           {t('channel.noStreams')}

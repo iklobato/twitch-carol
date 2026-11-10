@@ -33,16 +33,16 @@ export default function LanguageSettings({ me }: { me: Me }) {
   }
 
   return (
-    <section className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <h3 className="mb-3 font-semibold">{t('settings.title')}</h3>
+    <section className="rounded-2xl border border-line bg-panel p-5">
+      <h3 className="mb-4 font-display text-lg font-semibold">{t('settings.title')}</h3>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
-          <label className="block text-sm text-zinc-400" htmlFor="stream-language">
+          <label className="block text-sm font-semibold" htmlFor="stream-language">
             {t('settings.streamLanguage')}
           </label>
           <select
             id="stream-language"
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2"
+            className="mt-1.5 min-h-11 w-full rounded-lg border border-line-strong bg-panel-raised px-3"
             value={streamLanguage}
             onChange={(event) => setStreamLanguage(event.target.value)}
           >
@@ -54,12 +54,12 @@ export default function LanguageSettings({ me }: { me: Me }) {
           </select>
         </div>
         <div>
-          <label className="block text-sm text-zinc-400" htmlFor="screen-language">
+          <label className="block text-sm font-semibold" htmlFor="screen-language">
             {t('settings.screenLanguage')}
           </label>
           <select
             id="screen-language"
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-3 py-2"
+            className="mt-1.5 min-h-11 w-full rounded-lg border border-line-strong bg-panel-raised px-3"
             value={screenLanguage}
             onChange={(event) => setScreenLanguage(event.target.value)}
           >
@@ -74,14 +74,14 @@ export default function LanguageSettings({ me }: { me: Me }) {
       <div className="mt-3 flex items-center gap-3">
         <button
           type="button"
-          className="rounded bg-violet-600 px-4 py-2 text-sm font-medium disabled:opacity-50"
+          className="min-h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-[#16112a] disabled:opacity-50"
           onClick={save}
           disabled={state === 'saving'}
         >
           {t('settings.save')}
         </button>
         {state === 'saved' && (
-          <span className="text-sm text-zinc-400">{t('settings.saved')}</span>
+          <span className="text-sm text-ink-muted">{t('settings.saved')}</span>
         )}
         {state === 'failed' && (
           <span role="alert" className="text-sm text-red-400">
@@ -89,7 +89,7 @@ export default function LanguageSettings({ me }: { me: Me }) {
           </span>
         )}
       </div>
-      <p className="mt-2 text-xs text-zinc-500">{t('settings.timezone', { zone: me.timezone })}</p>
+      <p className="mt-3 text-sm text-ink-muted">{t('settings.timezone', { zone: me.timezone })}</p>
     </section>
   )
 }

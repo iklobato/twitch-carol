@@ -14,6 +14,8 @@ const pt: Record<keyof typeof en, string> = {
   "onboarding.failed": "N\u00e3o deu para salvar. Tente de novo.",
 
   // settings
+  "settings.pageTitle": "Ajustes",
+  "settings.signedInAs": "Conectado como @{login}",
   "settings.title": "Configura\u00e7\u00f5es do canal",
   "settings.streamLanguage": "Idioma em que voc\u00ea transmite",
   "settings.screenLanguage": "Idioma deste painel",
@@ -37,8 +39,11 @@ const pt: Record<keyof typeof en, string> = {
   "app.impersonate.viewingAs": "Vendo como",
   "app.impersonate.stop": "Sair",
   "app.nav.channel": "Meu canal",
-  "app.nav.followers": "Meus seguidores",
-  "app.nav.finance": "Financeiro",
+  "app.nav.label": "Principal",
+  "app.nav.home": "Início",
+  "app.nav.money": "Dinheiro",
+  "app.nav.audience": "Público",
+  "app.nav.settings": "Ajustes",
   "app.logout": "Sair",
   "nav.back": "← voltar",
 

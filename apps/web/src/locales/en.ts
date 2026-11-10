@@ -13,6 +13,8 @@ export default {
   "onboarding.failed": "Could not save that. Try again.",
 
   // settings
+  "settings.pageTitle": "Settings",
+  "settings.signedInAs": "Signed in as @{login}",
   "settings.title": "Channel settings",
   "settings.streamLanguage": "Language you stream in",
   "settings.screenLanguage": "Language of this dashboard",
@@ -35,8 +37,11 @@ export default {
   "app.impersonate.viewingAs": "Viewing as",
   "app.impersonate.stop": "Exit",
   "app.nav.channel": "My channel",
-  "app.nav.followers": "My followers",
-  "app.nav.finance": "Finance",
+  "app.nav.label": "Main",
+  "app.nav.home": "Home",
+  "app.nav.money": "Money",
+  "app.nav.audience": "Audience",
+  "app.nav.settings": "Settings",
   "app.logout": "Log out",
   "nav.back": "← back",
 
