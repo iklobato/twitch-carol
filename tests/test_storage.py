@@ -8,9 +8,27 @@ from botocore.exceptions import ClientError
 from core.config import Settings
 from core.storage import LocalAudioStorage, SpacesAudioStorage, audio_key
 
+CHANNEL_ID = 1
+STREAM_ID = 2
+
 
 def test_audio_key_layout() -> None:
-    assert audio_key(3, 42, 7) == "audio/3/42/007.ogg"
+    assert audio_key(3, 42, "1794277890-primary") == "audio/3/42/1794277890-primary.ogg"
+
+
+def test_restart_and_standby_files_never_overwrite_each_other(tmp_path: Path) -> None:
+    """Regression: files used to be numbered from 000 per worker process, so a
+    worker restarting mid-live uploaded a new 000.ogg over the old one."""
+    storage = LocalAudioStorage(tmp_path / "store")
+    source = tmp_path / "segment.ogg"
+    source.write_bytes(b"opus-bytes")
+    names = ("1794277200-primary", "1794277500-primary", "1794277200-standby")
+
+    for name in names:
+        storage.save_file(audio_key(CHANNEL_ID, STREAM_ID, name), source)
+
+    stored = storage.list_keys(f"audio/{CHANNEL_ID}/{STREAM_ID}/")
+    assert len(stored) == len(names), f"a file overwrote another: {stored}"
 
 
 def test_local_storage_save_list_fetch_roundtrip(tmp_path: Path) -> None:
@@ -18,12 +36,12 @@ def test_local_storage_save_list_fetch_roundtrip(tmp_path: Path) -> None:
     source = tmp_path / "segment.ogg"
     source.write_bytes(b"opus-bytes")
 
-    storage.save_file(audio_key(1, 2, 0), source)
-    storage.save_file(audio_key(1, 2, 1), source)
-    storage.save_file(audio_key(1, 99, 0), source)
+    storage.save_file(audio_key(1, 2, "1794277200-primary"), source)
+    storage.save_file(audio_key(1, 2, "1794277800-primary"), source)
+    storage.save_file(audio_key(1, 99, "1794277200-primary"), source)
 
     keys = storage.list_keys("audio/1/2/")
-    assert keys == ["audio/1/2/000.ogg", "audio/1/2/001.ogg"]
+    assert keys == ["audio/1/2/1794277200-primary.ogg", "audio/1/2/1794277800-primary.ogg"]
 
     destination = tmp_path / "fetched.ogg"
     storage.fetch_file(keys[0], destination)

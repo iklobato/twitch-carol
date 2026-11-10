@@ -5,7 +5,8 @@ Everything inside the app is real (routes, crypto, HMAC verification, IRC
 parsing, SQL, evidence validation); only the external borders are faked.
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -24,6 +25,7 @@ from core.queues import JOB_ANALYZE, JOB_TRANSCRIBE, enqueue_job
 from core.worker_loop import WorkerSpec, _run_job, pick_next_job
 from tests.fake_twitch import FAKE_USER, FakeTwitch, http_seam, irc_line
 from tests.test_analysis_e2e import PromptAwareFakeLLM
+from workers.capture.clip_detector import ClipDetector
 from workers.capture.collectors import ChatCollector, ViewerSampler
 from workers.capture.session import build_audit
 from workers.transcribe import pipeline as transcribe_pipeline
@@ -67,6 +69,20 @@ def fake_twitch(
     # eventsub binds _http at import time, so patch its copy too
     monkeypatch.setattr(core.eventsub, "_http", seam)
     return fake
+
+
+class MinuteClock:
+    """Stands in for datetime inside the collector: each now() is one minute
+    later, as the real sampler is. The sampler keeps one sample per minute, so
+    five samples in the same second would collapse into one."""
+
+    def __init__(self, start: datetime) -> None:
+        self._start = start
+        self._calls = 0
+
+    def now(self, tz: tzinfo) -> datetime:
+        self._calls += 1
+        return (self._start + timedelta(minutes=self._calls)).astimezone(tz)
 
 
 class FakeStorage:
@@ -129,32 +145,33 @@ def _run_live(api_client, fake_twitch: FakeTwitch, db, channel: Channel) -> Stre
     stream = db.scalar(select(Stream).where(Stream.channel_id == channel.id))
     assert stream is not None and stream.status == StreamStatus.CAPTURING
 
-    collector = ChatCollector(stream, channel)
+    collector = ChatCollector(stream, channel, ClipDetector())
     for minute in range(CALM_MINUTES):
         for index in range(5):
             author = f"viewer_{index}"
             sent_at = stream.started_at + timedelta(minutes=minute, seconds=index * 10)
-            collector._ingest(
+            collector.ingest(
                 irc_line(channel.login, author, "falando de deploy e caddy", sent_at)
             )
     for index in range(BURST_MESSAGES):
         sent_at = stream.started_at + timedelta(minutes=BURST_MINUTE, seconds=index)
-        collector._ingest(
+        collector.ingest(
             irc_line(
                 channel.login, f"raider_{index % 6}", "POGGERS hype demais", sent_at
             )
         )
-    collector._flush()
+    collector.flush()
 
     sampler = ViewerSampler(stream, channel)
-    for viewers in (50, 60, 120, 80, 55):
-        fake_twitch.stream_info = {
-            "viewer_count": viewers,
-            "title": "Live e2e",
-            "game_name": "Software and Game Development",
-            "started_at": started_at.isoformat(),
-        }
-        sampler._sample_once()
+    with patch("workers.capture.collectors.datetime", MinuteClock(stream.started_at)):
+        for viewers in (50, 60, 120, 80, 55):
+            fake_twitch.stream_info = {
+                "viewer_count": viewers,
+                "title": "Live e2e",
+                "game_name": "Software and Game Development",
+                "started_at": started_at.isoformat(),
+            }
+            sampler.sample_once()
 
     events: list[tuple[str, dict]] = [
         ("channel.raid", {"to_broadcaster_user_id": FAKE_USER["id"], "viewers": 60}),

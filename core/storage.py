@@ -14,6 +14,7 @@ from core.config import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 AUDIO_PREFIX = "audio/"
+SEGMENT_ROLE_SEPARATOR = "-"
 BACKUP_RETENTION_DAYS = 30
 BACKUP_PREFIX = "backups/"
 
@@ -107,8 +108,10 @@ class SpacesAudioStorage:
             )
 
 
-def audio_key(channel_id: int, stream_id: int, sequence: int) -> str:
-    return f"{AUDIO_PREFIX}{channel_id}/{stream_id}/{sequence:03d}.ogg"
+def audio_key(channel_id: int, stream_id: int, segment_name: str) -> str:
+    """segment_name is `<start epoch>-<capture role>`: unique per worker and per
+    second, so a restart or a standby worker never overwrites a stored file."""
+    return f"{AUDIO_PREFIX}{channel_id}/{stream_id}/{segment_name}.ogg"
 
 
 def get_audio_storage() -> AudioStorage:

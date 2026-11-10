@@ -16,6 +16,10 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
+from sqlalchemy import CursorResult
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
 from core.channels import ensure_fresh_token
 from core.config import get_settings
 from core.db import ensure_chat_partition, session_factory
@@ -29,10 +33,10 @@ from core.irc import (
 )
 from core.models import Channel, ChatMessage, Stream, TwitchClip, ViewerSample
 from core.queues import get_valkey
-from core.storage import audio_key, get_audio_storage
+from core.storage import SEGMENT_ROLE_SEPARATOR, audio_key, get_audio_storage
 from core.streams import mark_stream_offline
 from core.twitch import TwitchAuthError, create_clip, get_stream_info
-from workers.capture.clip_detector import ClipDetector
+from workers.capture.clip_detector import SpikeDetector
 
 logger = logging.getLogger(__name__)
 
@@ -47,17 +51,22 @@ OFFLINE_SAMPLES_TO_END = 3
 SIM_POLL_BLOCK_MS = 1000
 AUDIO_SEGMENT_SECONDS = 600
 OPUS_BITRATE = "32k"
+# Cut on the wall clock and name each file by its start second (epoch), so the
+# standby worker's copy of a window lines up with the official one and a
+# restarted worker never reuses a name.
+CLOCK_SEGMENT_ARGS = ("-segment_atclocktime", "1", "-strftime", "1")
+CLOCK_SEGMENT_PATTERN = "%s.ogg"
 
 
 class ChatCollector:
-    def __init__(self, stream: Stream, channel: Channel) -> None:
+    def __init__(self, stream: Stream, channel: Channel, clips: SpikeDetector) -> None:
         self._stream_id = stream.id
         self._channel_id = channel.id
         self._login = channel.login
         self._broadcaster_id = channel.twitch_user_id
         self._buffer: list[ParsedChat] = []
         self._ensured_months: set[date] = set()
-        self._clips = ClipDetector()
+        self._clips = clips
         self._clip_tasks: set[asyncio.Task] = set()
         self.stats = {"messages": 0, "disconnects": 0, "gap_seconds": 0.0}
 
@@ -71,7 +80,7 @@ class ChatCollector:
         finally:
             flusher.cancel()
             await asyncio.gather(flusher, return_exceptions=True)
-            await asyncio.to_thread(self._flush)
+            await asyncio.to_thread(self.flush)
 
     async def _consume_irc(self, stop: asyncio.Event) -> None:
         delays = backoff_delays()
@@ -115,7 +124,7 @@ class ChatCollector:
                     writer.write(b"PONG :tmi.twitch.tv\r\n")
                     await writer.drain()
                     continue
-                self._ingest(line)
+                self.ingest(line)
                 self._maybe_clip()
         except TimeoutError:
             writer.write(b"PING :keepalive\r\n")
@@ -132,7 +141,7 @@ class ChatCollector:
             )
             for entry_id, fields in entries:
                 last_id = entry_id
-                self._ingest(fields["line"])
+                self.ingest(fields["line"])
 
     @staticmethod
     def _read_sim_entries(
@@ -150,7 +159,7 @@ class ChatCollector:
             (entry_id, fields) for _, items in response for entry_id, fields in items
         ]
 
-    def _ingest(self, line: str) -> None:
+    def ingest(self, line: str) -> None:
         parsed = parse_privmsg(line)
         if parsed is None:
             return
@@ -205,33 +214,42 @@ class ChatCollector:
     async def _flush_loop(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             await asyncio.sleep(CHAT_FLUSH_INTERVAL_SECONDS)
-            await asyncio.to_thread(self._flush)
+            await asyncio.to_thread(self.flush)
 
-    def _flush(self) -> None:
+    def flush(self) -> None:
         if not self._buffer:
             return
         batch, self._buffer = self._buffer, []
         with session_factory()() as db:
-            for month in {m.sent_at.date().replace(day=1) for m in batch}:
-                if month not in self._ensured_months:
-                    ensure_chat_partition(db, month)
-                    self._ensured_months.add(month)
-            db.add_all(
-                ChatMessage(
-                    stream_id=self._stream_id,
-                    channel_id=self._channel_id,
-                    sent_at=message.sent_at,
-                    message_id=message.message_id,
-                    author_id=message.author_id,
-                    author_login=message.author_login,
-                    badges=message.badges,
-                    emotes=message.emotes,
-                    text=message.text,
-                )
-                for message in batch
+            self._ensure_partitions(db, batch)
+            # A standby worker on the same live sends the same messages: the
+            # copy that arrives second is dropped by the unique message id.
+            inserted = db.execute(
+                insert(ChatMessage)
+                .values([self._row(message) for message in batch])
+                .on_conflict_do_nothing(index_elements=["message_id", "sent_at"])
             )
             db.commit()
-        self.stats["messages"] += len(batch)
+        self.stats["messages"] += cast(CursorResult, inserted).rowcount
+
+    def _ensure_partitions(self, db: Session, batch: list[ParsedChat]) -> None:
+        months = {message.sent_at.date().replace(day=1) for message in batch}
+        for month in months - self._ensured_months:
+            ensure_chat_partition(db, month)
+            self._ensured_months.add(month)
+
+    def _row(self, message: ParsedChat) -> dict:
+        return {
+            "stream_id": self._stream_id,
+            "channel_id": self._channel_id,
+            "sent_at": message.sent_at,
+            "message_id": message.message_id,
+            "author_id": message.author_id,
+            "author_login": message.author_login,
+            "badges": message.badges,
+            "emotes": message.emotes,
+            "text": message.text,
+        }
 
 
 class ViewerSampler:
@@ -248,7 +266,7 @@ class ViewerSampler:
     async def run(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
             try:
-                await asyncio.to_thread(self._sample_once)
+                await asyncio.to_thread(self.sample_once)
             except TwitchAuthError:
                 logger.exception(
                     "viewer sample failed", extra={"stream_id": self._stream_id}
@@ -260,7 +278,7 @@ class ViewerSampler:
             except TimeoutError:
                 continue
 
-    def _sample_once(self) -> None:
+    def sample_once(self) -> None:
         count, title, category = self._read_source()
         if count is None:
             self._note_offline()
@@ -268,21 +286,33 @@ class ViewerSampler:
         self._offline_since = None
         self._offline_samples = 0
         with session_factory()() as db:
-            db.add(
-                ViewerSample(
-                    stream_id=self._stream_id,
-                    sampled_at=datetime.now(UTC),
-                    viewer_count=count,
-                )
-            )
-            if title is not None and not self._title_recorded:
-                stream = db.get(Stream, self._stream_id)
-                if stream is not None:
-                    stream.title = title
-                    stream.category = category
-                    self._title_recorded = True
+            self._store_sample(db, count)
+            self._record_title(db, title, category)
             db.commit()
         self.stats["samples"] += 1
+
+    def _store_sample(self, db: Session, count: int) -> None:
+        # Cut to the minute: a standby worker sampling the same minute writes
+        # the same key, and its copy is dropped.
+        db.execute(
+            insert(ViewerSample)
+            .values(
+                stream_id=self._stream_id,
+                sampled_at=datetime.now(UTC).replace(second=0, microsecond=0),
+                viewer_count=count,
+            )
+            .on_conflict_do_nothing(index_elements=["stream_id", "sampled_at"])
+        )
+
+    def _record_title(self, db: Session, title: str | None, category: str | None) -> None:
+        if title is None or self._title_recorded:
+            return
+        stream = db.get(Stream, self._stream_id)
+        if stream is None:
+            return
+        stream.title = title
+        stream.category = category
+        self._title_recorded = True
 
     def _note_offline(self) -> None:
         """Helix says the channel is offline. The stream.offline webhook is not
@@ -411,7 +441,8 @@ class AudioRecorder:
             "segment",
             "-segment_time",
             str(AUDIO_SEGMENT_SECONDS),
-            str(workdir / "%03d.ogg"),
+            *CLOCK_SEGMENT_ARGS,
+            str(workdir / CLOCK_SEGMENT_PATTERN),
         ]
 
     def _upload_segments(
@@ -426,10 +457,8 @@ class AudioRecorder:
         for path in segments:
             if path in done:
                 continue
-            sequence = int(path.stem)
-            storage.save_file(
-                audio_key(self._channel_id, self._stream_id, sequence), path
-            )
+            name = f"{path.stem}{SEGMENT_ROLE_SEPARATOR}{get_settings().capture_role}"
+            storage.save_file(audio_key(self._channel_id, self._stream_id, name), path)
             done.add(path)
             self.stats["segments"] += 1
             logger.info(

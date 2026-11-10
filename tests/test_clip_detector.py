@@ -1,6 +1,12 @@
 """Online chat-spike detector for live auto-clipping."""
 
-from workers.capture.clip_detector import ClipDetector
+from core.config import CaptureRole
+from workers.capture.clip_detector import ClipDetector, SpikeDetector, SpikeDetectorFactory
+
+BURST_AT = 290.0
+BURST_MESSAGES = 40
+BASELINE_END = 270
+BASELINE_STEP = 30
 
 
 def _detector(**over: object) -> ClipDetector:
@@ -55,3 +61,30 @@ def test_cap_blocks_after_max() -> None:
     for _ in range(8):  # long past the cooldown, but the cap is reached
         d.observe(500.0)
     assert d.should_clip(500.0) is False
+
+
+class ChatBurst:
+    """A quiet baseline then a burst far over it: a clip-worthy moment."""
+
+    def play(self, detector: SpikeDetector) -> float:
+        for second in range(0, BASELINE_END, BASELINE_STEP):
+            detector.observe(float(second))
+        for _ in range(BURST_MESSAGES):
+            detector.observe(BURST_AT)
+        return BURST_AT
+
+
+def test_official_worker_clips_a_chat_spike() -> None:
+    detector = SpikeDetectorFactory().for_role(CaptureRole.PRIMARY)
+
+    now = ChatBurst().play(detector)
+
+    assert detector.should_clip(now) is True, "the official worker must clip a spike"
+
+
+def test_standby_worker_never_clips_the_same_spike() -> None:
+    detector = SpikeDetectorFactory().for_role(CaptureRole.STANDBY)
+
+    now = ChatBurst().play(detector)
+
+    assert detector.should_clip(now) is False, "a standby clip would duplicate it on Twitch"

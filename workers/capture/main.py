@@ -12,7 +12,7 @@ from sqlalchemy import select
 from core.db import session_factory
 from core.logging_setup import setup_logging
 from core.models import Channel, Stream, StreamStatus
-from workers.capture.session import CaptureSession
+from workers.capture.live_sessions import LiveSessions
 
 logger = logging.getLogger(__name__)
 
@@ -30,29 +30,14 @@ def _load_capturing_streams() -> list[tuple[Stream, Channel]]:
 
 
 async def run_forever() -> None:
-    sessions: dict[int, CaptureSession] = {}
+    sessions = LiveSessions({})
     factory = session_factory()
     while True:
         rows = await asyncio.to_thread(_load_capturing_streams)
-        live = {stream.id for stream, _ in rows if stream.ended_at is None}
-        ended = [
-            (stream, channel) for stream, channel in rows if stream.ended_at is not None
-        ]
-
-        for stream, channel in rows:
-            if stream.id in live and stream.id not in sessions:
-                session = CaptureSession(stream, channel)
-                sessions[stream.id] = session
-                session.start()
-
-        for stream, channel in ended:
-            if stream.id in sessions:
-                session = sessions.pop(stream.id)
-            else:
-                # Worker restarted mid-live: no collector stats, audit from DB only.
-                session = CaptureSession(stream, channel)
+        for session in sessions.open_new(rows):
+            session.start()
+        for session in sessions.closing(rows):
             await session.stop_and_finalize(factory)
-
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
 

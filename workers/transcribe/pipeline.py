@@ -26,7 +26,7 @@ from core.config import Settings, get_settings
 from core.i18n import resolve
 from core.models import Channel, SegmentKind, Stream, TranscriptSegment
 from core.storage import get_audio_storage
-from workers.capture.collectors import AUDIO_SEGMENT_SECONDS
+from workers.transcribe.segments import AudioCoverage, SegmentNameParser
 
 logger = logging.getLogger(__name__)
 
@@ -276,15 +276,25 @@ def process_stream(
     )
     counts = {kind.value: 0 for kind in SegmentKind}
     heard: str | None = None
+    names = SegmentNameParser()
+    coverage = AudioCoverage(SAMPLE_RATE)
 
-    for key in keys:
-        file_offset = _file_offset_seconds(key)
+    # Start order lets the coverage keep each recorded second once, whether it
+    # came from the primary worker, the standby one, or a restart.
+    by_start = sorted(
+        keys, key=lambda stored: names.parse(stored).offset_seconds(stream.started_at)
+    )
+    for key in by_start:
         with tempfile.NamedTemporaryFile(suffix=Path(key).suffix) as handle:
             storage.fetch_file(key, Path(handle.name))
-            audio = decode_audio(handle.name, sampling_rate=SAMPLE_RATE)
+            decoded = decode_audio(handle.name, sampling_rate=SAMPLE_RATE)
+        piece = coverage.new_part(names.parse(key).offset_seconds(stream.started_at), decoded)
+        if piece is None:
+            continue
+        audio = piece.samples
         for region in classify_regions(audio, detect_speech_spans(audio)):
             added, language = _persist_region(
-                db, stream, transcriber, audio, region, file_offset
+                db, stream, transcriber, audio, region, piece.offset_seconds
             )
             counts[region.kind.value] += added
             heard = heard or language
@@ -320,10 +330,6 @@ def _remember_spoken_language(db: Session, channel_id: int, heard: str | None) -
     logger.info(
         "spoken language detected: %s", detected, extra={"channel_id": channel_id}
     )
-
-
-def _file_offset_seconds(key: str) -> float:
-    return int(Path(key).stem) * AUDIO_SEGMENT_SECONDS
 
 
 def _absolute(stream: Stream, file_offset: float, seconds: float) -> datetime:

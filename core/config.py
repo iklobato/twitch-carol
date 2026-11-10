@@ -1,7 +1,13 @@
+from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class CaptureRole(StrEnum):
+    PRIMARY = "primary"
+    STANDBY = "standby"
 
 
 class Settings(BaseSettings):
@@ -72,6 +78,9 @@ class Settings(BaseSettings):
     # set this true when database_url points at a pooled endpoint.
     db_disable_prepared_statements: bool = False
     simulation: bool = False
+    # Which capture worker this is. The standby app runs CAPTURE_ROLE=standby
+    # next to the official one, so a deploy of either loses no live.
+    capture_role: CaptureRole = CaptureRole.PRIMARY
     # Comma-separated Twitch logins allowed to impersonate other channels.
     admin_logins: str = ""
     # Fallback audio store when Spaces is not configured (dev/simulation).
