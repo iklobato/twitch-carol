@@ -27,8 +27,22 @@ describe('parseHash', () => {
     expect(parseHash('#/channel')).toEqual({ view: 'channel' })
   })
 
-  it('abre a visão do financeiro', () => {
-    expect(parseHash('#/finance')).toEqual({ view: 'finance' })
+  it('abre money pelo nome novo e pelo antigo', () => {
+    expect(parseHash('#/money')).toEqual({ view: 'money' })
+    expect(parseHash('#/finance')).toEqual({ view: 'money' })
+  })
+
+  it('abre audience pelo nome novo e pelo antigo', () => {
+    expect(parseHash('#/audience')).toEqual({ view: 'audience' })
+    expect(parseHash('#/followers')).toEqual({ view: 'audience' })
+  })
+
+  it('abre os ajustes', () => {
+    expect(parseHash('#/settings')).toEqual({ view: 'settings' })
+  })
+
+  it('nome de propriedade do objeto nao vira rota', () => {
+    expect(parseHash('#/toString')).toEqual({ view: 'home' })
   })
 
   it('rota desconhecida cai na home', () => {
