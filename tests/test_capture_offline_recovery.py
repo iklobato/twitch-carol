@@ -56,7 +56,7 @@ def _sampler(db, monkeypatch, responses):
 def test_ends_stream_after_consecutive_offline_polls(db, monkeypatch) -> None:
     sampler, stream = _sampler(db, monkeypatch, [None] * OFFLINE_SAMPLES_TO_END)
     for _ in range(OFFLINE_SAMPLES_TO_END):
-        sampler._sample_once()
+        sampler.sample_once()
 
     assert (
         stream.ended_at is not None
@@ -66,7 +66,7 @@ def test_ends_stream_after_consecutive_offline_polls(db, monkeypatch) -> None:
 def test_one_offline_poll_does_not_end_a_live_stream(db, monkeypatch) -> None:
     # a single empty Helix response is a blip, not the end of the live
     sampler, stream = _sampler(db, monkeypatch, [None])
-    sampler._sample_once()
+    sampler.sample_once()
 
     assert stream.ended_at is None
 
@@ -76,7 +76,7 @@ def test_coming_back_online_resets_the_offline_streak(db, monkeypatch) -> None:
     responses = [None] * (OFFLINE_SAMPLES_TO_END - 1) + [LIVE, None]
     sampler, stream = _sampler(db, monkeypatch, responses)
     for _ in range(len(responses)):
-        sampler._sample_once()
+        sampler.sample_once()
 
     assert stream.ended_at is None
     assert sampler.stats["samples"] == 1  # only the online poll got recorded
@@ -86,7 +86,7 @@ def test_ended_at_is_when_the_channel_went_dark(db, monkeypatch) -> None:
     sampler, stream = _sampler(db, monkeypatch, [None] * OFFLINE_SAMPLES_TO_END)
     before = datetime.now(UTC)
     for _ in range(OFFLINE_SAMPLES_TO_END):
-        sampler._sample_once()
+        sampler.sample_once()
 
     # the real end is the first offline poll, not the one that crossed the streak
     assert stream.ended_at is not None
@@ -102,6 +102,6 @@ def test_does_not_overwrite_an_ended_at_the_webhook_already_set(
     db.flush()
 
     for _ in range(OFFLINE_SAMPLES_TO_END):
-        sampler._sample_once()
+        sampler.sample_once()
 
     assert stream.ended_at == webhook_end

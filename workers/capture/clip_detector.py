@@ -7,6 +7,9 @@ has to be online, not the post-stream SQL peaks.
 """
 
 from collections import deque
+from typing import Protocol
+
+from core.config import CaptureRole
 
 WINDOW_SECONDS = 30.0
 BASELINE_SECONDS = 300.0
@@ -65,3 +68,38 @@ class ClipDetector:
     def mark_clipped(self, now: float) -> None:
         self._last_clip_at = now
         self._clips += 1
+
+
+class SpikeDetector(Protocol):
+    def observe(self, now: float) -> None: ...
+
+    def should_clip(self, now: float) -> bool: ...
+
+    def window_rate(self, now: float) -> int: ...
+
+    def mark_clipped(self, now: float) -> None: ...
+
+
+class NeverClipDetector:
+    """The standby capture worker reads the same chat as the official one. A
+    clip is a write on the streamer's own Twitch channel, so only the official
+    worker makes it: two workers would clip every spike twice."""
+
+    def observe(self, now: float) -> None:
+        return None
+
+    def should_clip(self, now: float) -> bool:
+        return False
+
+    def window_rate(self, now: float) -> int:
+        return 0
+
+    def mark_clipped(self, now: float) -> None:
+        return None
+
+
+class SpikeDetectorFactory:
+    def for_role(self, role: CaptureRole) -> SpikeDetector:
+        if role is CaptureRole.STANDBY:
+            return NeverClipDetector()
+        return ClipDetector()

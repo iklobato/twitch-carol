@@ -341,6 +341,9 @@ class ChatMessage(Base):
     __table_args__ = (
         Index("ix_chat_messages_stream_sent", "stream_id", "sent_at"),
         Index("ix_chat_messages_text_search", "text_search", postgresql_using="gin"),
+        # Two capture workers read the same IRC channel; the Twitch message id
+        # makes the second copy a no-op (ON CONFLICT DO NOTHING in the collector).
+        Index("uq_chat_messages_message_sent", "message_id", "sent_at", unique=True),
         {"postgresql_partition_by": "RANGE (sent_at)"},
     )
 
@@ -397,7 +400,9 @@ class TranscriptSegment(Base):
 class ViewerSample(Base):
     __tablename__ = "viewer_samples"
     __table_args__ = (
-        Index("ix_viewer_samples_stream_sampled", "stream_id", "sampled_at"),
+        # sampled_at is cut to the minute, so two capture workers sampling the
+        # same minute store one row.
+        Index("uq_viewer_samples_stream_sampled", "stream_id", "sampled_at", unique=True),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
