@@ -1,7 +1,7 @@
 # Redesign do frontend (apps/web) - estado da sessao 2026-11-09/10
 
-Snapshot: 2026-11-10 02:17 UTC (2026-11-09 23:17 BRT). Cobre **somente** o que foi feito
-nesta sessao:
+Snapshot: 2026-11-10 16:23 UTC (13:23 BRT), revisado no fim da sessao. Cobre **somente** o que
+foi feito nesta sessao:
 
 1. Analise do frontend atual: telas, dados, problemas de leitura.
 2. Design novo em um canvas (5 telas), feito antes de qualquer codigo.
@@ -12,17 +12,22 @@ nesta sessao:
 Leitor alvo: qualquer agente que pegue este trabalho depois. Numero aqui foi medido nesta
 sessao; o que nao foi verificado esta dito na secao 9.
 
+Outros trabalhos da mesma sessao, em arquivos proprios: `knowledge/captura-redundante-standby.md`
+(segundo worker de captura) e `knowledge/incidente-transcricao-2026-11.md` (transcricao de producao
+parada de 05/11 a 10/11). Os PRs 4 a 6 do redesign ficaram parados por causa deles.
+
 ---
 
 ## 1. Resumo rapido
 
-| Item | Estado em 2026-11-10 02:17 UTC |
+| Item | Estado em 2026-11-10 16:23 UTC |
 |---|---|
 | PR 1 shell + rotas + Settings | https://github.com/iklobato/twitch-carol/pull/107 MERGEADO em `dev` (51a473a), deploy dev ACTIVE |
 | PR 2 Home | https://github.com/iklobato/twitch-carol/pull/108 MERGEADO em `dev` (f87c7e4), deploy dev ACTIVE as 02:18 UTC (17 min depois do merge), bundle conferido |
-| PR 3 relatorio da live em abas | https://github.com/iklobato/twitch-carol/pull/109 ABERTO, esperando o Henry |
+| PR 3 relatorio da live em abas | https://github.com/iklobato/twitch-carol/pull/109 ABERTO, esperando o Henry (traz tambem o conserto do teste com corrida e o hifen) |
+| Este documento | https://github.com/iklobato/twitch-carol/pull/110 ABERTO |
 | PRs 4, 5, 6 | nao comecados |
-| Producao (`main`, c0906af) | sem nenhum PR do redesign |
+| Producao (`main`, 0898765) | sem nenhum PR do redesign; desde a manha recebeu so os hotfixes #113 e #114 do incidente de transcricao |
 | Backend | nao mudou. Sem migracao, sem endpoint novo, sem dependencia nova |
 | Testes web | 50 antes da sessao, 61 em `dev` hoje, 64 no branch do PR 3 |
 
@@ -254,9 +259,11 @@ Nao verificado nesta sessao:
 
 ## 10. Estado local deixado na maquina do Henry
 
-- Worktrees: `/Users/iklo/twitch-worktrees/redesign` (branch `feat/redesign-live-report`) e
-  `/Users/iklo/twitch-worktrees/knowledge-redesign` (este documento).
-- Rodando: API local na 8080, vite na 5173, containers `deploy-postgres-1` e `deploy-valkey-1`.
-- Banco local migrado de `0022` para `0028` (migracoes da `dev`). A pasta principal do repo esta
+- Worktrees: `/Users/iklo/twitch-worktrees/redesign` (branch `feat/redesign-live-report`),
+  `/Users/iklo/twitch-worktrees/knowledge-redesign` (este documento), `/Users/iklo/twitch-worktrees/capture`
+  (captura) e `/Users/iklo/twitch-worktrees/hotfix-av` (hotfixes da `main`).
+- Rodando: API local na 8080 (agora o codigo do worktree `capture`), vite na 5173 (worktree
+  `redesign`), containers `deploy-postgres-1` e `deploy-valkey-1`.
+- Banco local migrado de `0022` para `0030` (migracoes da `dev`, incluindo as da captura). A pasta principal do repo esta
   na branch `perf/chat-channel-index` com uma migracao `0025` propria sem commit: pode conflitar
   com a `0025` da `dev` quando voltar a ela. Nao testado.
