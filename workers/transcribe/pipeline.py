@@ -12,8 +12,10 @@ import logging
 import tempfile
 import time
 import wave
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -173,6 +175,55 @@ def _encode_wav(audio: np.ndarray, rate: int) -> bytes:
     return buf.getvalue()
 
 
+RETRYABLE_STATUSES = frozenset({400, 429})
+ERROR_BODY_EXCERPT_CHARS = 200
+# A live fails only when more than this share of its speech chunks still fail
+# after their own retries. Measured 2026-11-10: about one rejected chunk in a
+# few thousand (1 per attempt on lives of 3,217 and ~4,500 chunks), so 1% is
+# ~30x that rate, while an endpoint that is down fails ~100% and still stops.
+MAX_FAILED_CHUNK_SHARE = 0.01
+
+
+class ChunkFailureBudget:
+    """Counts the speech chunks of one live that the endpoint never accepted.
+    Each is skipped (no text for those seconds) instead of discarding the
+    whole live; too many means the endpoint is down, and the live fails."""
+
+    def __init__(self) -> None:
+        self._attempted = 0
+        self._failed = 0
+
+    def persist(
+        self, region: Region, write: Callable[[], tuple[int, str | None]], stream: Stream
+    ) -> tuple[int, str | None]:
+        """Runs one region's write; a rejected speech chunk counts as skipped
+        and adds nothing, so the caller just moves on."""
+        if region.kind is SegmentKind.SPEECH:
+            self._attempted += 1
+        try:
+            return write()
+        except TranscriptionError as err:
+            self._failed += 1
+            logger.warning(
+                "speech chunk skipped at %.0fs into its file: %s",
+                region.start,
+                err,
+                extra={"stream_id": stream.id, "channel_id": stream.channel_id},
+            )
+            return 0, None
+
+    @property
+    def skipped(self) -> int:
+        return self._failed
+
+    def ensure_within_budget(self) -> None:
+        allowed = max(1, int(self._attempted * MAX_FAILED_CHUNK_SHARE))
+        if self._failed > allowed:
+            raise TranscriptionError(
+                f"{self._failed} of {self._attempted} speech chunks failed (allowed {allowed})"
+            )
+
+
 class RemoteTranscriber:
     """Sends each audio chunk to a remote OpenAI-compatible transcription
     endpoint (Groq whisper-large-v3-turbo by default). No local model, so the
@@ -231,13 +282,17 @@ class RemoteTranscriber:
                         if s.get("text", "").strip()
                     ],
                 )
-            retryable = response.status_code == 429 or response.status_code >= 500
+            # 400 is retried too: OpenRouter answered it once in thousands of
+            # chunks on 2026-11-10 and the same chunk passed when sent again.
+            status = response.status_code
+            retryable = status in RETRYABLE_STATUSES or status >= 500
+            excerpt = response.text[:ERROR_BODY_EXCERPT_CHARS]
+            rejection = f"transcription endpoint returned {status}: {excerpt}"
+            logger.warning("%s (attempt %d)", rejection, attempt)
             if retryable and attempt < self.MAX_ATTEMPTS:
                 time.sleep(self._retry_backoff * attempt)
                 continue
-            raise TranscriptionError(
-                f"transcription endpoint returned {response.status_code}"
-            )
+            raise TranscriptionError(rejection)
         raise TranscriptionError("transcription retries exhausted")
 
 
@@ -276,6 +331,7 @@ def process_stream(
     )
     counts = {kind.value: 0 for kind in SegmentKind}
     heard: str | None = None
+    budget = ChunkFailureBudget()
 
     for key in keys:
         file_offset = _file_offset_seconds(key)
@@ -283,11 +339,15 @@ def process_stream(
             storage.fetch_file(key, Path(handle.name))
             audio = decode_audio(handle.name, sampling_rate=SAMPLE_RATE)
         for region in classify_regions(audio, detect_speech_spans(audio)):
-            added, language = _persist_region(
-                db, stream, transcriber, audio, region, file_offset
+            added, language = budget.persist(
+                region,
+                partial(_persist_region, db, stream, transcriber, audio, region, file_offset),
+                stream,
             )
             counts[region.kind.value] += added
             heard = heard or language
+    budget.ensure_within_budget()
+    counts["untranscribed"] = budget.skipped
     _remember_spoken_language(db, stream.channel_id, heard)
     db.flush()
     return counts
