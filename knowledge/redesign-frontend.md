@@ -19,7 +19,7 @@ sessao; o que nao foi verificado esta dito na secao 9.
 | Item | Estado em 2026-11-10 02:17 UTC |
 |---|---|
 | PR 1 shell + rotas + Settings | https://github.com/iklobato/twitch-carol/pull/107 MERGEADO em `dev` (51a473a), deploy dev ACTIVE |
-| PR 2 Home | https://github.com/iklobato/twitch-carol/pull/108 MERGEADO em `dev` (f87c7e4), deploy dev **DEPLOYING 18/23** as 02:17 UTC, 16 min depois do merge (ver secao 8) |
+| PR 2 Home | https://github.com/iklobato/twitch-carol/pull/108 MERGEADO em `dev` (f87c7e4), deploy dev ACTIVE as 02:18 UTC (17 min depois do merge), bundle conferido |
 | PR 3 relatorio da live em abas | https://github.com/iklobato/twitch-carol/pull/109 ABERTO, esperando o Henry |
 | PRs 4, 5, 6 | nao comecados |
 | Producao (`main`, c0906af) | sem nenhum PR do redesign |
@@ -220,8 +220,8 @@ respostas `/api` >= 400. Fecha so a propria aba. Os scripts ficaram no scratchpa
 
 | O que | Como | Quando |
 |---|---|---|
-| Deploy do PR 2 na dev (f87c7e4) | `doctl apps list-deployments 3f70eb48-2543-4e97-a9ae-e008317dbbac --format Phase,Progress,Cause` | agora. Merge 02:01 UTC; 02:13 `BUILDING 8/23`; 02:17 `DEPLOYING 18/23`. O deploy do PR 1 levou ~6 min, este passou de 15. Se der `ERROR`, ler o log do build |
-| Codigo do PR 2 no ar | grep do bundle (6.5) por `"overview.nextStep"` | depois do deploy ACTIVE |
+| Tempo de deploy da dev | `doctl apps list-deployments 3f70eb48-2543-4e97-a9ae-e008317dbbac --format Phase,Progress,Cause` | a cada merge. PR 1 levou ~6 min; PR 2 levou 17 min (merge 02:01, `BUILDING 8/23` as 02:13, ACTIVE 02:18 UTC). Causa da diferenca nao investigada. Se der `ERROR`, ler o log do build |
+| Codigo de cada PR no ar | grep do bundle (6.5) por uma chave nova do PR | depois do deploy ACTIVE. PR 2 conferido as 02:18 UTC: `assets/index-Y7w_KlH5.js` tem `"overview.nextStep"` e `period=all` |
 | Telas logadas na dev | abrir dev.streamintel.cc logado, desktop e celular | ninguem conferiu ainda (Brave compartilhado sem login na dev) |
 | Chamadas novas por visita | Home agora faz +1 `/api/finance?period=all` e +1 `/api/streams/{id}/timeline`; relatorio faz menos chamadas ao abrir (abas sob demanda) | apos ir para prod, se a API ficar lenta |
 | Google Fonts | fontes vem de `fonts.googleapis.com`; se cair, cai para a fonte do sistema | so visual |
@@ -230,14 +230,13 @@ respostas `/api` >= 400. Fecha so a propria aba. Os scripts ficaram no scratchpa
 
 ## 9. O que falta e proximos passos (em ordem)
 
-1. Conferir o deploy do PR 2 (secao 8) e o bundle.
-2. Henry decide o merge do https://github.com/iklobato/twitch-carol/pull/109 (traz tambem o
+1. Henry decide o merge do https://github.com/iklobato/twitch-carol/pull/109 (traz tambem o
    conserto do teste com corrida, 6.2).
-3. PR 4 Money, PR 5 Audience (com o conserto de 6.7), PR 6 Tendencias + apagar `ChannelView`.
-4. No PR 6: `#/channel` vira alias de Home em `router.ts`, e conferir os links em
+2. PR 4 Money, PR 5 Audience (com o conserto de 6.7), PR 6 Tendencias + apagar `ChannelView`.
+3. No PR 6: `#/channel` vira alias de Home em `router.ts`, e conferir os links em
    `apps/web/public/howto.en.html` e `howto.pt.html` (3 links para `#/channel` em cada, medido em
    2026-11-10; o numero 11 dito antes na sessao contava o repo inteiro e estava errado).
-5. Release `dev` -> `main` quando os 6 estiverem prontos (decisao do Henry). So depois disso
+4. Release `dev` -> `main` quando os 6 estiverem prontos (decisao do Henry). So depois disso
    alguma coisa do redesign chega em producao.
 
 Pequenos pendentes, sem PR:
