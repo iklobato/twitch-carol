@@ -12,7 +12,9 @@ from sqlalchemy import select
 from core.db import session_factory
 from core.logging_setup import setup_logging
 from core.models import Channel, Stream, StreamStatus
+from core.twitch import HelixLiveStreams
 from workers.capture.live_sessions import LiveSessions
+from workers.capture.missed_lives import MissedLiveFinder
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,13 @@ def _load_capturing_streams() -> list[tuple[Stream, Channel]]:
 async def run_forever() -> None:
     sessions = LiveSessions({})
     factory = session_factory()
+    # Kept referenced: asyncio holds tasks weakly. Opens rows for lives whose
+    # stream.online webhook never arrived; the loop below then captures them.
+    missed_lives = asyncio.create_task(MissedLiveFinder(HelixLiveStreams()).watch_forever())
+    logger.info(
+        "watching Helix for lives with a missed webhook",
+        extra={"task": missed_lives.get_name()},
+    )
     while True:
         rows = await asyncio.to_thread(_load_capturing_streams)
         for session in sessions.open_new(rows):

@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -323,6 +324,16 @@ class BitsLeader(Base):
 
 class Stream(Base):
     __tablename__ = "streams"
+    __table_args__ = (
+        # The webhook (API) and the Helix check in each capture worker can open
+        # the same live at the same moment; only one open row per channel wins.
+        Index(
+            "uq_streams_one_open_per_channel",
+            "channel_id",
+            unique=True,
+            postgresql_where=text("status = 'capturing' AND ended_at IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     channel_id: Mapped[int] = mapped_column(ForeignKey("channels.id"), index=True)
