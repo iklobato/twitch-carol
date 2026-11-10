@@ -4,6 +4,8 @@ import { t, type MessageKey } from '../i18n'
 import type { Me } from '../types'
 
 function DataAccess({ scopes }: { scopes: string[] }) {
+  // A channel with no stored scopes would get an empty card.
+  if (scopes.length === 0) return null
   return (
     <section className="rounded-2xl border border-line bg-panel p-5">
       <h3 className="font-display text-lg font-semibold">{t('channel.scopesTitle')}</h3>
@@ -23,7 +25,7 @@ function DataAccess({ scopes }: { scopes: string[] }) {
 
 export default function SettingsView({ me }: { me: Me }) {
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5">
+    <div className="flex max-w-3xl flex-col gap-5">
       <h1 className="font-display text-3xl font-semibold">{t('settings.pageTitle')}</h1>
       <LanguageSettings me={me} />
       <DigestSettings me={me} />

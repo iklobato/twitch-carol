@@ -18,7 +18,7 @@ function SearchBox() {
   return (
     <form
       role="search"
-      className="w-full max-w-md flex-1"
+      className="w-full sm:w-auto sm:max-w-md sm:flex-1"
       onSubmit={(event) => {
         event.preventDefault();
         if (value.trim().length >= 2) {

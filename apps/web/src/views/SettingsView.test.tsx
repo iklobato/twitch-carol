@@ -36,6 +36,12 @@ describe('SettingsView', () => {
     expect(screen.getByText('Followers')).toBeTruthy()
   })
 
+  it('sem permissoes guardadas, nao mostra o bloco vazio', () => {
+    render(<SettingsView me={makeMe({ scopes: [] })} />)
+
+    expect(screen.queryByText('Data you allowed Stream Intel to read')).toBeNull()
+  })
+
   it('mostra quem esta logado e o link de sair', () => {
     render(<SettingsView me={makeMe()} />)
 
