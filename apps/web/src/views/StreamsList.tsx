@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { apiGet, formatTime, statusLabel } from '../api'
-import { fmtInt, locale, t, type MessageKey } from '../i18n'
+import { fmtInt, fmtMoney, locale, t, type MessageKey } from '../i18n'
 import OverviewSection from '../components/OverviewSection'
-import type { QueueItem, StreamListItem } from '../types'
+import type { FinanceOverview, QueueItem, StreamListItem } from '../types'
 
 function statusColor(status: string): string {
-  if (status === 'ready') return 'bg-emerald-900 text-emerald-300'
-  if (status === 'failed') return 'bg-red-900 text-red-300'
-  if (status === 'capturing') return 'bg-purple-900 text-purple-300'
-  return 'bg-amber-900 text-amber-300'
+  if (status === 'ready') return 'bg-money/15 text-money'
+  if (status === 'failed') return 'bg-alert/15 text-alert'
+  if (status === 'capturing') return 'bg-accent/20 text-accent-ink'
+  return 'bg-amber-400/15 text-amber-300'
 }
 
 function dayHeading(day: string): string {
@@ -55,6 +55,11 @@ export function dayTotals(streams: StreamListItem[], uniqueChatters: number): Da
   }
 }
 
+/** A live with no money shows a dash: "US$ 0.00" reads like a measured loss. */
+export function earnedLabel(usd: number | undefined): string {
+  return usd !== undefined && usd > 0 ? fmtMoney(usd) : '—'
+}
+
 /** "3 lives" / "1 live", same shape in both catalogs. */
 export function liveCount(n: number): string {
   return t(n === 1 ? 'streams.liveCount' : 'streams.liveCountPlural', { n })
@@ -62,32 +67,32 @@ export function liveCount(n: number): string {
 
 function MetricsLine({ metrics }: { metrics: DayMetrics }) {
   return (
-    <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-zinc-500">
-      <span>💬 {t('metrics.messages', { n: fmtInt(metrics.messages) })}</span>
-      <span>👤 {t('metrics.chatters', { n: fmtInt(metrics.chatters) })}</span>
-      <span>⚡ {t('metrics.events', { n: fmtInt(metrics.events) })}</span>
-      <span className={metrics.followers > 0 ? 'text-emerald-400' : ''}>
+    <p className="mt-1 flex flex-wrap gap-x-4 text-xs text-ink-muted">
+      <span>{t('metrics.messages', { n: fmtInt(metrics.messages) })}</span>
+      <span>{t('metrics.chatters', { n: fmtInt(metrics.chatters) })}</span>
+      <span>{t('metrics.events', { n: fmtInt(metrics.events) })}</span>
+      <span className={metrics.followers > 0 ? 'text-money' : ''}>
         {t('metrics.followers', { n: fmtInt(metrics.followers) })}
       </span>
-      <span>👁 {t('metrics.peak', { n: fmtInt(metrics.peak_viewers) })}</span>
+      <span>{t('metrics.peak', { n: fmtInt(metrics.peak_viewers) })}</span>
     </p>
   )
 }
 
-function StreamCard({ stream }: { stream: StreamListItem }) {
+function StreamCard({ stream, earned }: { stream: StreamListItem; earned: number | undefined }) {
   return (
     <a
       href={`#/stream/${stream.id}`}
-      className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-600"
+      className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-panel p-4 hover:border-line-strong"
     >
-      <div>
+      <div className="min-w-0">
         <p className="font-semibold">
           {stream.title ?? t('live.number', { id: stream.id })}
           {stream.category && (
-            <span className="ml-2 text-sm text-zinc-500">{stream.category}</span>
+            <span className="ml-2 text-sm font-normal text-ink-faint">{stream.category}</span>
           )}
         </p>
-        <p className="text-sm text-zinc-400">
+        <p className="text-sm text-ink-muted">
           {formatTime(stream.started_at)}
           {stream.ended_at && ` – ${formatTime(stream.ended_at)}`}
         </p>
@@ -97,7 +102,7 @@ function StreamCard({ stream }: { stream: StreamListItem }) {
             {stream.records.map((record) => (
               <span
                 key={record}
-                className="rounded-full border border-amber-700 bg-amber-950/30 px-2 py-0.5 text-[11px] text-amber-300"
+                className="rounded-full border border-amber-400/40 px-2 py-0.5 text-xs text-amber-200"
               >
                 {t('streams.record', { name: t(`record.${record}` as MessageKey) })}
               </span>
@@ -105,9 +110,12 @@ function StreamCard({ stream }: { stream: StreamListItem }) {
           </p>
         )}
       </div>
-      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor(stream.status)}`}>
-        {statusLabel(stream.status)}
-      </span>
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <span className={`font-semibold ${earned ? 'text-money' : 'text-ink-faint'}`}>{earnedLabel(earned)}</span>
+        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor(stream.status)}`}>
+          {statusLabel(stream.status)}
+        </span>
+      </div>
     </a>
   )
 }
@@ -115,10 +123,10 @@ function StreamCard({ stream }: { stream: StreamListItem }) {
 function QueueBanner({ items }: { items: QueueItem[] }) {
   if (items.length === 0) return null
   return (
-    <div className="mb-4 rounded-lg border border-amber-800 bg-amber-950/40 p-4 text-sm">
-      <p className="font-semibold text-amber-300">{t('queue.title')}</p>
+    <div className="mb-4 rounded-2xl border border-accent/30 bg-accent-soft p-4 text-sm">
+      <p className="font-semibold text-accent-ink">{t('queue.title')}</p>
       {items.map((item) => (
-        <p key={`${item.stream_id}-${item.job_type}`} className="text-amber-200/80">
+        <p key={`${item.stream_id}-${item.job_type}`} className="text-ink-muted">
           {t('live.number', { id: item.stream_id })}:{' '}
           {item.job_type === 'transcribe' ? t('queue.transcription') : t('queue.analysis')}{' '}
           {item.status === 'running'
@@ -149,30 +157,40 @@ export default function StreamsList() {
     return () => clearInterval(timer)
   }, [])
 
-  if (streams === null) return <p className="text-zinc-400">{t('streams.loading')}</p>
+  // Money per live only changes when a live is analyzed: once per visit is enough.
+  const [earnedByStream, setEarnedByStream] = useState<Map<number, number>>(new Map())
+  useEffect(() => {
+    apiGet<FinanceOverview>('/api/finance?period=all')
+      .then((finance) =>
+        setEarnedByStream(new Map(finance.by_stream.map((row) => [row.stream_id, row.estimated_usd]))),
+      )
+      .catch(() => setEarnedByStream(new Map()))
+  }, [])
+
+  if (streams === null) return <p className="text-ink-muted">{t('streams.loading')}</p>
 
   return (
     <div>
       <OverviewSection streams={streams} />
-      <h2 className="mb-4 text-xl font-bold">{t('streams.title')}</h2>
+      <h2 className="mb-4 font-display text-xl font-semibold">{t('streams.title')}</h2>
       <QueueBanner items={queue} />
-      {streams.length === 0 && <p className="text-zinc-400">{t('streams.empty')}</p>}
+      {streams.length === 0 && <p className="text-ink-muted">{t('streams.empty')}</p>}
       <div className="space-y-6">
         {groupByDay(streams).map((group) => (
           <div key={group.key}>
             <div className="mb-2 flex items-baseline gap-2">
-              <h3 className="text-sm font-semibold capitalize text-zinc-300">{group.label}</h3>
-              <span className="text-xs text-zinc-600">{liveCount(group.streams.length)}</span>
+              <h3 className="text-sm font-semibold capitalize">{group.label}</h3>
+              <span className="text-xs text-ink-faint">{liveCount(group.streams.length)}</span>
             </div>
             {group.streams.length > 1 && (
-              <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900/40 px-4 py-2">
-                <p className="text-xs font-semibold text-zinc-400">{t('streams.dayTotal')}</p>
+              <div className="mb-2 rounded-2xl border border-line px-4 py-2">
+                <p className="text-xs font-semibold text-ink-muted">{t('streams.dayTotal')}</p>
                 <MetricsLine metrics={dayTotals(group.streams, dayChatters[group.key] ?? 0)} />
               </div>
             )}
             <div className="space-y-2">
               {group.streams.map((stream) => (
-                <StreamCard key={stream.id} stream={stream} />
+                <StreamCard key={stream.id} stream={stream} earned={earnedByStream.get(stream.id)} />
               ))}
             </div>
           </div>

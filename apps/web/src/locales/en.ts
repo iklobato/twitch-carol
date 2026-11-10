@@ -157,6 +157,8 @@ export default {
   // overview
   "overview.title": "Overview",
   "overview.needsAttention": "Needs attention",
+  "overview.nextStep": "Next step",
+  "overview.nextStepNote": "built from your numbers",
   "overview.highlight.spike":
     'Unusual follow spike recently. See "Where they come from and what is real".',
   "overview.highlight.suspicious":

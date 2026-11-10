@@ -5,9 +5,9 @@ import type {
   FollowersOverview,
   StreamListItem,
 } from '../types'
-import OverviewSection, { pickHighlight } from './OverviewSection'
+import OverviewSection, { chatPath, pickAttention } from './OverviewSection'
 
-// Minimal builders: pickHighlight only reads a few fields, so we populate those
+// Minimal builders: pickAttention only reads a few fields, so we populate those
 // and cast (test-only) instead of constructing the full API payloads.
 function followers(opts: {
   spike?: boolean
@@ -39,38 +39,54 @@ function channel(opts: {
   } as unknown as ChannelOverview
 }
 
-describe('pickHighlight', () => {
-  it('prioriza risco de follow spike sobre meta e recomendação', () => {
-    const h = pickHighlight(
-      followers({ spike: true }),
-      channel({ goals: [{ pct: 90, current_amount: 90, target_amount: 100, description: 'x' }], recos: ['faça y'] }),
+describe('pickAttention', () => {
+  it('lista todos os riscos e metas, risco primeiro', () => {
+    const items = pickAttention(
+      followers({ spike: true, suspicious: 12 }),
+      channel({ goals: [{ pct: 90, current_amount: 90, target_amount: 100, description: 'x' }] }),
     )
-    expect(h?.tone).toBe('risk')
+    expect(items.map((item) => item.tone)).toEqual(['risk', 'risk', 'goal'])
+    expect(items[1].text).toContain('12')
   })
 
-  it('sinaliza muitos seguidores suspeitos', () => {
-    const h = pickHighlight(followers({ suspicious: 12 }), channel({}))
-    expect(h?.tone).toBe('risk')
-    expect(h?.text).toContain('12')
-  })
-
-  it('mostra meta perto de bater quando não há risco', () => {
-    const h = pickHighlight(
+  it('meta perto de bater mostra quanto falta e leva para Money', () => {
+    const [item] = pickAttention(
       followers({}),
       channel({ goals: [{ pct: 85, current_amount: 850, target_amount: 1000, description: 'Seguidores' }] }),
     )
-    expect(h?.tone).toBe('goal')
-    expect(h?.text).toContain('150')
+    expect(item.text).toContain('150')
+    expect(item.href).toBe('#/money')
   })
 
-  it('cai na recomendação da IA quando não há risco nem meta perto', () => {
-    const h = pickHighlight(followers({}), channel({ recos: ['Abra a semana com Just Chatting'] }))
-    expect(h?.tone).toBe('reco')
-    expect(h?.text).toContain('Just Chatting')
+  it('meta ja batida nao entra', () => {
+    const items = pickAttention(
+      followers({}),
+      channel({ goals: [{ pct: 100, current_amount: 1000, target_amount: 1000, description: 'x' }] }),
+    )
+    expect(items).toEqual([])
   })
 
-  it('retorna null sem nada a destacar', () => {
-    expect(pickHighlight(followers({}), channel({}))).toBeNull()
+  it('poucos suspeitos e recomendacao da IA nao viram alerta', () => {
+    expect(pickAttention(followers({ suspicious: 9 }), channel({ recos: ['faça y'] }))).toEqual([])
+  })
+})
+
+describe('chatPath', () => {
+  it('o ponto mais alto encosta no topo e o zero no fundo', () => {
+    const path = chatPath(
+      [
+        { t: 'a', value: 0 },
+        { t: 'b', value: 10 },
+        { t: 'c', value: 5 },
+      ],
+      100,
+      50,
+    )
+    expect(path).toBe('M0.0 50.0 L50.0 0.0 L100.0 25.0')
+  })
+
+  it('menos de dois pontos nao desenha nada', () => {
+    expect(chatPath([{ t: 'a', value: 3 }], 100, 50)).toBe('')
   })
 })
 
@@ -103,7 +119,9 @@ describe('OverviewSection', () => {
             ? followers({ total: 12400, new30: 64 })
             : url.includes('/api/finance')
               ? { estimated_usd: 546, delta_pct: 77.3 }
-              : url.includes('/api/streams/7')
+              : url.includes('/api/streams/7/timeline')
+                ? { chat: [{ t: 'a', value: 1 }, { t: 'b', value: 4 }], viewers: [], events: [], peaks: [] }
+                : url.includes('/api/streams/7')
                 ? { numbers: { messages: { value: 1200, previous_avg: 1000, delta_pct: 20 } } }
                 : {}
         return new Response(JSON.stringify(body), { status: 200 })
@@ -118,6 +136,7 @@ describe('OverviewSection', () => {
     expect(screen.getByText('Speedrun de Elden Ring')).toBeTruthy() // last live
     await waitFor(() =>
       expect(screen.getByText((t) => t.includes('Just Chatting'))).toBeTruthy(),
-    ) // destaque = recomendação
+    ) // proximo passo = recomendacao da IA
+    expect(await screen.findByRole('img', { name: 'Messages/min' })).toBeTruthy() // grafico da ultima live
   })
 })

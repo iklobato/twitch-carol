@@ -159,6 +159,8 @@ const pt: Record<keyof typeof en, string> = {
   // overview
   "overview.title": "Visão geral",
   "overview.needsAttention": "Precisa de atenção",
+  "overview.nextStep": "Próximo passo",
+  "overview.nextStepNote": "feito com os seus números",
   "overview.highlight.spike":
     'Pico anômalo de follows recente. Veja "De onde vêm e o que é real".',
   "overview.highlight.suspicious":
