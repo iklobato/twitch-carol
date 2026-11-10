@@ -55,9 +55,9 @@ export function dayTotals(streams: StreamListItem[], uniqueChatters: number): Da
   }
 }
 
-/** A live with no money shows a dash: "US$ 0.00" reads like a measured loss. */
+/** A live with no money shows "-": "US$ 0.00" reads like a measured loss. */
 export function earnedLabel(usd: number | undefined): string {
-  return usd !== undefined && usd > 0 ? fmtMoney(usd) : '—'
+  return usd !== undefined && usd > 0 ? fmtMoney(usd) : '-'
 }
 
 /** "3 lives" / "1 live", same shape in both catalogs. */
