@@ -590,6 +590,27 @@ def get_bits_leaderboard(
     ]
 
 
+class LiveStream(BaseModel):
+    user_id: str
+    started_at: datetime
+
+
+class HelixLiveStreams:
+    """Helix Get Streams for many channels at once, 100 per call (app token).
+    Offline channels are simply absent from the answer."""
+
+    def live(self, user_ids: list[int]) -> list[LiveStream]:
+        found: list[LiveStream] = []
+        with _http(None) as http:
+            for start in range(0, len(user_ids), CHANNELS_BATCH_SIZE):
+                batch = user_ids[start : start + CHANNELS_BATCH_SIZE]
+                params = [("user_id", str(uid)) for uid in batch]
+                params.append(("first", str(CHANNELS_BATCH_SIZE)))
+                body = _helix_get(http, "/streams", params, app_headers(http))
+                found.extend(LiveStream.model_validate(row) for row in body.get("data", []))
+        return found
+
+
 def get_stream_info(
     broadcaster_id: int, client: httpx.Client | None = None
 ) -> StreamInfo | None:
