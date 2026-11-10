@@ -1652,6 +1652,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "av" },
     { name = "boto3" },
     { name = "cryptography" },
     { name = "fastapi" },
@@ -1680,6 +1681,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
+    { name = "av", specifier = ">=18,<19" },
     { name = "boto3", specifier = ">=1.34" },
     { name = "cryptography", specifier = ">=42" },
     { name = "fastapi", specifier = ">=0.115" },
