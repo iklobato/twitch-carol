@@ -292,6 +292,12 @@ const pt: Record<keyof typeof en, string> = {
 
   // stream report
   "report.loading": "Carregando relatório...",
+  "report.tabs": "Partes do relatório",
+  "report.tab.moments": "Momentos",
+  "report.tab.improve": "O que melhorar",
+  "report.tab.money": "Dinheiro",
+  "report.tab.topics": "Assuntos",
+  "report.tab.chat": "Chat",
   "numbers.duration_minutes": "Duração (min)",
   "numbers.messages": "Mensagens",
   "numbers.chatters": "Chatters únicos",

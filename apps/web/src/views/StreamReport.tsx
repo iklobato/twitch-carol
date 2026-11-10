@@ -22,9 +22,30 @@ function scrollToPeak(peakId: number) {
   const el = document.getElementById(`momento-${peakId}`)
   if (el) {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    el.classList.add('ring-2', 'ring-orange-500')
-    setTimeout(() => el.classList.remove('ring-2', 'ring-orange-500'), 1600)
+    el.classList.add('ring-2', 'ring-accent')
+    setTimeout(() => el.classList.remove('ring-2', 'ring-accent'), 1600)
   }
+}
+
+export type ReportTab = 'moments' | 'improve' | 'money' | 'topics' | 'chat'
+
+/** Moments and topics only get a tab when the live has some; the other three
+ * always have something to say (or an empty state of their own). */
+export function availableTabs(peaks: number, topics: number): ReportTab[] {
+  const tabs: ReportTab[] = []
+  if (peaks > 0) tabs.push('moments')
+  tabs.push('improve', 'money')
+  if (topics > 0) tabs.push('topics')
+  tabs.push('chat')
+  return tabs
+}
+
+const TAB_LABEL: Record<ReportTab, MessageKey> = {
+  moments: 'report.tab.moments',
+  improve: 'report.tab.improve',
+  money: 'report.tab.money',
+  topics: 'report.tab.topics',
+  chat: 'report.tab.chat',
 }
 
 const PROCESSING_POLL_MS = 10000
@@ -34,18 +55,18 @@ function NumbersRow({ report }: { report: Report }) {
   return (
     <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-6">
       {Object.entries(report.numbers).map(([key, comparison]) => (
-        <div key={key} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-          <p className="text-xs text-zinc-500">{t(`numbers.${key}` as MessageKey)}</p>
+        <div key={key} className="rounded-2xl border border-line bg-panel p-3">
+          <p className="text-xs text-ink-faint">{t(`numbers.${key}` as MessageKey)}</p>
           <p className="text-lg font-bold">{fmtInt(comparison.value)}</p>
           {comparison.delta_pct != null ? (
             <p
-              className={`text-xs ${comparison.delta_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+              className={`text-xs ${comparison.delta_pct >= 0 ? 'text-money' : 'text-alert'}`}
             >
               {comparison.delta_pct >= 0 ? '▲' : '▼'} {Math.abs(comparison.delta_pct)}%{' '}
               {t('report.vsLast10')}
             </p>
           ) : (
-            <p className="text-xs text-zinc-600">{t('report.noHistory')}</p>
+            <p className="text-xs text-ink-faint">{t('report.noHistory')}</p>
           )}
         </div>
       ))}
@@ -64,13 +85,13 @@ function FeedbackButtons({
     <div className="flex items-center gap-2 text-xs">
       <button
         onClick={() => onFeedback(insight.feedback === 'useful' ? null : 'useful')}
-        className={`rounded border px-2 py-0.5 ${insight.feedback === 'useful' ? 'border-emerald-600 text-emerald-400' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+        className={`rounded border px-2 py-0.5 ${insight.feedback === 'useful' ? 'border-emerald-600 text-money' : 'border-line-strong text-ink-faint hover:text-ink'}`}
       >
         {t('feedback.useful')}
       </button>
       <button
         onClick={() => onFeedback(insight.feedback === 'not_useful' ? null : 'not_useful')}
-        className={`rounded border px-2 py-0.5 ${insight.feedback === 'not_useful' ? 'border-red-700 text-red-400' : 'border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+        className={`rounded border px-2 py-0.5 ${insight.feedback === 'not_useful' ? 'border-red-700 text-alert' : 'border-line-strong text-ink-faint hover:text-ink'}`}
       >
         {t('feedback.notUseful')}
       </button>
@@ -87,8 +108,8 @@ function SummaryHero({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <section className="mb-6 rounded-xl border border-purple-900/70 bg-gradient-to-b from-purple-950/40 to-zinc-900 p-6">
-      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-purple-400">
+    <section className="mb-6 rounded-2xl border border-line bg-panel p-6">
+      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-accent-ink">
         {t('report.summary')}
       </p>
       <p className="mb-4 max-w-3xl text-base leading-relaxed">{insight.content}</p>
@@ -98,10 +119,10 @@ function SummaryHero({
             <button
               key={segment.id}
               onClick={() => setOpen(!open)}
-              className="rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs text-zinc-400 hover:border-purple-500 hover:text-zinc-200"
+              className="rounded-full border border-line-strong bg-panel px-3 py-1 text-xs text-ink-muted hover:border-accent hover:text-ink"
             >
               🎙{' '}
-              <span className="font-semibold text-purple-400">
+              <span className="font-semibold text-accent-ink">
                 {formatTime(segment.started_at)}
               </span>{' '}
               "{(segment.text ?? '').slice(0, 42)}
@@ -111,10 +132,10 @@ function SummaryHero({
         </div>
       )}
       {open && (
-        <div className="mb-3 space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+        <div className="mb-3 space-y-2 rounded-lg border border-line bg-canvas p-3 text-sm">
           {insight.cited_segments.map((segment) => (
             <p key={segment.id}>
-              <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
+              <span className="tabular-nums text-ink-faint">{formatTime(segment.started_at)}</span>{' '}
               {segment.text}
             </p>
           ))}
@@ -144,7 +165,7 @@ function Sparkline({ timeline, peak }: { timeline: Timeline; peak: PeakOut }) {
         return (
           <span
             key={point.t}
-            className={`w-2 rounded-sm ${hot ? 'bg-orange-500' : 'bg-zinc-700'}`}
+            className={`w-2 rounded-sm ${hot ? 'bg-accent' : 'bg-line-strong'}`}
             style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }}
           />
         )
@@ -181,14 +202,14 @@ function MomentCard({
   return (
     <div
       id={`momento-${peak.id}`}
-      className="mb-3 rounded-xl border border-zinc-800 border-l-4 border-l-orange-500 bg-zinc-900 p-4 transition-all"
+      className="mb-3 rounded-2xl border border-line bg-panel p-4 transition-all"
     >
       <div className="flex flex-wrap gap-x-6 gap-y-2 md:flex-nowrap">
         <div className="w-24 shrink-0">
-          <p className="text-lg font-bold tabular-nums text-orange-400">
+          <p className="text-lg font-bold tabular-nums text-accent-ink">
             {formatTime(peak.window_start)}
           </p>
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-ink-faint">
             {t('moment.rate', { score: peak.score.toFixed(1) })}
           </p>
           {timeline && <Sparkline timeline={timeline} peak={peak} />}
@@ -197,20 +218,20 @@ function MomentCard({
           {insight ? (
             <p className="mb-3 text-sm leading-relaxed">{insight.content}</p>
           ) : (
-            <p className="mb-3 text-sm text-zinc-500">{t('moment.noExplanation')}</p>
+            <p className="mb-3 text-sm text-ink-faint">{t('moment.noExplanation')}</p>
           )}
           <div className="flex flex-wrap items-center gap-2">
             {insight && insight.cited_messages.length > 0 && (
               <button
                 onClick={() => setShowCited(!showCited)}
-                className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:border-orange-500 hover:text-zinc-200"
+                className="rounded-full border border-line-strong px-3 py-1 text-xs text-ink-muted hover:border-accent hover:text-ink"
               >
                 {t('moment.citedMessages', { n: insight.cited_messages.length })}
               </button>
             )}
             <button
               onClick={() => setFullChat(!fullChat)}
-              className="rounded-full border border-zinc-700 px-3 py-1 text-xs text-zinc-400 hover:border-orange-500 hover:text-zinc-200"
+              className="rounded-full border border-line-strong px-3 py-1 text-xs text-ink-muted hover:border-accent hover:text-ink"
             >
               {t('moment.openTranscript')}
             </button>
@@ -225,11 +246,11 @@ function MomentCard({
       </div>
 
       {showCited && insight && (
-        <div className="mt-3 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+        <div className="mt-3 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-line bg-canvas p-3 text-sm">
           {insight.cited_messages.map((message) => (
             <p key={message.id}>
-              <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
-              <span className="text-purple-400">{message.author_login}:</span> {message.text}
+              <span className="tabular-nums text-ink-faint">{formatTime(message.sent_at)}</span>{' '}
+              <span className="text-accent-ink">{message.author_login}:</span> {message.text}
             </p>
           ))}
         </div>
@@ -238,39 +259,39 @@ function MomentCard({
       {fullChat && detail && (
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
               {t('moment.youWereSaying')}
             </p>
             <div className="max-h-64 space-y-2 overflow-y-auto pr-2 text-sm">
               {detail.segments.length === 0 && (
-                <p className="text-zinc-500">{t('moment.noTranscript')}</p>
+                <p className="text-ink-faint">{t('moment.noTranscript')}</p>
               )}
               {detail.segments.map((segment) => (
                 <p key={segment.id}>
-                  <span className="tabular-nums text-zinc-500">
+                  <span className="tabular-nums text-ink-faint">
                     {formatTime(segment.started_at)}
                   </span>{' '}
                   {segment.kind === 'speech' ? (
                     segment.text
                   ) : (
-                    <em className="text-zinc-500">[{segment.kind}]</em>
+                    <em className="text-ink-faint">[{segment.kind}]</em>
                   )}
                 </p>
               ))}
             </div>
           </div>
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
               {t('moment.chatWasSaying')}
             </p>
             <div className="max-h-64 space-y-1 overflow-y-auto pr-2 text-sm">
               {detail.messages.map((message) => (
                 <p
                   key={message.id}
-                  className={citedIds.has(message.id) ? 'rounded bg-purple-950/50 px-1' : ''}
+                  className={citedIds.has(message.id) ? 'rounded bg-accent-soft px-1' : ''}
                 >
-                  <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
-                  <span className="text-purple-400">{message.author_login}:</span> {message.text}
+                  <span className="tabular-nums text-ink-faint">{formatTime(message.sent_at)}</span>{' '}
+                  <span className="text-accent-ink">{message.author_login}:</span> {message.text}
                 </p>
               ))}
             </div>
@@ -291,11 +312,11 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
   }, [streamId, insightId])
 
   if (detail === null)
-    return <p className="ml-10 mt-2 text-xs text-zinc-500">{t('topic.loadingDetails')}</p>
+    return <p className="ml-10 mt-2 text-xs text-ink-faint">{t('topic.loadingDetails')}</p>
 
   return (
-    <div className="ml-10 mt-2 space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
-      <p className="text-xs text-zinc-400">
+    <div className="ml-10 mt-2 space-y-3 rounded-lg border border-line bg-canvas p-3 text-sm">
+      <p className="text-xs text-ink-muted">
         {t('topic.window', {
           start: formatTime(detail.window_start),
           end: formatTime(detail.window_end),
@@ -304,10 +325,10 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
         {detail.chat_rate_lift != null && t('topic.lift', { n: detail.chat_rate_lift })}
       </p>
       {detail.top_chatters.length > 0 && (
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs text-ink-muted">
           {t('topic.topChatters')}{' '}
           {detail.top_chatters.map((chatter) => (
-            <span key={chatter.author_login} className="mr-2 text-purple-400">
+            <span key={chatter.author_login} className="mr-2 text-accent-ink">
               {chatter.author_login} ({chatter.messages})
             </span>
           ))}
@@ -315,7 +336,7 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
       )}
       {detail.top_words.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
             {t('topic.words')}
           </p>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -333,25 +354,25 @@ function TopicDetailPanel({ streamId, insightId }: { streamId: number; insightId
         </div>
       )}
       <div>
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
           {t('topic.youSaid')}
         </p>
         {detail.cited_segments.map((segment) => (
           <p key={segment.id}>
-            <span className="tabular-nums text-zinc-500">{formatTime(segment.started_at)}</span>{' '}
+            <span className="tabular-nums text-ink-faint">{formatTime(segment.started_at)}</span>{' '}
             {segment.text}
           </p>
         ))}
       </div>
       {detail.sample_messages.length > 0 && (
         <div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
             {t('topic.chatThen')}
           </p>
           {detail.sample_messages.map((message) => (
             <p key={message.id}>
-              <span className="tabular-nums text-zinc-500">{formatTime(message.sent_at)}</span>{' '}
-              <span className="text-purple-400">{message.author_login}:</span> {message.text}
+              <span className="tabular-nums text-ink-faint">{formatTime(message.sent_at)}</span>{' '}
+              <span className="text-accent-ink">{message.author_login}:</span> {message.text}
             </p>
           ))}
         </div>
@@ -374,32 +395,32 @@ function TopicRow({
   const rank = typeof insight.evidence.rank === 'number' ? insight.evidence.rank : null
   const [open, setOpen] = useState(false)
   return (
-    <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+    <div className="mb-2 rounded-2xl border border-line bg-panel p-3">
       <div className="flex items-center gap-3">
-        <span className="w-7 shrink-0 text-sm font-bold tabular-nums text-zinc-500">
+        <span className="w-7 shrink-0 text-sm font-bold tabular-nums text-ink-faint">
           {rank != null ? `${rank}.` : '·'}
         </span>
         <div className="min-w-0 flex-1">
           <button
             onClick={() => setOpen(!open)}
-            className="text-left text-sm font-semibold hover:text-purple-300"
+            className="text-left text-sm font-semibold hover:text-ink"
           >
             {name}{' '}
-            <span className="text-xs font-normal text-zinc-600">
+            <span className="text-xs font-normal text-ink-faint">
               {open ? '▲' : t('topic.details')}
             </span>
           </button>
-          {description && <p className="text-xs text-zinc-500">{description}</p>}
+          {description && <p className="text-xs text-ink-faint">{description}</p>}
         </div>
         {insight.engagement_pct != null && (
           <div className="hidden w-44 shrink-0 md:block">
-            <div className="h-2 overflow-hidden rounded bg-zinc-800">
+            <div className="h-2 overflow-hidden rounded bg-line">
               <div
-                className="h-full rounded bg-purple-500"
+                className="h-full rounded bg-accent"
                 style={{ width: `${insight.engagement_pct}%` }}
               />
             </div>
-            <p className="mt-0.5 text-right text-[10px] text-zinc-600">{t('topic.engagement')}</p>
+            <p className="mt-0.5 text-right text-[10px] text-ink-faint">{t('topic.engagement')}</p>
           </div>
         )}
         <FeedbackButtons insight={insight} onFeedback={onFeedback} />
@@ -438,22 +459,23 @@ function TldrCard({
   actionable,
   topics,
   topPeak,
+  onPeak,
 }: {
   report: Report
   actionable: ActionableOut | null
   topics: InsightOut[]
   topPeak: PeakOut | null
+  onPeak: (peakId: number) => void
 }) {
-  const bullets: { icon: string; text: React.ReactNode }[] = []
+  const bullets: { text: React.ReactNode }[] = []
   if (topPeak) {
     bullets.push({
-      icon: '🔥',
       text: (
         <>
           {t('tldr.bestMoment')}{' '}
           <button
-            onClick={() => scrollToPeak(topPeak.id)}
-            className="font-semibold text-orange-300 underline hover:text-orange-200"
+            onClick={() => onPeak(topPeak.id)}
+            className="font-semibold text-accent-ink underline hover:text-ink"
           >
             {t('tldr.peakScore', {
               time: formatTime(topPeak.window_start),
@@ -466,7 +488,6 @@ function TldrCard({
   }
   if (topics[0]) {
     bullets.push({
-      icon: '💬',
       text: (
         <>
           {t('tldr.topTopic')}{' '}
@@ -477,7 +498,6 @@ function TldrCard({
   }
   if (actionable?.retention) {
     bullets.push({
-      icon: '📉',
       text: (
         <>
           {t('tldr.retention')}{' '}
@@ -490,7 +510,6 @@ function TldrCard({
   const messages = report.numbers.messages
   if (messages) {
     bullets.push({
-      icon: '📊',
       text: (
         <>
           <span className="font-semibold">{fmtInt(messages.value)}</span> {t('tldr.messages')}
@@ -506,19 +525,16 @@ function TldrCard({
   if (bullets.length === 0) return null
 
   return (
-    <div className="mb-6 rounded-xl border border-zinc-700 bg-zinc-900 p-4">
-      <p className="mb-2 text-xs font-bold uppercase tracking-widest text-zinc-500">
+    <section className="rounded-2xl border border-accent/30 bg-accent-soft p-5">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('tldr.title')}
       </p>
-      <ul className="grid gap-x-6 gap-y-1.5 text-sm md:grid-cols-2">
+      <ul className="grid gap-x-6 gap-y-2 text-sm md:grid-cols-2">
         {bullets.map((bullet, index) => (
-          <li key={index} className="flex gap-2">
-            <span>{bullet.icon}</span>
-            <span>{bullet.text}</span>
-          </li>
+          <li key={index}>{bullet.text}</li>
         ))}
       </ul>
-    </div>
+    </section>
   )
 }
 
@@ -527,6 +543,8 @@ export default function StreamReport({ streamId }: { streamId: number }) {
   const [timeline, setTimeline] = useState<Timeline | null>(null)
   const [queue, setQueue] = useState<QueueItem | null>(null)
   const [actionable, setActionable] = useState<ActionableOut | null>(null)
+  const [chosenTab, setChosenTab] = useState<ReportTab | null>(null)
+  const [pendingPeak, setPendingPeak] = useState<number | null>(null)
   const processing = report !== null && !TERMINAL_STATUSES.has(report.status)
 
   useEffect(() => {
@@ -546,6 +564,18 @@ export default function StreamReport({ streamId }: { streamId: number }) {
     return () => clearInterval(timer)
   }, [streamId, processing])
 
+  // A peak lives in the Moments tab: open it first, scroll once it is rendered.
+  useEffect(() => {
+    if (pendingPeak === null) return
+    scrollToPeak(pendingPeak)
+    setPendingPeak(null)
+  }, [pendingPeak])
+
+  function goToPeak(peakId: number) {
+    setChosenTab('moments')
+    setPendingPeak(peakId)
+  }
+
   async function sendFeedback(insight: InsightOut, value: string | null) {
     await apiPost(`/api/insights/${insight.id}/feedback`, { feedback: value })
     setReport((current) =>
@@ -560,7 +590,7 @@ export default function StreamReport({ streamId }: { streamId: number }) {
     )
   }
 
-  if (report === null) return <p className="text-zinc-400">{t('report.loading')}</p>
+  if (report === null) return <p className="text-ink-muted">{t('report.loading')}</p>
 
   const summary = report.insights.find((insight) => insight.type === 'summary')
   const peakInsights = new Map(
@@ -582,23 +612,38 @@ export default function StreamReport({ streamId }: { streamId: number }) {
     null,
   )
 
+  const tabs = availableTabs(momentPeaks.length, topics.length)
+  const tab = chosenTab !== null && tabs.includes(chosenTab) ? chosenTab : tabs[0]
+  const tabCount: Partial<Record<ReportTab, number>> = {
+    moments: momentPeaks.length,
+    topics: topics.length,
+  }
+
   return (
-    <div>
-      <a href="#/" className="text-sm text-zinc-400 hover:text-zinc-200">
-        {t('nav.back')}
-      </a>
-      <h2 className="mb-1 mt-2 text-xl font-bold">
-        {report.title ?? t('live.number', { id: report.id })}
-      </h2>
-      <p className="mb-4 text-sm text-zinc-400">
-        {formatDate(report.started_at)} {formatTime(report.started_at)}
-        {report.ended_at && ` – ${formatTime(report.ended_at)}`} · {statusLabel(report.status)}
-      </p>
+    <div className="flex flex-col gap-5">
+      <div>
+        <a href="#/" className="inline-flex min-h-11 items-center text-sm text-ink-muted hover:text-ink">
+          {t('nav.back')}
+        </a>
+        <h1 className="font-display text-3xl font-semibold">
+          {report.title ?? t('live.number', { id: report.id })}
+        </h1>
+        <p className="mt-1 text-sm text-ink-muted">
+          {formatDate(report.started_at)} {formatTime(report.started_at)}
+          {report.ended_at && ` – ${formatTime(report.ended_at)}`} · {statusLabel(report.status)}
+        </p>
+      </div>
 
       <PipelineStepper status={report.status} queue={queue} />
       <AuditNotes audit={report.audit} />
       {report.status === 'ready' && (
-        <TldrCard report={report} actionable={actionable} topics={topics} topPeak={topPeak} />
+        <TldrCard
+          report={report}
+          actionable={actionable}
+          topics={topics}
+          topPeak={topPeak}
+          onPeak={goToPeak}
+        />
       )}
       {summary && (
         <SummaryHero insight={summary} onFeedback={(value) => sendFeedback(summary, value)} />
@@ -606,15 +651,33 @@ export default function StreamReport({ streamId }: { streamId: number }) {
       <NumbersRow report={report} />
 
       {timeline && (
-        <div className="mb-6 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-          <TimelineChart timeline={timeline} onPeakClick={scrollToPeak} />
+        <div className="rounded-2xl border border-line bg-panel p-4">
+          <TimelineChart timeline={timeline} onPeakClick={goToPeak} />
         </div>
       )}
 
-      {momentPeaks.length > 0 && (
-        <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">{t('report.moments')}</h3>
-          {momentPeaks.map((peak) => (
+      <div role="tablist" aria-label={t('report.tabs')} className="flex gap-1 overflow-x-auto border-b border-line">
+        {tabs.map((id) => (
+          <button
+            key={id}
+            id={`tab-${id}`}
+            role="tab"
+            aria-selected={id === tab}
+            aria-controls={`panel-${id}`}
+            onClick={() => setChosenTab(id)}
+            className={`min-h-11 shrink-0 border-b-2 px-4 text-sm font-semibold ${
+              id === tab ? 'border-accent text-ink' : 'border-transparent text-ink-muted hover:text-ink'
+            }`}
+          >
+            {t(TAB_LABEL[id])}
+            {tabCount[id] !== undefined && ` (${tabCount[id]})`}
+          </button>
+        ))}
+      </div>
+
+      <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
+        {tab === 'moments' &&
+          momentPeaks.map((peak) => (
             <MomentCard
               key={peak.id}
               report={report}
@@ -624,43 +687,36 @@ export default function StreamReport({ streamId }: { streamId: number }) {
               onFeedback={sendFeedback}
             />
           ))}
-        </div>
-      )}
 
-      <ActionableSection actionable={actionable} />
-
-      <FinanceSection streamId={report.id} />
-
-      {recommendations.length > 0 && (
-        <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">{t('report.recommendations')}</h3>
-          <div className="space-y-2">
-            {recommendations.map((rec) => (
-              <div
-                key={rec.id}
-                className="flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-zinc-900 p-4"
-              >
-                <span className="text-lg">💡</span>
-                <div className="flex-1">
-                  <p className="text-sm">{rec.content}</p>
-                  <div className="mt-2">
-                    <FeedbackButtons
-                      insight={rec}
-                      onFeedback={(value) => sendFeedback(rec, value)}
-                    />
-                  </div>
+        {tab === 'improve' && (
+          <>
+            <ActionableSection actionable={actionable} />
+            {recommendations.length > 0 && (
+              <div className="mb-6">
+                <h3 className="mb-3 font-display text-lg font-semibold">{t('report.recommendations')}</h3>
+                <div className="space-y-2">
+                  {recommendations.map((rec) => (
+                    <div key={rec.id} className="rounded-2xl border border-line bg-panel p-4">
+                      <p className="text-sm">{rec.content}</p>
+                      <div className="mt-2">
+                        <FeedbackButtons
+                          insight={rec}
+                          onFeedback={(value) => sendFeedback(rec, value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
+                <p className="mt-2 text-xs text-ink-faint">{t('report.recoNote')}</p>
               </div>
-            ))}
-          </div>
-          <p className="mt-2 text-[11px] text-zinc-600">{t('report.recoNote')}</p>
-        </div>
-      )}
+            )}
+          </>
+        )}
 
-      {topics.length > 0 && (
-        <div className="mb-6">
-          <h3 className="mb-3 text-lg font-bold">{t('report.topics')}</h3>
-          {topics.map((topic) => (
+        {tab === 'money' && <FinanceSection streamId={report.id} />}
+
+        {tab === 'topics' &&
+          topics.map((topic) => (
             <TopicRow
               key={topic.id}
               streamId={report.id}
@@ -668,14 +724,17 @@ export default function StreamReport({ streamId }: { streamId: number }) {
               onFeedback={(value) => sendFeedback(topic, value)}
             />
           ))}
-        </div>
-      )}
 
-      <CommunitySection streamId={report.id} events={timeline?.events ?? []} />
-      <ChattersSection streamId={report.id} />
+        {tab === 'chat' && (
+          <>
+            <CommunitySection streamId={report.id} events={timeline?.events ?? []} />
+            <ChattersSection streamId={report.id} />
+          </>
+        )}
+      </div>
 
       {!summary && topics.length === 0 && peakInsights.size === 0 && (
-        <p className="text-sm text-zinc-500">{t('report.noInsights')}</p>
+        <p className="text-sm text-ink-muted">{t('report.noInsights')}</p>
       )}
     </div>
   )

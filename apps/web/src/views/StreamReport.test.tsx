@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import StreamReport from './StreamReport'
+import StreamReport, { availableTabs } from './StreamReport'
 
 // chart.js needs a real canvas; the chart itself is out of scope here
 vi.mock('../components/TimelineChart', () => ({
@@ -141,5 +141,30 @@ describe('StreamReport', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /1 cited messages/ }))
     expect(screen.getByText(/HYPE/)).toBeTruthy()
+  })
+
+  it('chat e dinheiro so sao buscados quando a aba abre', async () => {
+    const calls = mockFetch()
+    render(<StreamReport streamId={6} />)
+    await screen.findByText('Resumo da live de teste.')
+    expect(calls.some((call) => call.url.startsWith('/api/streams/6/chatters'))).toBe(false)
+
+    const chatTab = screen.getByRole('tab', { name: 'Chat' })
+    fireEvent.click(chatTab)
+
+    expect(chatTab.getAttribute('aria-selected')).toBe('true')
+    await waitFor(() =>
+      expect(calls.some((call) => call.url.startsWith('/api/streams/6/chatters'))).toBe(true),
+    )
+  })
+})
+
+describe('availableTabs', () => {
+  it('sem picos nem assuntos, sobram so as abas que sempre tem conteudo', () => {
+    expect(availableTabs(0, 0)).toEqual(['improve', 'money', 'chat'])
+  })
+
+  it('com picos e assuntos, momentos abre primeiro', () => {
+    expect(availableTabs(2, 3)).toEqual(['moments', 'improve', 'money', 'topics', 'chat'])
   })
 })

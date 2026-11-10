@@ -7,13 +7,13 @@ function Retention({ actionable }: { actionable: ActionableOut }) {
   if (retention === null) return null
   const color =
     retention.retained_pct >= 70
-      ? 'text-emerald-400'
+      ? 'text-money'
       : retention.retained_pct >= 40
         ? 'text-amber-400'
-        : 'text-red-400'
+        : 'text-alert'
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+    <div className="rounded-2xl border border-line bg-panel p-4">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('actionable.retention')}
       </p>
       <p className="text-sm">
@@ -25,7 +25,7 @@ function Retention({ actionable }: { actionable: ActionableOut }) {
         })}
       </p>
       {retention.biggest_drop_at && (
-        <p className="mt-1 text-xs text-zinc-500">
+        <p className="mt-1 text-xs text-ink-faint">
           {t('actionable.retention.biggestDrop', {
             time: formatTime(retention.biggest_drop_at),
           })}
@@ -37,7 +37,7 @@ function Retention({ actionable }: { actionable: ActionableOut }) {
 
 function DipContext({ dip }: { dip: ViewerDip }) {
   return (
-    <div className="mt-1 space-y-0.5 text-xs text-zinc-500">
+    <div className="mt-1 space-y-0.5 text-xs text-ink-faint">
       {dip.cause && (
         <p className="text-amber-400/90">{t('actionable.dip.cause', { cause: dip.cause })}</p>
       )}
@@ -50,7 +50,7 @@ function DipContext({ dip }: { dip: ViewerDip }) {
       )}
       {!dip.speech_context && dip.scene && <p>{t('actionable.dip.scene', { scene: dip.scene })}</p>}
       {dip.chat_context.length > 0 && (
-        <p className="text-zinc-600">
+        <p className="text-ink-faint">
           {t('actionable.dip.chat', {
             lines: dip.chat_context.map((line) => line.slice(0, 60)).join(' · '),
           })}
@@ -63,7 +63,7 @@ function DipContext({ dip }: { dip: ViewerDip }) {
             t('actionable.dip.recoveredIn', { n: dip.recovered_in_minutes })}
         </p>
       ) : (
-        <p className="text-zinc-600">{t('actionable.dip.notRecovered')}</p>
+        <p className="text-ink-faint">{t('actionable.dip.notRecovered')}</p>
       )}
     </div>
   )
@@ -72,17 +72,17 @@ function DipContext({ dip }: { dip: ViewerDip }) {
 function Dips({ actionable }: { actionable: ActionableOut }) {
   if (actionable.dips.length === 0) return null
   return (
-    <div className="rounded-lg border border-red-900/60 bg-zinc-900 p-4">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-400">
+    <div className="rounded-lg border border-red-900/60 bg-panel p-4">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-alert">
         {t('actionable.dips.title')}
       </p>
       <div className="space-y-3 text-sm">
         {actionable.dips.map((dip) => (
           <div key={dip.at}>
-            <span className="tabular-nums text-zinc-400">{formatTime(dip.at)}</span>{' '}
-            <span className="font-mono text-[11px] text-zinc-600">({dip.offset_label})</span> ·{' '}
-            <span className="text-red-400">−{dip.pct_drop}%</span>{' '}
-            <span className="text-zinc-500">
+            <span className="tabular-nums text-ink-muted">{formatTime(dip.at)}</span>{' '}
+            <span className="font-mono text-[11px] text-ink-faint">({dip.offset_label})</span> ·{' '}
+            <span className="text-alert">−{dip.pct_drop}%</span>{' '}
+            <span className="text-ink-faint">
               {t('actionable.dips.viewers', {
                 before: dip.viewers_before,
                 after: dip.viewers_after,
@@ -93,7 +93,7 @@ function Dips({ actionable }: { actionable: ActionableOut }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-zinc-600">{t('actionable.dips.note')}</p>
+      <p className="mt-2 text-[11px] text-ink-faint">{t('actionable.dips.note')}</p>
     </div>
   )
 }
@@ -101,26 +101,26 @@ function Dips({ actionable }: { actionable: ActionableOut }) {
 function Clips({ actionable }: { actionable: ActionableOut }) {
   if (actionable.clips.length === 0) return null
   return (
-    <div className="rounded-lg border border-orange-900/60 bg-zinc-900 p-4">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-orange-400">
+    <div className="rounded-lg border border-orange-900/60 bg-panel p-4">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-accent-ink">
         {t('actionable.clips.title')}
       </p>
       <div className="space-y-1.5 text-sm">
         {actionable.clips.map((clip) => (
           <div key={clip.offset_seconds} className="flex items-center gap-2">
-            <span className="rounded bg-zinc-800 px-2 py-0.5 font-mono text-xs text-orange-300">
+            <span className="rounded bg-line px-2 py-0.5 font-mono text-xs text-accent-ink">
               {clip.offset_label}
             </span>
-            <span className="text-zinc-400">
+            <span className="text-ink-muted">
               {formatTime(clip.window_start)}–{formatTime(clip.window_end)}
             </span>
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-ink-faint">
               {t('actionable.clips.score', { score: clip.score.toFixed(1) })}
             </span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-zinc-600">{t('actionable.clips.note')}</p>
+      <p className="mt-2 text-[11px] text-ink-faint">{t('actionable.clips.note')}</p>
     </div>
   )
 }
@@ -129,7 +129,7 @@ function UnansweredQuestions({ actionable }: { actionable: ActionableOut }) {
   const count = actionable.unanswered_questions_count
   if (count === 0) return null
   return (
-    <div className="rounded-lg border border-sky-900/60 bg-zinc-900 p-4">
+    <div className="rounded-lg border border-sky-900/60 bg-panel p-4">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-400">
         {t(count > 1 ? 'actionable.questions.titlePlural' : 'actionable.questions.title', {
           n: count,
@@ -138,12 +138,12 @@ function UnansweredQuestions({ actionable }: { actionable: ActionableOut }) {
       <div className="space-y-1 text-sm">
         {actionable.unanswered_questions.map((question, index) => (
           <p key={index}>
-            <span className="tabular-nums text-zinc-500">{formatTime(question.sent_at)}</span>{' '}
-            <span className="text-purple-400">{question.author_login}:</span> {question.text}
+            <span className="tabular-nums text-ink-faint">{formatTime(question.sent_at)}</span>{' '}
+            <span className="text-accent-ink">{question.author_login}:</span> {question.text}
           </p>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-zinc-600">{t('actionable.questions.note')}</p>
+      <p className="mt-2 text-[11px] text-ink-faint">{t('actionable.questions.note')}</p>
     </div>
   )
 }

@@ -37,10 +37,10 @@ const STATUS_TO_STEP: Record<string, { index: number; state: StepState }> = {
 function dotClass(state: StepState): string {
   if (state === "done") return "bg-emerald-500 border-emerald-500";
   if (state === "active")
-    return "animate-pulse bg-purple-500 border-purple-400";
+    return "animate-pulse bg-accent border-accent";
   if (state === "queued") return "bg-amber-500/30 border-amber-500";
   if (state === "failed") return "bg-red-600 border-red-500";
-  return "bg-zinc-800 border-zinc-700";
+  return "bg-line border-line-strong";
 }
 
 export default function PipelineStepper({
@@ -61,15 +61,15 @@ export default function PipelineStepper({
   }
 
   return (
-    <div className="mb-6 rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+    <div className="mb-6 rounded-2xl border border-line bg-panel p-4">
       <div className="mb-1 flex items-center gap-2">
         {status !== "failed" ? (
           <>
-            <span className="h-2 w-2 animate-pulse rounded-full bg-purple-400" />
+            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
             <p className="text-sm font-semibold">{t("pipeline.processing")}</p>
           </>
         ) : (
-          <p className="text-sm font-semibold text-red-400">
+          <p className="text-sm font-semibold text-alert">
             {t("pipeline.failed")}
           </p>
         )}
@@ -89,22 +89,22 @@ export default function PipelineStepper({
                 />
                 {index < STEPS.length - 1 && (
                   <span
-                    className={`hidden h-0.5 flex-1 md:block ${state === "done" ? "bg-emerald-600" : "bg-zinc-800"}`}
+                    className={`hidden h-0.5 flex-1 md:block ${state === "done" ? "bg-emerald-600" : "bg-line"}`}
                   />
                 )}
               </div>
               <div className="min-w-0 md:pr-4">
                 <p
-                  className={`text-sm font-semibold ${state === "active" ? "text-purple-300" : state === "done" ? "text-emerald-400" : state === "failed" ? "text-red-400" : "text-zinc-400"}`}
+                  className={`text-sm font-semibold ${state === "active" ? "text-accent-ink" : state === "done" ? "text-money" : state === "failed" ? "text-alert" : "text-ink-muted"}`}
                 >
                   {t(step.label)}
                   {state === "queued" && t("pipeline.queuedSuffix")}
                 </p>
                 {step.starts && (
-                  <p className="text-xs text-zinc-600">{t(step.starts)}</p>
+                  <p className="text-xs text-ink-faint">{t(step.starts)}</p>
                 )}
                 {step.ends && (
-                  <p className="text-xs text-zinc-600">{t(step.ends)}</p>
+                  <p className="text-xs text-ink-faint">{t(step.ends)}</p>
                 )}
                 {isQueuedHere && queue && (
                   <p className="mt-1 text-xs text-amber-400">

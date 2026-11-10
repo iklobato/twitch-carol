@@ -290,6 +290,12 @@ export default {
 
   // stream report
   "report.loading": "Loading report...",
+  "report.tabs": "Report sections",
+  "report.tab.moments": "Moments",
+  "report.tab.improve": "What to improve",
+  "report.tab.money": "Money",
+  "report.tab.topics": "Topics",
+  "report.tab.chat": "Chat",
   "numbers.duration_minutes": "Duration (min)",
   "numbers.messages": "Messages",
   "numbers.chatters": "Unique chatters",

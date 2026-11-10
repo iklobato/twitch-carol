@@ -5,12 +5,12 @@ import type { ChatterOut } from "../types";
 
 // The API sends stable keys; wording and colour both live here.
 const LABEL_COLOR: Record<string, string> = {
-  followed: "border-emerald-800 text-emerald-400",
-  peak_active: "border-orange-800 text-orange-400",
+  followed: "border-emerald-800 text-money",
+  peak_active: "border-orange-800 text-accent-ink",
 };
 
 function LabelChip({ label }: { label: string }) {
-  const color = LABEL_COLOR[label] ?? "border-zinc-700 text-zinc-400";
+  const color = LABEL_COLOR[label] ?? "border-line-strong text-ink-muted";
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[10px] ${color}`}>
       {t(`chatterLabel.${label}` as MessageKey)}
@@ -27,23 +27,23 @@ function ChatterRow({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="mb-2 rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+    <div className="mb-2 rounded-2xl border border-line bg-panel p-3">
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={() => setOpen(!open)}
-          className="min-w-32 text-left text-sm font-semibold text-purple-300 hover:text-purple-200"
+          className="min-w-32 text-left text-sm font-semibold text-accent-ink hover:text-ink"
         >
           {chatter.author_login}
         </button>
         <div className="hidden w-40 md:block">
-          <div className="h-2 overflow-hidden rounded bg-zinc-800">
+          <div className="h-2 overflow-hidden rounded bg-line">
             <div
-              className="h-full rounded bg-purple-500"
+              className="h-full rounded bg-accent"
               style={{ width: `${(chatter.messages / maxMessages) * 100}%` }}
             />
           </div>
         </div>
-        <span className="text-xs tabular-nums text-zinc-400">
+        <span className="text-xs tabular-nums text-ink-muted">
           {t("chatters.msgs", { n: fmtInt(chatter.messages) })} ·{" "}
           {t("chatters.pctOfChat", { pct: chatter.pct_of_total })} ·{" "}
           {t("chatters.activeMinutes", { n: chatter.active_minutes })}
@@ -55,10 +55,10 @@ function ChatterRow({
               <span
                 className={
                   chatter.sentiment_score > 0.15
-                    ? "text-emerald-400"
+                    ? "text-money"
                     : chatter.sentiment_score < -0.15
-                      ? "text-red-400"
-                      : "text-zinc-400"
+                      ? "text-alert"
+                      : "text-ink-muted"
                 }
               >
                 {t("chatters.sentiment")}{" "}
@@ -75,10 +75,10 @@ function ChatterRow({
         </span>
       </div>
       {open && (
-        <div className="mt-2 space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3 text-sm">
+        <div className="mt-2 space-y-2 rounded-lg border border-line bg-canvas p-3 text-sm">
           {chatter.top_words.length > 0 && (
             <div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
                 {t("words.mostUsed")}
               </p>
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -86,7 +86,7 @@ function ChatterRow({
                   <span
                     key={word.word}
                     title={t("words.times", { n: word.count })}
-                    className="text-purple-300"
+                    className="text-accent-ink"
                     style={{ fontSize: `${12 + Math.min(word.count, 10)}px` }}
                   >
                     {word.word}
@@ -96,7 +96,7 @@ function ChatterRow({
             </div>
           )}
           <div>
-            <p className="mb-1 text-xs text-zinc-500">
+            <p className="mb-1 text-xs text-ink-faint">
               {t("chatters.firstLast", {
                 first: formatTime(chatter.first_at),
                 last: formatTime(chatter.last_at),
@@ -104,7 +104,7 @@ function ChatterRow({
             </p>
             {chatter.sample_messages.map((message, index) => (
               <p key={index}>
-                <span className="tabular-nums text-zinc-500">
+                <span className="tabular-nums text-ink-faint">
                   {formatTime(message.sent_at)}
                 </span>{" "}
                 {message.text}
@@ -166,7 +166,7 @@ export default function ChattersSection({ streamId }: { streamId: number }) {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-bold">{t("chatters.title")}</h3>
         <div className="flex flex-wrap items-center gap-1 text-xs">
-          <span className="mr-1 text-zinc-500">{t("chatters.sortBy")}</span>
+          <span className="mr-1 text-ink-faint">{t("chatters.sortBy")}</span>
           {SORT_KEYS.map((key) => (
             <button
               key={key}
@@ -176,8 +176,8 @@ export default function ChattersSection({ streamId }: { streamId: number }) {
               }}
               className={`rounded-full border px-2.5 py-0.5 ${
                 sortKey === key
-                  ? "border-purple-500 bg-purple-950 text-purple-200"
-                  : "border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                  ? "border-accent bg-accent-soft text-ink"
+                  : "border-line-strong text-ink-muted hover:text-ink"
               }`}
             >
               {t(`chatters.sort.${key}` as MessageKey)}
@@ -197,17 +197,17 @@ export default function ChattersSection({ streamId }: { streamId: number }) {
           <button
             onClick={() => setPage(page - 1)}
             disabled={page === 0}
-            className="rounded border border-zinc-700 px-3 py-1 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:hover:text-zinc-400"
+            className="rounded border border-line-strong px-3 py-1 text-ink-muted hover:text-ink disabled:opacity-40 disabled:hover:text-zinc-400"
           >
             {t("chatters.prev")}
           </button>
-          <span className="tabular-nums text-zinc-500">
+          <span className="tabular-nums text-ink-faint">
             {t("chatters.page", { page: page + 1, total: totalPages })}
           </span>
           <button
             onClick={() => setPage(page + 1)}
             disabled={page >= totalPages - 1}
-            className="rounded border border-zinc-700 px-3 py-1 text-zinc-400 hover:text-zinc-200 disabled:opacity-40 disabled:hover:text-zinc-400"
+            className="rounded border border-line-strong px-3 py-1 text-ink-muted hover:text-ink disabled:opacity-40 disabled:hover:text-zinc-400"
           >
             {t("chatters.next")}
           </button>

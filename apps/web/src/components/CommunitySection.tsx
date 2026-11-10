@@ -26,9 +26,9 @@ Chart.register(
 )
 
 function sentimentLabel(score: number): { text: string; color: string } {
-  if (score > 0.15) return { text: t('sentiment.positive'), color: 'text-emerald-400' }
-  if (score < -0.15) return { text: t('sentiment.negative'), color: 'text-red-400' }
-  return { text: t('sentiment.neutral'), color: 'text-zinc-400' }
+  if (score > 0.15) return { text: t('sentiment.positive'), color: 'text-money' }
+  if (score < -0.15) return { text: t('sentiment.negative'), color: 'text-alert' }
+  return { text: t('sentiment.neutral'), color: 'text-ink-muted' }
 }
 
 function SentimentGauge({ score }: { score: number }) {
@@ -40,11 +40,11 @@ function SentimentGauge({ score }: { score: number }) {
       <div className="relative h-2 rounded-full bg-gradient-to-r from-red-500/40 via-zinc-600/40 to-emerald-500/40">
         <div className="absolute left-1/2 top-0 h-2 w-px bg-zinc-500" />
         <div
-          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-900"
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-line"
           style={{ left: `${position}%`, backgroundColor: color }}
         />
       </div>
-      <div className="mt-0.5 flex justify-between text-[10px] text-zinc-600">
+      <div className="mt-0.5 flex justify-between text-[10px] text-ink-faint">
         <span>{t('sentiment.negative')}</span>
         <span>{t('sentiment.neutral')}</span>
         <span>{t('sentiment.positive')}</span>
@@ -165,7 +165,7 @@ function SentimentBlock({
   const overall = sentimentLabel(community.sentiment_overall)
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('community.sentimentTitle')}
         <span className="ml-2 normal-case tracking-normal">
           {t('community.average')}{' '}
@@ -173,7 +173,7 @@ function SentimentBlock({
             {community.sentiment_overall > 0 ? '+' : ''}
             {community.sentiment_overall} ({overall.text})
           </b>
-          <span className="ml-2 text-zinc-600">{t('community.eventMarker')}</span>
+          <span className="ml-2 text-ink-faint">{t('community.eventMarker')}</span>
         </span>
       </p>
       <SentimentGauge score={community.sentiment_overall} />
@@ -181,13 +181,13 @@ function SentimentBlock({
         <SentimentChart community={community} events={events} />
       </div>
       {community.sentiment_by_chatter.length > 0 && (
-        <p className="mt-2 text-xs text-zinc-500">
+        <p className="mt-2 text-xs text-ink-faint">
           {t('community.byChatter')}{' '}
           {community.sentiment_by_chatter.map((chatter) => {
             const label = sentimentLabel(chatter.score)
             return (
               <span key={chatter.login} className="mr-3">
-                <span className="text-purple-400">{chatter.login}</span>{' '}
+                <span className="text-accent-ink">{chatter.login}</span>{' '}
                 <b className={label.color}>
                   {chatter.score > 0 ? '+' : ''}
                   {chatter.score}
@@ -206,7 +206,7 @@ function WordCloud({ community }: { community: CommunityOut }) {
   const max = community.words[0].count
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('words.mostUsed')}
       </p>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -214,7 +214,7 @@ function WordCloud({ community }: { community: CommunityOut }) {
           <span
             key={word.word}
             title={t('words.times', { n: word.count })}
-            className={index % 3 === 0 ? 'text-purple-300' : index % 3 === 1 ? 'text-zinc-300' : 'text-sky-300'}
+            className={index % 3 === 0 ? 'text-accent-ink' : index % 3 === 1 ? 'text-ink' : 'text-sky-300'}
             style={{ fontSize: `${12 + 20 * Math.sqrt(word.count / max)}px` }}
           >
             {word.word}
@@ -230,7 +230,7 @@ function EmoteChip({ emote }: { emote: CommunityOut['emotes'][number] }) {
   return (
     <span
       title={`${emote.name} · ${emote.count}x`}
-      className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-xs"
+      className="flex items-center gap-1.5 rounded-full border border-line-strong bg-panel px-2.5 py-1 text-xs"
     >
       {failed ? (
         <span>{emote.name}</span>
@@ -242,7 +242,7 @@ function EmoteChip({ emote }: { emote: CommunityOut['emotes'][number] }) {
           onError={() => setFailed(true)}
         />
       )}
-      <span className="text-zinc-500">×{emote.count}</span>
+      <span className="text-ink-faint">×{emote.count}</span>
     </span>
   )
 }
@@ -251,7 +251,7 @@ function EmoteChips({ community }: { community: CommunityOut }) {
   if (community.emotes.length === 0) return null
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('community.emotes')}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -268,13 +268,13 @@ function PresenceHeatmap({ community }: { community: CommunityOut }) {
   const max = Math.max(...community.presence.rows.flatMap((row) => row.cells), 1)
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">
         {t('community.presence', { n: community.presence.rows.length })}
       </p>
       <div className="space-y-1 overflow-x-auto">
         {community.presence.rows.map((row) => (
           <div key={row.login} className="flex items-center gap-2">
-            <span className="w-28 shrink-0 truncate text-xs text-purple-300">{row.login}</span>
+            <span className="w-28 shrink-0 truncate text-xs text-accent-ink">{row.login}</span>
             <div className="flex flex-1 gap-px">
               {row.cells.map((count, index) => (
                 <div
@@ -293,7 +293,7 @@ function PresenceHeatmap({ community }: { community: CommunityOut }) {
             </div>
           </div>
         ))}
-        <div className="flex items-center gap-2 text-[10px] text-zinc-600">
+        <div className="flex items-center gap-2 text-[10px] text-ink-faint">
           <span className="w-28 shrink-0" />
           <span>{formatTime(community.presence.slots[0])}</span>
           <span className="flex-1 text-right">
@@ -325,7 +325,7 @@ export default function CommunitySection({
   return (
     <div className="mb-6">
       <h3 className="mb-3 text-lg font-bold">{t('community.title')}</h3>
-      <div className="space-y-5 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <div className="space-y-5 rounded-2xl border border-line bg-panel p-4">
         <SentimentBlock community={community} events={events} />
         <EmoteChips community={community} />
         <WordCloud community={community} />

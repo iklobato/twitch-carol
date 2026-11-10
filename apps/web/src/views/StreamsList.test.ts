@@ -49,8 +49,8 @@ describe('dayTotals', () => {
 
 describe('earnedLabel', () => {
   it('live sem receita mostra um traco, nao US$ 0', () => {
-    expect(earnedLabel(undefined)).toBe('—')
-    expect(earnedLabel(0)).toBe('—')
+    expect(earnedLabel(undefined)).toBe('-')
+    expect(earnedLabel(0)).toBe('-')
   })
 
   it('live com receita mostra o valor', () => {
