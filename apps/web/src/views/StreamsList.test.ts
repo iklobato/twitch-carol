@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StreamListItem } from '../types'
-import { dayTotals, groupByDay } from './StreamsList'
+import { dayTotals, earnedLabel, groupByDay } from './StreamsList'
 
 function live(id: number, day: string, over: Partial<StreamListItem> = {}): StreamListItem {
   return {
@@ -44,5 +44,16 @@ describe('dayTotals', () => {
       followers: 0,
       peak_viewers: 17,
     })
+  })
+})
+
+describe('earnedLabel', () => {
+  it('live sem receita mostra um traco, nao US$ 0', () => {
+    expect(earnedLabel(undefined)).toBe('—')
+    expect(earnedLabel(0)).toBe('—')
+  })
+
+  it('live com receita mostra o valor', () => {
+    expect(earnedLabel(30.5)).toContain('30.50')
   })
 })

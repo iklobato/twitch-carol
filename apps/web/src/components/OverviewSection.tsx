@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { apiGet, formatDate } from '../api'
 import { fmtInt, fmtMoney, t } from '../i18n'
 import PeriodPicker from './PeriodPicker'
@@ -8,78 +8,86 @@ import type {
   FinancePeriod,
   FollowersOverview,
   NumberComparison,
+  Recommendation,
   StreamListItem,
   StreamReport,
+  Timeline,
+  TimelinePoint,
 } from '../types'
 
-// Which single "needs attention" item to surface, by priority. Pure so it can
-// be unit-tested. Queue is intentionally excluded (StreamsList already shows a
-// QueueBanner), so this focuses on risk, goals, then AI advice.
-export type Highlight = { tone: 'risk' | 'goal' | 'reco'; text: string } | null
+// Everything that needs the streamer now, in priority order. Pure so it can be
+// unit-tested. The queue is left out (StreamsList shows it) and the AI advice
+// has its own card above the numbers.
+export type Attention = { tone: 'risk' | 'goal'; text: string; href: string }
 
 const SUSPICIOUS_ALERT_MIN = 10
 const GOAL_NEAR_PCT = 80
 
-export function pickHighlight(
+export function pickAttention(
   followers: FollowersOverview | null,
   channel: ChannelOverview | null,
-): Highlight {
+): Attention[] {
+  const items: Attention[] = []
   if (followers) {
     if (followers.signals.velocity.some((day) => day.is_spike)) {
-      return { tone: 'risk', text: t('overview.highlight.spike') }
+      items.push({ tone: 'risk', text: t('overview.highlight.spike'), href: '#/audience' })
     }
     if (followers.signals.suspicious_total >= SUSPICIOUS_ALERT_MIN) {
-      return {
+      items.push({
         tone: 'risk',
         text: t('overview.highlight.suspicious', { n: followers.signals.suspicious_total }),
-      }
+        href: '#/audience',
+      })
     }
   }
   if (channel) {
-    const near = channel.community.goals.find(
-      (goal) => goal.pct >= GOAL_NEAR_PCT && goal.current_amount < goal.target_amount,
-    )
-    if (near) {
-      return {
-        tone: 'goal',
-        text: t('overview.highlight.goal', {
-          remaining: fmtInt(near.target_amount - near.current_amount),
-          goal: near.description ?? near.goal_type,
-          pct: near.pct,
-        }),
+    for (const goal of channel.community.goals) {
+      if (goal.pct >= GOAL_NEAR_PCT && goal.current_amount < goal.target_amount) {
+        items.push({
+          tone: 'goal',
+          text: t('overview.highlight.goal', {
+            remaining: fmtInt(goal.target_amount - goal.current_amount),
+            goal: goal.description ?? goal.goal_type,
+            pct: goal.pct,
+          }),
+          href: '#/money',
+        })
       }
     }
-    if (channel.recommendations.length > 0) {
-      return { tone: 'reco', text: channel.recommendations[0].content }
-    }
   }
-  return null
+  return items
+}
+
+/** SVG path of the chat pace across the whole live, scaled into width x height. */
+export function chatPath(points: TimelinePoint[], width: number, height: number): string {
+  if (points.length < 2) return ''
+  const max = Math.max(...points.map((point) => point.value), 1)
+  const step = width / (points.length - 1)
+  return points
+    .map((point, index) => {
+      const x = (index * step).toFixed(1)
+      const y = (height - (point.value / max) * height).toFixed(1)
+      return `${index === 0 ? 'M' : 'L'}${x} ${y}`
+    })
+    .join(' ')
 }
 
 function Delta({ pct }: { pct: number | null }) {
   if (pct === null) return null
   const up = pct >= 0
   return (
-    <span className={`text-xs font-semibold ${up ? 'text-emerald-400' : 'text-red-400'}`}>
+    <span className={`text-xs font-semibold ${up ? 'text-money' : 'text-alert'}`}>
       {up ? '▲' : '▼'} {Math.abs(pct)}%
     </span>
   )
 }
 
-function Kpi({
-  label,
-  value,
-  sub,
-}: {
-  label: string
-  value: string
-  sub?: React.ReactNode
-}) {
+function Kpi({ label, value, sub }: { label: string; value: string; sub?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="text-xl font-bold">{value}</p>
-      {sub && <div className="mt-0.5 text-xs text-zinc-500">{sub}</div>}
+    <div className="rounded-2xl border border-line bg-panel p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="mt-1 font-display text-2xl font-semibold">{value}</p>
+      {sub && <div className="mt-0.5 text-xs text-ink-muted">{sub}</div>}
     </div>
   )
 }
@@ -103,13 +111,13 @@ function KpiStrip({
   const avgPeak = channel ? Math.round(mean(channel.growth.map((g) => g.peak_viewers))) : 0
   const periodLabel = period === 'all' ? t('overview.period.all') : period
   return (
-    <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
       <Kpi
         label={t('followers.kpi.total')}
         value={followers ? fmtInt(followers.kpis.total) : '–'}
         sub={
           followers && followers.kpis.new_30d > 0 ? (
-            <span className="text-emerald-400">▲ +{followers.kpis.new_30d} · 30d</span>
+            <span className="text-money">▲ +{followers.kpis.new_30d} · 30d</span>
           ) : (
             '30d'
           )
@@ -134,34 +142,116 @@ function KpiStrip({
   )
 }
 
+function NextStepCard({ recommendation }: { recommendation: Recommendation | undefined }) {
+  if (!recommendation) return null
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-accent/30 bg-accent-soft p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-accent/20 px-2.5 py-1 text-xs font-semibold text-accent-ink">
+          {t('overview.nextStep')}
+        </span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+          {t('overview.nextStepNote')}
+        </span>
+      </div>
+      <p className="max-w-3xl text-lg font-medium leading-snug">{recommendation.content}</p>
+      {recommendation.facts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {recommendation.facts.map((fact) => (
+            <span
+              key={fact}
+              className="rounded-lg border border-line-strong bg-panel px-2.5 py-1 text-xs text-ink-muted"
+            >
+              {fact}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+const TONE_DOT: Record<Attention['tone'], string> = {
+  risk: 'bg-alert',
+  goal: 'bg-accent',
+}
+
+function NeedsAttention({ items }: { items: Attention[] }) {
+  if (items.length === 0) return null
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-line bg-panel p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-lg font-semibold">{t('overview.needsAttention')}</h3>
+        <span className="rounded-full bg-alert/15 px-2.5 py-0.5 text-xs font-semibold text-alert">
+          {items.length}
+        </span>
+      </div>
+      {items.map((item) => (
+        <a
+          key={item.text}
+          href={item.href}
+          className="flex min-h-11 items-start gap-3 rounded-xl bg-panel-raised p-3 text-sm hover:bg-line"
+        >
+          <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TONE_DOT[item.tone]}`} />
+          {item.text}
+        </a>
+      ))}
+    </section>
+  )
+}
+
 function StatWithDelta({ label, comparison }: { label: string; comparison?: NumberComparison }) {
   if (!comparison) return null
   return (
     <span>
-      {fmtInt(comparison.value)} {label} <Delta pct={comparison.delta_pct} />
+      <b className="text-ink">{fmtInt(comparison.value)}</b> {label} <Delta pct={comparison.delta_pct} />
     </span>
   )
 }
 
+const SPARK_WIDTH = 400
+const SPARK_HEIGHT = 64
+
 function LastLiveCard({
   stream,
   report,
+  timeline,
 }: {
   stream: StreamListItem | null
   report: StreamReport | null
+  timeline: Timeline | null
 }) {
   if (!stream) return null
+  const path = timeline ? chatPath(timeline.chat, SPARK_WIDTH, SPARK_HEIGHT) : ''
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        {t('overview.lastLive')}
-      </p>
-      <p className="font-semibold">
-        {stream.title ?? t('live.number', { id: stream.id })}
-        {stream.category && <span className="ml-2 text-sm text-zinc-500">{stream.category}</span>}
-      </p>
-      <p className="text-xs text-zinc-500">{formatDate(stream.started_at)}</p>
-      <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">
+    <a
+      href={`#/stream/${stream.id}`}
+      className="flex flex-col gap-3 rounded-2xl border border-line bg-panel p-5 hover:border-line-strong"
+    >
+      <h3 className="font-display text-lg font-semibold">{t('overview.lastLive')}</h3>
+      <div>
+        <p className="font-semibold">{stream.title ?? t('live.number', { id: stream.id })}</p>
+        <p className="text-sm text-ink-muted">
+          {formatDate(stream.started_at)}
+          {stream.category && ` · ${stream.category}`}
+        </p>
+      </div>
+      {path && (
+        <svg
+          viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+          preserveAspectRatio="none"
+          className="h-16 w-full"
+          role="img"
+          aria-label={t('chart.messagesPerMin')}
+        >
+          <path
+            d={`${path} L${SPARK_WIDTH} ${SPARK_HEIGHT} L0 ${SPARK_HEIGHT} Z`}
+            fill="var(--color-accent-soft)"
+          />
+          <path d={path} fill="none" stroke="var(--color-accent)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        </svg>
+      )}
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-ink-muted">
         {report ? (
           <>
             <StatWithDelta label={t('overview.stat.messages')} comparison={report.numbers.messages} />
@@ -170,48 +260,17 @@ function LastLiveCard({
           </>
         ) : (
           <>
-            <span>💬 {fmtInt(stream.messages)}</span>
-            <span>👤 {fmtInt(stream.chatters)}</span>
-            <span>👁 {fmtInt(stream.peak_viewers)}</span>
+            <span>{t('metrics.messages', { n: fmtInt(stream.messages) })}</span>
+            <span>{t('metrics.chatters', { n: fmtInt(stream.chatters) })}</span>
+            <span>{t('metrics.peak', { n: fmtInt(stream.peak_viewers) })}</span>
           </>
         )}
-        <span className={stream.followers > 0 ? 'text-emerald-400' : ''}>
+        <span className={stream.followers > 0 ? 'text-money' : ''}>
           {t('metrics.followers', { n: fmtInt(stream.followers) })}
         </span>
       </p>
-      <a
-        href={`#/stream/${stream.id}`}
-        className="mt-2 inline-block text-xs text-purple-300 hover:text-purple-200"
-      >
-        {t('overview.seeReport')}
-      </a>
-    </div>
-  )
-}
-
-const HIGHLIGHT_TONE: Record<'risk' | 'goal' | 'reco', string> = {
-  risk: 'border-red-900/60 bg-red-950/20',
-  goal: 'border-emerald-900/60 bg-emerald-950/20',
-  reco: 'border-purple-900/60 bg-purple-950/20',
-}
-
-const HIGHLIGHT_ICON: Record<'risk' | 'goal' | 'reco', string> = {
-  risk: '⚠️',
-  goal: '🎯',
-  reco: '💡',
-}
-
-function ActionableHighlight({ highlight }: { highlight: Highlight }) {
-  if (!highlight) return null
-  return (
-    <div className={`rounded-lg border p-4 ${HIGHLIGHT_TONE[highlight.tone]}`}>
-      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        {t('overview.needsAttention')}
-      </p>
-      <p className="text-sm">
-        {HIGHLIGHT_ICON[highlight.tone]} {highlight.text}
-      </p>
-    </div>
+      <span className="text-sm text-accent-ink">{t('overview.seeReport')}</span>
+    </a>
   )
 }
 
@@ -228,6 +287,7 @@ export default function OverviewSection({ streams }: { streams: StreamListItem[]
   const [followers, setFollowers] = useState<FollowersOverview | null>(null)
   const [finance, setFinance] = useState<FinanceOverview | null>(null)
   const [report, setReport] = useState<StreamReport | null>(null)
+  const [timeline, setTimeline] = useState<Timeline | null>(null)
 
   // Account-level blocks: fetch once (they don't need the 15s stream poll).
   useEffect(() => {
@@ -248,23 +308,27 @@ export default function OverviewSection({ streams }: { streams: StreamListItem[]
     apiGet<StreamReport>(`/api/streams/${lastLive.id}`)
       .then(setReport)
       .catch(() => setReport(null))
+    apiGet<Timeline>(`/api/streams/${lastLive.id}/timeline`)
+      .then(setTimeline)
+      .catch(() => setTimeline(null))
   }, [lastLive?.id])
 
-  const highlight = pickHighlight(followers, channel)
+  const attention = pickAttention(followers, channel)
   // Nothing to show yet (fresh account, still loading): render nothing.
   if (!channel && !followers && !finance && !lastLive) return null
 
   return (
-    <div className="mb-8">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-bold">{t('overview.title')}</h2>
+    <div className="mb-10 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="font-display text-3xl font-semibold">{t('overview.title')}</h1>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
+      <NextStepCard recommendation={channel?.recommendations[0]} />
       <KpiStrip channel={channel} followers={followers} finance={finance} period={period} />
-      {(lastLive || highlight) && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <LastLiveCard stream={lastLive} report={report} />
-          <ActionableHighlight highlight={highlight} />
+      {(lastLive || attention.length > 0) && (
+        <div className={`grid gap-4 ${lastLive && attention.length > 0 ? 'md:grid-cols-2' : ''}`}>
+          <NeedsAttention items={attention} />
+          <LastLiveCard stream={lastLive} report={report} timeline={timeline} />
         </div>
       )}
     </div>

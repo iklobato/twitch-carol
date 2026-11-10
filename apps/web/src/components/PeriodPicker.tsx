@@ -18,15 +18,16 @@ export default function PeriodPicker({
   onChange: (period: FinancePeriod) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-zinc-700 bg-zinc-900 p-0.5 text-sm">
+    <div className="inline-flex gap-1 rounded-xl border border-line bg-panel p-1 text-sm">
       {OPTIONS.map((option) => (
         <button
           key={option.value}
           onClick={() => onChange(option.value)}
-          className={`rounded-md px-3 py-1 transition ${
+          aria-pressed={value === option.value}
+          className={`min-h-10 rounded-lg px-3.5 font-semibold transition ${
             value === option.value
-              ? "bg-purple-600 text-white"
-              : "text-zinc-400 hover:text-zinc-200"
+              ? "bg-accent-soft text-ink"
+              : "text-ink-muted hover:text-ink"
           }`}
         >
           {t(option.key)}
