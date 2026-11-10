@@ -130,10 +130,11 @@ describe('OverviewSection', () => {
 
     render(<OverviewSection streams={[READY_STREAM]} />)
 
+    // Each block arrives from its own request, in any order: wait for each one.
     await screen.findByText('Overview')
-    expect(screen.getByText('12,400')).toBeTruthy() // followers
-    expect(screen.getByText((t) => t.includes('546.00'))).toBeTruthy() // earned
-    expect(screen.getByText('Speedrun de Elden Ring')).toBeTruthy() // last live
+    expect(await screen.findByText('12,400')).toBeTruthy() // followers
+    expect(await screen.findByText((t) => t.includes('546.00'))).toBeTruthy() // earned
+    expect(await screen.findByText('Speedrun de Elden Ring')).toBeTruthy() // last live
     await waitFor(() =>
       expect(screen.getByText((t) => t.includes('Just Chatting'))).toBeTruthy(),
     ) // proximo passo = recomendacao da IA
