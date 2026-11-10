@@ -18,6 +18,11 @@ dependencies = [
     "boto3>=1.34",
     "streamlink>=6.7",
     "faster-whisper>=1.1",
+    # PyAV 19 removed av.open(metadata_errors=...), which faster-whisper 1.2.1
+    # decode_audio still passes: every transcription failed from the
+    # 2026-11-05 deploy on. The image installs from this list with pip, not
+    # from uv.lock, so the ceiling has to live here.
+    "av>=18,<19",
     # onnxruntime >=1.20 dropped Intel-mac wheels; 1.19 still ships them
     # (dev laptop) and works on the linux droplet the same way.
     "onnxruntime<1.20",
